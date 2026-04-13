@@ -10,10 +10,10 @@ import {
   type GenerateFn,
   type GenerateObjectFn,
 } from '@agora/core'
-import type { ModelConfig, Message } from '@agora/shared'
+import type { ModelConfig } from '@agora/shared'
 import { buildRoleSystemPrompt, getDefaultRoleDistribution } from './roles.js'
 import { createWerewolfStateMachineConfig } from './phases.js'
-import type { WerewolfRole, WerewolfGameState } from './types.js'
+import type { WerewolfRole, WerewolfGameState, WerewolfAdvancedRules } from './types.js'
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -24,7 +24,9 @@ export interface WerewolfAgentConfig {
 
 export interface WerewolfConfig {
   readonly agents: readonly WerewolfAgentConfig[]
-  /** Optional role override — if not provided, uses default distribution */
+  /** Toggle advanced rules (guard, idiot, sheriff, lastWords) */
+  readonly advancedRules?: WerewolfAdvancedRules
+  /** Override role assignment (agent name → role) */
   readonly roleOverrides?: Record<string, WerewolfRole>
 }
 
@@ -34,6 +36,7 @@ export interface WerewolfResult {
   readonly flow: StateMachineFlow
   readonly roleAssignments: Record<string, WerewolfRole>
   readonly agentNames: Record<string, string>
+  readonly advancedRules: WerewolfAdvancedRules
 }
 
 // ── Role Assignment ────────────────────────────────────────
@@ -49,49 +52,40 @@ function shuffleArray<T>(array: T[]): T[] {
 
 function assignRoles(
   agentIds: string[],
+  agentNames: Record<string, string>,
+  advancedRules: WerewolfAdvancedRules,
   roleOverrides?: Record<string, WerewolfRole>,
 ): Map<string, WerewolfRole> {
   if (roleOverrides) {
     const map = new Map<string, WerewolfRole>()
     for (const id of agentIds) {
-      const role = roleOverrides[id]
-      if (!role) throw new Error(`Missing role override for agent ${id}`)
+      // Look up by name since overrides use names
+      const name = agentNames[id]!
+      const role = roleOverrides[name]
+      if (!role) throw new Error(`Missing role override for agent "${name}"`)
       map.set(id, role)
     }
     return map
   }
 
-  const roles = getDefaultRoleDistribution(agentIds.length)
+  const roles = getDefaultRoleDistribution(agentIds.length, advancedRules)
   const shuffledRoles = shuffleArray(roles)
   const map = new Map<string, WerewolfRole>()
-  agentIds.forEach((id, i) => {
-    map.set(id, shuffledRoles[i]!)
-  })
+  agentIds.forEach((id, i) => map.set(id, shuffledRoles[i]!))
   return map
 }
 
 // ── Factory ────────────────────────────────────────────────
 
-/**
- * Create a werewolf game — instantiates Room, agents, channels, and flow.
- *
- * Requires two function factories:
- *  - createGenerateFn(config) → GenerateFn (text generation)
- *  - createGenerateObjectFn(config) → GenerateObjectFn (structured output)
- *
- * These are injected to keep the modes package free of direct LLM imports.
- */
 export function createWerewolf(
   config: WerewolfConfig,
   createGenFn: (model: ModelConfig) => GenerateFn,
   createObjFn: (model: ModelConfig) => GenerateObjectFn,
 ): WerewolfResult {
-  if (config.agents.length < 6) {
-    throw new Error('Werewolf requires at least 6 players')
-  }
-  if (config.agents.length > 12) {
-    throw new Error('Werewolf supports at most 12 players')
-  }
+  const rules = config.advancedRules ?? {}
+
+  if (config.agents.length < 6) throw new Error('Werewolf requires at least 6 players')
+  if (config.agents.length > 12) throw new Error('Werewolf supports at most 12 players')
 
   const eventBus = new EventBus()
   const roomId = crypto.randomUUID()
@@ -100,7 +94,7 @@ export function createWerewolf(
     eventBus,
   )
 
-  // Create agents and collect IDs
+  // Create agents
   const agentIds: string[] = []
   const agentNames: Record<string, string> = {}
 
@@ -109,33 +103,25 @@ export function createWerewolf(
     agentIds.push(agentId)
     agentNames[agentId] = agentConfig.name
 
-    // Placeholder system prompt — will be replaced after role assignment
-    const generateFn = createGenFn(agentConfig.model)
-    const generateObjectFn = createObjFn(agentConfig.model)
-
     const agent = new AIAgent(
       {
         id: agentId,
         name: agentConfig.name,
         persona: { name: agentConfig.name, description: 'A player in the werewolf game' },
         model: agentConfig.model,
-        // System prompt will be set via persona.systemPrompt below
       },
-      generateFn,
-      generateObjectFn,
+      createGenFn(agentConfig.model),
+      createObjFn(agentConfig.model),
     )
-
     room.addAgent(agent)
   }
 
   // Assign roles
-  const roleMap = assignRoles(agentIds, config.roleOverrides)
+  const roleMap = assignRoles(agentIds, agentNames, rules, config.roleOverrides)
   const roleAssignments: Record<string, WerewolfRole> = {}
-  for (const [id, role] of roleMap) {
-    roleAssignments[id] = role
-  }
+  for (const [id, role] of roleMap) roleAssignments[id] = role
 
-  // Build role-specific system prompts and update agents
+  // Build role-specific system prompts → recreate agents
   const allPlayerNames = agentIds.map((id) => agentNames[id]!)
   const wolfIds = agentIds.filter((id) => roleMap.get(id) === 'werewolf')
   const wolfNames = wolfIds.map((id) => agentNames[id]!)
@@ -144,15 +130,10 @@ export function createWerewolf(
     const role = roleMap.get(agentId)!
     const name = agentNames[agentId]!
     const systemPrompt = buildRoleSystemPrompt(name, role, allPlayerNames, wolfNames)
+    const agentConfig = config.agents.find((a) => a.name === name)!
 
-    // Re-create agent with role-specific system prompt
-    const agentConfig = config.agents.find((a) => agentNames[agentId] === a.name)!
-    const generateFn = createGenFn(agentConfig.model)
-    const generateObjectFn = createObjFn(agentConfig.model)
-
-    // Remove old agent and add new one with correct prompt
     room.removeAgent(agentId)
-    const agent = new AIAgent(
+    room.addAgent(new AIAgent(
       {
         id: agentId,
         name,
@@ -160,47 +141,35 @@ export function createWerewolf(
         model: agentConfig.model,
         systemPrompt,
       },
-      generateFn,
-      generateObjectFn,
-    )
-    room.addAgent(agent)
+      createGenFn(agentConfig.model),
+      createObjFn(agentConfig.model),
+    ))
   }
 
   // Set up channels
-  // Main channel already exists (all agents subscribed via addAgent)
-  const privateChannels = [
+  const channels = [
     { id: 'werewolf', name: 'Werewolf Night' },
     { id: 'seer-result', name: 'Seer Investigation' },
     { id: 'witch-action', name: 'Witch Action' },
-    // Blind vote channels — NO subscribers (simultaneous voting)
     { id: 'wolf-vote', name: 'Wolf Vote (blind)' },
     { id: 'day-vote', name: 'Day Vote (blind)' },
   ]
-  for (const ch of privateChannels) {
-    room.channels.createChannel({
-      id: ch.id,
-      roomId,
-      name: ch.name,
-      parentId: null,
-      autoBroadcast: false,
-    })
+  if (rules.guard) channels.push({ id: 'guard-action', name: 'Guard Action' })
+
+  for (const ch of channels) {
+    room.channels.createChannel({ id: ch.id, roomId, name: ch.name, parentId: null, autoBroadcast: false })
   }
 
-  // Subscribe roles to their private channels (blind channels get NO subscribers)
-  for (const wolfId of wolfIds) {
-    room.channels.subscribe('werewolf', wolfId)
-  }
-  const seerIds = agentIds.filter((id) => roleMap.get(id) === 'seer')
-  for (const seerId of seerIds) {
-    room.channels.subscribe('seer-result', seerId)
-  }
-  const witchIds = agentIds.filter((id) => roleMap.get(id) === 'witch')
-  for (const witchId of witchIds) {
-    room.channels.subscribe('witch-action', witchId)
+  // Subscribe roles to private channels
+  for (const wid of wolfIds) room.channels.subscribe('werewolf', wid)
+  for (const id of agentIds.filter((id) => roleMap.get(id) === 'seer')) room.channels.subscribe('seer-result', id)
+  for (const id of agentIds.filter((id) => roleMap.get(id) === 'witch')) room.channels.subscribe('witch-action', id)
+  if (rules.guard) {
+    for (const id of agentIds.filter((id) => roleMap.get(id) === 'guard')) room.channels.subscribe('guard-action', id)
   }
 
   // Create flow
-  const smConfig = createWerewolfStateMachineConfig()
+  const smConfig = createWerewolfStateMachineConfig(rules)
   const flow = new StateMachineFlow(smConfig)
 
   // Initialize game state
@@ -218,7 +187,14 @@ export function createWerewolf(
     hunterCanShoot: false,
     hunterPendingId: null,
     hunterShotTarget: null,
+    guardProtectedId: null,
+    guardLastProtectedId: null,
+    idiotRevealedIds: [],
+    sheriffId: null,
+    sheriffElected: false,
+    pendingLastWordsIds: [],
     winResult: null,
+    advancedRules: rules,
   }
 
   flow.setGameState({
@@ -227,13 +203,9 @@ export function createWerewolf(
     custom: wState as unknown as Record<string, unknown>,
   })
 
-  return { room, eventBus, flow, roleAssignments, agentNames }
+  return { room, eventBus, flow, roleAssignments, agentNames, advancedRules: rules }
 }
 
-/**
- * Create and run a werewolf game to completion.
- * Returns the completed Room with all messages.
- */
 export async function runWerewolf(
   config: WerewolfConfig,
   createGenFn: (model: ModelConfig) => GenerateFn,
@@ -245,5 +217,5 @@ export async function runWerewolf(
 }
 
 // Re-export types
-export type { WerewolfRole, WerewolfGameState } from './types.js'
+export type { WerewolfRole, WerewolfGameState, WerewolfAdvancedRules } from './types.js'
 export { checkWinCondition } from './types.js'

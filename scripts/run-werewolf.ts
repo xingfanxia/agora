@@ -5,7 +5,7 @@
 // ============================================================
 
 import { createGenerateFn, createGenerateObjectFn } from '../packages/llm/src/index'
-import { createWerewolf, type WerewolfRole } from '../packages/modes/src/werewolf/index'
+import { createWerewolf, type WerewolfRole, type WerewolfAdvancedRules } from '../packages/modes/src/werewolf/index'
 import type { ModelConfig, Message } from '../packages/shared/src/index'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -51,9 +51,25 @@ async function main() {
   console.log(`Models: Claude Opus 4.6, GPT-5.4, Gemini 3.1 Pro`)
   console.log('')
 
+  // Advanced rules toggle — set via CLI args or defaults
+  const advancedRules: WerewolfAdvancedRules = {
+    guard: process.argv.includes('--guard'),
+    idiot: process.argv.includes('--idiot'),
+    sheriff: process.argv.includes('--sheriff'),
+    lastWords: process.argv.includes('--last-words'),
+  }
+
+  const enabledRules = Object.entries(advancedRules).filter(([, v]) => v).map(([k]) => k)
+  if (enabledRules.length > 0) {
+    console.log(`Advanced Rules: ${enabledRules.join(', ')}`)
+  } else {
+    console.log('Advanced Rules: none (base game)')
+  }
+  console.log('')
+
   // Create the game
   const result = createWerewolf(
-    { agents: AGENTS },
+    { agents: AGENTS, advancedRules },
     createGenerateFn,
     createGenerateObjectFn,
   )

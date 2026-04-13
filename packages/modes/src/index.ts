@@ -33,4 +33,5 @@ export type {
   WerewolfResult,
   WerewolfRole,
   WerewolfGameState,
+  WerewolfAdvancedRules,
 } from './werewolf/index.js'

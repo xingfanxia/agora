@@ -2,7 +2,7 @@
 // Agora Werewolf Mode — Role System Prompts
 // ============================================================
 
-import type { WerewolfRole } from './types.js'
+import type { WerewolfRole, WerewolfAdvancedRules } from './types.js'
 
 /** Build a system prompt for a werewolf agent based on their role */
 export function buildRoleSystemPrompt(
@@ -12,7 +12,7 @@ export function buildRoleSystemPrompt(
   wolfNames: string[],
 ): string {
   const baseRules = [
-    `You are playing a game of Werewolf. Your name is "${agentName}".`,
+    `You are playing a game of Werewolf (狼人杀). Your name is "${agentName}".`,
     `Players in this game: ${allPlayerNames.join(', ')}.`,
     '',
     'GAME RULES:',
@@ -71,7 +71,7 @@ export function buildRoleSystemPrompt(
       '',
       'YOUR ROLE: WITCH 🧪',
       'You have two potions, each usable once per game:',
-      '- ANTIDOTE (Save Potion): Revive the player killed by wolves. Cannot save yourself.',
+      '- ANTIDOTE: Revive the player killed by wolves. Cannot save yourself.',
       '- POISON: Kill any player of your choice.',
       '',
       'IMPORTANT RULES:',
@@ -90,16 +90,48 @@ export function buildRoleSystemPrompt(
       'When you die, you may choose to shoot and eliminate one other player.',
       '',
       'IMPORTANT RULES:',
-      '- If killed by wolves at night: you CAN shoot.',
-      '- If voted out during the day: you CAN shoot.',
+      '- If killed by wolves at night or voted out during the day: you CAN shoot.',
       '- If killed by witch poison: you CANNOT shoot (poison seals your gun).',
       '- You do NOT have to shoot — you may choose to pass.',
       '',
       'STRATEGY:',
       '- Stay alive as long as possible — your gun is a powerful deterrent.',
-      '- If you have seer information, consider shooting a confirmed wolf.',
-      '- Be careful not to shoot a villager — that helps the wolves.',
+      '- If you have information, consider shooting a confirmed wolf.',
       '- Revealing you are the hunter can protect you (wolves fear the gun).',
+    ],
+    guard: [
+      '',
+      'YOUR ROLE: GUARD 🛡️',
+      'Each night, you may protect one player from being killed by werewolves.',
+      '',
+      'IMPORTANT RULES:',
+      '- You CAN protect yourself.',
+      '- You CANNOT protect the same player two nights in a row.',
+      '- Your protection blocks wolf kills, but NOT witch poison.',
+      '- If you protect the same player the witch also saves, that player DIES (同守同救).',
+      '  This is a known rule — avoid protecting someone you think the witch might save.',
+      '',
+      'STRATEGY:',
+      '- On Night 1, consider NOT protecting anyone (空守) to avoid 同守同救 accidents.',
+      '- Protect players you believe are important (seer, witch).',
+      '- Vary your protection targets to be unpredictable.',
+    ],
+    idiot: [
+      '',
+      'YOUR ROLE: VILLAGE IDIOT 🃏',
+      'If you are voted out during the day, you reveal your role and SURVIVE.',
+      'However, you permanently lose your voting rights after being revealed.',
+      '',
+      'IMPORTANT RULES:',
+      '- This ability ONLY triggers when voted out during the day.',
+      '- If killed by wolves at night or witch poison, you die normally.',
+      '- After being revealed, you can still speak during discussion but cannot vote.',
+      '',
+      'STRATEGY:',
+      '- You can afford to be bold — getting voted out doesn\'t kill you.',
+      '- Use your immunity to draw suspicion away from the real seer or witch.',
+      '- After being revealed, share your observations freely (wolves can\'t vote you out again).',
+      '- Be careful: wolves might target you at night after you\'re revealed.',
     ],
   }
 
@@ -107,40 +139,43 @@ export function buildRoleSystemPrompt(
 }
 
 /**
- * Default role distribution based on player count.
+ * Role distribution based on player count and enabled advanced rules.
  * Follows Chinese 狼人杀 standard configurations.
- *
- * 6人: 2W + 1Seer + 1Witch + 2V
- * 8人: 3W + 1Seer + 1Witch + 3V
- * 9人: 3W + 1Seer + 1Witch + 1Hunter + 3V (standard 预女猎)
- * 10人: 4W + 1Seer + 1Witch + 1Hunter + 3V
- * 12人: 4W + 1Seer + 1Witch + 1Hunter + 4V + 1 (Idiot/Guard, future)
  */
-export function getDefaultRoleDistribution(playerCount: number): WerewolfRole[] {
-  if (playerCount < 6) {
-    throw new Error('Werewolf requires at least 6 players')
-  }
+export function getDefaultRoleDistribution(
+  playerCount: number,
+  advancedRules: WerewolfAdvancedRules = {},
+): WerewolfRole[] {
+  if (playerCount < 6) throw new Error('Werewolf requires at least 6 players')
 
   const roles: WerewolfRole[] = []
 
-  // Always 1 seer, 1 witch
+  // Always: 1 seer, 1 witch
   roles.push('seer', 'witch')
 
   // Hunter for 9+ players
-  if (playerCount >= 9) {
-    roles.push('hunter')
+  if (playerCount >= 9) roles.push('hunter')
+
+  // Advanced god roles for 12+ (or 10+ if enabled)
+  if (advancedRules.guard && playerCount >= 10) roles.push('guard')
+  if (advancedRules.idiot && playerCount >= 10) roles.push('idiot')
+
+  // If both guard and idiot enabled but not enough slots, prefer the one matching standard config
+  // Standard 12人: 预女猎白 or 预女猎守 (one extra god, not both)
+  if (advancedRules.guard && advancedRules.idiot && playerCount < 14) {
+    // Too many gods — remove one. Keep guard (more impactful).
+    const idiotIdx = roles.indexOf('idiot')
+    if (idiotIdx !== -1 && roles.filter((r) => !['werewolf', 'villager'].includes(r)).length > playerCount / 3) {
+      roles.splice(idiotIdx, 1)
+    }
   }
 
   // Wolves: 2 for 6-7, 3 for 8-9, 4 for 10+
   const wolfCount = playerCount >= 10 ? 4 : playerCount >= 8 ? 3 : 2
-  for (let i = 0; i < wolfCount; i++) {
-    roles.push('werewolf')
-  }
+  for (let i = 0; i < wolfCount; i++) roles.push('werewolf')
 
   // Rest are villagers
-  while (roles.length < playerCount) {
-    roles.push('villager')
-  }
+  while (roles.length < playerCount) roles.push('villager')
 
   return roles
 }

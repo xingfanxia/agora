@@ -6,145 +6,160 @@ import { z } from 'zod'
 
 // ── Roles ──────────────────────────────────────────────────
 
-export type WerewolfRole = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter'
+export type WerewolfRole = 'werewolf' | 'villager' | 'seer' | 'witch' | 'hunter' | 'guard' | 'idiot'
 
-export interface RoleAssignment {
-  readonly agentId: string
-  readonly role: WerewolfRole
+// ── Advanced Rules Toggle ──────────────────────────────────
+
+export interface WerewolfAdvancedRules {
+  /** Enable 守卫 (Guard) — night protection, 同守同救 */
+  guard?: boolean
+  /** Enable 白痴 (Idiot) — survives day vote once, loses voting rights */
+  idiot?: boolean
+  /** Enable 警长 (Sheriff) — Day 1 election, 1.5x vote, badge transfer */
+  sheriff?: boolean
+  /** Enable 遗言 (Last Words) — eliminated players give dying speech */
+  lastWords?: boolean
 }
 
-// ── Game State (stored in StateMachineFlow.gameState.custom) ──
+// ── Game State ──────────────────────────────────────────────
 
 export interface WerewolfGameState {
   /** agentId → role */
   roleMap: Record<string, WerewolfRole>
   /** Ordered list of eliminated agent IDs */
   eliminatedIds: string[]
-  /** Who was killed by wolves this night (null if 空刀 or saved) */
+  /** Who was killed by wolves this night */
   lastNightKill: string | null
-  /** Whether the witch has used her save potion (game-wide, single use) */
+  /** Witch potions (game-wide, single use each) */
   witchSaveUsed: boolean
-  /** Whether the witch has used her poison potion (game-wide, single use) */
   witchPoisonUsed: boolean
-  /** Who the witch poisoned this night */
   witchPoisonTarget: string | null
-  /** Whether the witch used a potion this night (for mutex enforcement) */
   witchUsedPotionTonight: boolean
-  /** Seer's check result for the current night */
+  /** Seer check result */
   seerResult: { targetId: string; isWerewolf: boolean } | null
-  /** Night number */
+  /** Night counter */
   nightNumber: number
-  /** Agent ID → name mapping for prompts */
+  /** Agent ID → display name */
   agentNames: Record<string, string>
-  /** Whether hunter needs to shoot (killed by wolves or day vote, NOT by poison) */
+  /** Hunter mechanics */
   hunterCanShoot: boolean
-  /** Agent ID of the hunter who needs to shoot (if any) */
   hunterPendingId: string | null
-  /** Who the hunter shot */
   hunterShotTarget: string | null
-  /** Win result (set by phase hooks) */
+  /** Guard mechanics (advanced rule) */
+  guardProtectedId: string | null
+  guardLastProtectedId: string | null
+  /** Idiot mechanics (advanced rule) */
+  idiotRevealedIds: string[]
+  /** Sheriff mechanics (advanced rule) */
+  sheriffId: string | null
+  sheriffElected: boolean
+  /** IDs of players who just died and need last words (advanced rule) */
+  pendingLastWordsIds: string[]
+  /** Win result */
   winResult: WinResult
+  /** Which advanced rules are active */
+  advancedRules: WerewolfAdvancedRules
 }
 
 // ── Helpers ──────────────────────────────────────────────────
 
-/** Helper to create a z.enum from a string array (requires non-empty) */
 function toEnum(values: string[]): [string, ...string[]] {
   if (values.length === 0) throw new Error('z.enum requires at least one value')
   return values as [string, ...string[]]
 }
 
-// ── Decision Schemas (Zod) ──────────────────────────────────
+// ── Decision Schemas ────────────────────────────────────────
 
-/** Wolf vote — choose who to kill tonight */
 export function createWolfVoteSchema(aliveNonWolfNames: string[]) {
   return z.object({
-    target: z.enum(toEnum(aliveNonWolfNames)).describe(
-      'Name of the player to kill tonight',
-    ),
-    reason: z.string().describe('Brief reason for this choice'),
+    target: z.enum(toEnum(aliveNonWolfNames)).describe('Name of the player to kill tonight'),
+    reason: z.string().describe('Brief reason'),
   })
 }
 
-/** Seer check — choose who to investigate (excludes self) */
-export function createSeerCheckSchema(alivePlayerNamesExcludingSelf: string[]) {
+export function createSeerCheckSchema(targets: string[]) {
   return z.object({
-    target: z.enum(toEnum(alivePlayerNamesExcludingSelf)).describe(
-      'Name of the player to investigate',
-    ),
+    target: z.enum(toEnum(targets)).describe('Name of the player to investigate'),
   })
 }
 
-/**
- * Witch action — simplified schema based on available potions.
- * Only ONE potion can be used per night (mutually exclusive).
- */
 export function createWitchActionSchema(
   canSave: boolean,
   canPoison: boolean,
   alivePlayerNames: string[],
 ) {
   if (canSave && canPoison) {
-    // Both available — choose one or pass
     return z.object({
-      action: z.enum(['save', 'poison', 'pass']).describe(
-        'Choose ONE action: "save" to use antidote on the killed player, "poison" to kill someone, or "pass" to do nothing. You can only use ONE potion per night.',
-      ),
-      poisonTarget: z.enum(toEnum([...alivePlayerNames, 'none'])).describe(
-        'If action is "poison", name the target. Otherwise set to "none".',
-      ),
+      action: z.enum(['save', 'poison', 'pass']).describe('Choose ONE: save, poison, or pass. Only one potion per night.'),
+      poisonTarget: z.enum(toEnum([...alivePlayerNames, 'none'])).describe('If poison, name target. Otherwise "none".'),
       reason: z.string().describe('Brief reasoning'),
     })
   }
-
   if (canSave) {
     return z.object({
-      action: z.enum(['save', 'pass']).describe(
-        'Choose: "save" to use antidote on the killed player, or "pass".',
-      ),
+      action: z.enum(['save', 'pass']).describe('Save the killed player or pass.'),
       poisonTarget: z.literal('none'),
       reason: z.string().describe('Brief reasoning'),
     })
   }
-
   if (canPoison) {
     return z.object({
-      action: z.enum(['poison', 'pass']).describe(
-        'Choose: "poison" to kill someone, or "pass".',
-      ),
-      poisonTarget: z.enum(toEnum([...alivePlayerNames, 'none'])).describe(
-        'If action is "poison", name the target. Otherwise "none".',
-      ),
+      action: z.enum(['poison', 'pass']).describe('Poison someone or pass.'),
+      poisonTarget: z.enum(toEnum([...alivePlayerNames, 'none'])).describe('If poison, name target. Otherwise "none".'),
       reason: z.string().describe('Brief reasoning'),
     })
   }
-
-  // No potions left
   return z.object({
-    action: z.literal('pass').describe('Both potions already used. You must pass.'),
+    action: z.literal('pass').describe('Both potions used. Must pass.'),
     poisonTarget: z.literal('none'),
     reason: z.string().describe('Brief reasoning'),
   })
 }
 
-/** Day vote — choose who to eliminate (or skip). Excludes self. */
-export function createDayVoteSchema(alivePlayerNamesExcludingSelf: string[]) {
+export function createDayVoteSchema(targets: string[]) {
   return z.object({
-    target: z.enum(toEnum([...alivePlayerNamesExcludingSelf, 'skip'])).describe(
-      'Name of the player to eliminate, or "skip" to abstain',
-    ),
-    reason: z.string().describe('Public justification for your vote'),
+    target: z.enum(toEnum([...targets, 'skip'])).describe('Player to eliminate, or "skip"'),
+    reason: z.string().describe('Public justification'),
   })
 }
 
-/** Hunter shoot — choose who to take down, or pass */
 export function createHunterShootSchema(alivePlayerNames: string[]) {
   return z.object({
     shoot: z.boolean().describe('Whether to use your gun'),
-    target: z.enum(toEnum([...alivePlayerNames, 'none'])).describe(
-      'If shooting, name the target. Otherwise "none".',
-    ),
+    target: z.enum(toEnum([...alivePlayerNames, 'none'])).describe('If shooting, name target. Otherwise "none".'),
     reason: z.string().describe('Brief reasoning'),
+  })
+}
+
+/** Guard chooses who to protect tonight */
+export function createGuardProtectSchema(targets: string[]) {
+  return z.object({
+    target: z.enum(toEnum([...targets, 'none'])).describe('Player to protect tonight, or "none" to skip.'),
+    reason: z.string().describe('Brief reasoning'),
+  })
+}
+
+/** Sheriff election — vote for who should be sheriff */
+export function createSheriffVoteSchema(candidates: string[]) {
+  return z.object({
+    target: z.enum(toEnum([...candidates, 'skip'])).describe('Who should be sheriff, or "skip" to abstain.'),
+    reason: z.string().describe('Brief reasoning'),
+  })
+}
+
+/** Sheriff badge transfer on death */
+export function createSheriffTransferSchema(alivePlayerNames: string[]) {
+  return z.object({
+    target: z.enum(toEnum([...alivePlayerNames, 'destroy'])).describe('Transfer badge to a player, or "destroy" to remove sheriff role.'),
+    reason: z.string().describe('Brief reasoning'),
+  })
+}
+
+/** Last words — dying speech */
+export function createLastWordsSchema() {
+  return z.object({
+    speech: z.string().describe('Your final words to the village. Share any information or suspicions.'),
+    revealRole: z.boolean().describe('Whether to reveal your role in your dying speech.'),
   })
 }
 
@@ -152,12 +167,13 @@ export function createHunterShootSchema(alivePlayerNames: string[]) {
 
 export type WinResult = 'werewolves_win' | 'village_wins' | null
 
-/** Check win condition: wolves win if wolves >= non-wolves */
 export function checkWinCondition(
   roleMap: Record<string, WerewolfRole>,
   eliminatedIds: string[],
+  idiotRevealedIds: string[] = [],
 ): WinResult {
   const eliminated = new Set(eliminatedIds)
+  // Revealed idiots are alive but count for win condition
   const aliveWolves = Object.entries(roleMap).filter(
     ([id, role]) => role === 'werewolf' && !eliminated.has(id),
   )
