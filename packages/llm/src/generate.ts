@@ -49,6 +49,11 @@ export function createGenerateFn(config: ModelConfig): GenerateFn {
       chatMessages.push({ role: 'user', content: instruction })
     }
 
+    // Vercel AI SDK requires at least one non-system message
+    if (chatMessages.length === 1 && chatMessages[0]!.role === 'system') {
+      chatMessages.push({ role: 'user', content: 'Please share your opening thoughts.' })
+    }
+
     return generate(model, chatMessages, {
       temperature: config.temperature,
       maxTokens: config.maxTokens,

@@ -21,15 +21,10 @@ const PROVIDER_DISPLAY: Record<LLMProvider, string> = {
 }
 
 const MODEL_DISPLAY: Record<string, string> = {
-  'claude-sonnet-4-20250514': 'Claude Sonnet 4',
-  'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
-  'claude-3-opus-20240229': 'Claude 3 Opus',
-  'gpt-4o': 'GPT-4o',
-  'gpt-4o-mini': 'GPT-4o Mini',
-  'gpt-4-turbo': 'GPT-4 Turbo',
+  'claude-opus-4-6': 'Claude Opus 4.6',
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'gpt-5.4': 'GPT-5.4',
-  'gemini-2.0-flash': 'Gemini 2.0 Flash',
-  'gemini-2.0-pro': 'Gemini 2.0 Pro',
+  'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
   'deepseek-chat': 'DeepSeek Chat',
   'deepseek-reasoner': 'DeepSeek Reasoner',
 }
@@ -67,23 +62,17 @@ export function createModel(config: ModelConfig): LanguageModel {
     }
     case 'azure-openai': {
       const endpoint = process.env['AZURE_OPENAI_ENDPOINT']
-      const deployment = process.env['AZURE_OPENAI_DEPLOYMENT'] ?? config.modelId
-      const apiVersion = process.env['AZURE_OPENAI_API_VERSION'] ?? '2024-12-01-preview'
       if (!endpoint) {
         throw new Error('Missing AZURE_OPENAI_ENDPOINT environment variable')
       }
+      // Azure OpenAI uses deployment names, not model IDs
+      const deployment = process.env['AZURE_OPENAI_DEPLOYMENT'] ?? config.modelId
       const provider = createOpenAI({
         apiKey,
-        baseURL: `${endpoint.replace(/\/$/, '')}/deployments/${deployment}`,
+        baseURL: endpoint.replace(/\/$/, ''),
         headers: { 'api-key': apiKey },
-        compatibility: 'compatible',
-        fetch: (url, init) => {
-          // Azure requires api-version query param
-          const separator = String(url).includes('?') ? '&' : '?'
-          return fetch(`${url}${separator}api-version=${apiVersion}`, init)
-        },
       })
-      return provider(config.modelId)
+      return provider(deployment)
     }
     default: {
       const _exhaustive: never = config.provider

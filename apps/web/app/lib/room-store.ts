@@ -1,5 +1,6 @@
 // ============================================================
 // In-memory room store for MVP
+// Uses globalThis to persist across Next.js dev hot reloads
 // ============================================================
 
 import type { Message, PlatformEvent } from '@agora/shared'
@@ -26,47 +27,55 @@ export interface RoomState {
   error?: string
 }
 
-// Global in-memory store — persists across requests in the same process
-const rooms = new Map<string, RoomState>()
+// Persist across Next.js dev hot reloads via globalThis
+const globalKey = '__agora_rooms__' as const
+
+function getRooms(): Map<string, RoomState> {
+  const g = globalThis as Record<string, unknown>
+  if (!g[globalKey]) {
+    g[globalKey] = new Map<string, RoomState>()
+  }
+  return g[globalKey] as Map<string, RoomState>
+}
 
 export function getRoomState(id: string): RoomState | undefined {
-  return rooms.get(id)
+  return getRooms().get(id)
 }
 
 export function setRoomState(id: string, state: RoomState): void {
-  rooms.set(id, state)
+  getRooms().set(id, state)
 }
 
 export function addMessage(roomId: string, message: Message): void {
-  const room = rooms.get(roomId)
+  const room = getRooms().get(roomId)
   if (room) {
     room.messages.push(message)
   }
 }
 
 export function addEvent(roomId: string, event: PlatformEvent): void {
-  const room = rooms.get(roomId)
+  const room = getRooms().get(roomId)
   if (room) {
     room.events.push(event)
   }
 }
 
 export function updateRoomStatus(roomId: string, status: RoomStatus): void {
-  const room = rooms.get(roomId)
+  const room = getRooms().get(roomId)
   if (room) {
     room.status = status
   }
 }
 
 export function setThinkingAgent(roomId: string, agentId: string | null): void {
-  const room = rooms.get(roomId)
+  const room = getRooms().get(roomId)
   if (room) {
     room.thinkingAgentId = agentId
   }
 }
 
 export function setCurrentRound(roomId: string, round: number): void {
-  const room = rooms.get(roomId)
+  const room = getRooms().get(roomId)
   if (room) {
     room.currentRound = round
   }

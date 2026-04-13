@@ -12,10 +12,10 @@ interface AgentFormData {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', provider: 'anthropic' },
-  { value: 'gpt-4o', label: 'GPT-4o', provider: 'openai' },
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { value: 'gpt-5.4', label: 'GPT-5.4 (Azure)', provider: 'azure-openai' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'google' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'google' },
 ] as const
 
 const DEFAULT_AGENTS: AgentFormData[] = [
@@ -23,19 +23,19 @@ const DEFAULT_AGENTS: AgentFormData[] = [
     id: crypto.randomUUID(),
     name: 'The Optimist',
     persona: 'You see the bright side of every argument. You believe in progress, human potential, and positive outcomes. You back up your optimism with concrete examples and evidence.',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-opus-4-6',
   },
   {
     id: crypto.randomUUID(),
     name: 'The Skeptic',
     persona: 'You question assumptions and challenge conventional wisdom. You play devil\'s advocate and demand evidence. You\'re not negative — you\'re rigorous and intellectually honest.',
-    model: 'gpt-4o',
+    model: 'gpt-5.4',
   },
   {
     id: crypto.randomUUID(),
     name: 'The Pragmatist',
     persona: 'You focus on practical implications and real-world constraints. You bridge idealism and realism by asking "how would this actually work?" You draw on historical precedents.',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3.1-pro-preview',
   },
 ]
 
