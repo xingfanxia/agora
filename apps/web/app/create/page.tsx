@@ -12,9 +12,10 @@ interface AgentFormData {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', provider: 'Anthropic' },
-  { value: 'gpt-4o', label: 'GPT-4o', provider: 'OpenAI' },
-  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'Google' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', provider: 'anthropic' },
+  { value: 'gpt-4o', label: 'GPT-4o', provider: 'openai' },
+  { value: 'gpt-5.4', label: 'GPT-5.4 (Azure)', provider: 'azure-openai' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', provider: 'google' },
 ] as const
 
 const DEFAULT_AGENTS: AgentFormData[] = [
@@ -93,11 +94,15 @@ export default function CreateRoom() {
         body: JSON.stringify({
           topic: topic.trim(),
           rounds,
-          agents: agents.map((a) => ({
-            name: a.name.trim(),
-            persona: a.persona.trim(),
-            model: a.model,
-          })),
+          agents: agents.map((a) => {
+            const modelOption = MODEL_OPTIONS.find((m) => m.value === a.model)
+            return {
+              name: a.name.trim(),
+              persona: a.persona.trim(),
+              model: a.model,
+              provider: modelOption?.provider,
+            }
+          }),
         }),
       })
 

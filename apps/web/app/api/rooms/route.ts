@@ -19,7 +19,8 @@ import type { RoomState, AgentInfo } from '../../lib/room-store'
 interface AgentInput {
   name: string
   persona: string
-  model: string // e.g. "claude-sonnet-4-20250514", "gpt-4o", "gemini-2.0-flash"
+  model: string // e.g. "claude-sonnet-4-20250514", "gpt-4o", "gpt-5.4", "gemini-2.0-flash"
+  provider?: string // e.g. "anthropic", "openai", "azure-openai", "google"
 }
 
 interface CreateRoomBody {
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
 
     for (const agentInput of body.agents) {
       const agentId = crypto.randomUUID()
-      const provider = resolveProvider(agentInput.model)
+      const provider = (agentInput.provider as LLMProvider) ?? resolveProvider(agentInput.model)
 
       const modelConfig: ModelConfig = {
         provider,

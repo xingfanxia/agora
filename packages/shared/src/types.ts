@@ -6,7 +6,7 @@
 export type Id = string
 
 /** Supported LLM providers */
-export type LLMProvider = 'anthropic' | 'openai' | 'google' | 'deepseek'
+export type LLMProvider = 'anthropic' | 'openai' | 'google' | 'deepseek' | 'azure-openai'
 
 /** Model configuration for an agent */
 export interface ModelConfig {
