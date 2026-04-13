@@ -28,6 +28,30 @@ export interface PersonaConfig {
 /** Room lifecycle states */
 export type RoomStatus = 'waiting' | 'active' | 'paused' | 'ended'
 
+// ── Channel ────────────────────────────────────────────────
+
+/** Channel configuration for information isolation */
+export interface ChannelConfig {
+  readonly id: Id
+  readonly roomId: Id
+  readonly name: string
+  readonly parentId: Id | null
+  /** If true, messages auto-broadcast to all subscribers */
+  readonly autoBroadcast: boolean
+}
+
+/** Who can subscribe to a channel — used by modes to configure channels */
+export interface ChannelTemplate {
+  readonly id: string
+  readonly name: string
+  readonly autoBroadcast: boolean
+  readonly parentId: string | null
+  /** Role IDs that should be subscribed. '*' = all agents */
+  readonly subscriberRoles: readonly string[]
+  /** Phases during which this channel is active */
+  readonly activePhases: readonly string[]
+}
+
 /** Message in a conversation */
 export interface Message {
   readonly id: Id
@@ -68,5 +92,6 @@ export type PlatformEvent =
   | { type: 'agent:left'; roomId: Id; agentId: Id }
   | { type: 'message:created'; message: Message }
   | { type: 'round:changed'; roomId: Id; round: number; maxRounds: number }
+  | { type: 'phase:changed'; roomId: Id; phase: string; previousPhase: string | null; metadata?: Record<string, unknown> }
   | { type: 'agent:thinking'; roomId: Id; agentId: Id }
   | { type: 'agent:done'; roomId: Id; agentId: Id }

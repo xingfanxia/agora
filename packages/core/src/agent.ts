@@ -9,9 +9,12 @@ import type { Id, Message, ModelConfig, PersonaConfig } from '@agora/shared'
 /** What the FlowController passes to an agent on their turn */
 export interface ReplyContext {
   readonly roomId: string
+  readonly channelId: string
   readonly phase: string
   readonly recentMessages: readonly Message[]
   readonly instruction?: string
+  /** If present, agent should produce structured output matching this schema */
+  readonly schema?: unknown
 }
 
 /** Full agent configuration */
@@ -38,6 +41,17 @@ export type GenerateFn = (
   messages: ChatMessage[],
   instruction?: string,
 ) => Promise<string>
+
+/**
+ * Structured output generate function — injected optionally
+ * for modes that need constrained decisions (votes, actions).
+ */
+export type GenerateObjectFn = (
+  systemPrompt: string,
+  messages: ChatMessage[],
+  schema: unknown,
+  instruction?: string,
+) => Promise<unknown>
 
 /** Core agent contract: reply + observe */
 export interface Agent {
@@ -74,17 +88,22 @@ function messageToChatMessage(msg: Message): ChatMessage {
 /**
  * AI-powered agent that delegates text generation to an
  * injected generateFn — keeping core free of LLM imports.
+ *
+ * Optionally accepts a generateObjectFn for structured output
+ * (votes, role actions, etc.) — used when ReplyContext has a schema.
  */
 export class AIAgent implements Agent {
   readonly id: string
   readonly config: AgentConfig
   private readonly generateFn: GenerateFn
+  private readonly generateObjectFn?: GenerateObjectFn
   private readonly history: Message[] = []
 
-  constructor(config: AgentConfig, generateFn: GenerateFn) {
+  constructor(config: AgentConfig, generateFn: GenerateFn, generateObjectFn?: GenerateObjectFn) {
     this.id = config.id
     this.config = config
     this.generateFn = generateFn
+    this.generateObjectFn = generateObjectFn
   }
 
   async reply(context: ReplyContext): Promise<Message> {
@@ -109,19 +128,35 @@ export class AIAgent implements Agent {
     }
 
     const chatMessages = allMessages.map(messageToChatMessage)
+
+    // Structured output path — constrained decision via schema
+    if (context.schema && this.generateObjectFn) {
+      const decision = await this.generateObjectFn(systemPrompt, chatMessages, context.schema, context.instruction)
+
+      return {
+        id: crypto.randomUUID(),
+        roomId: context.roomId,
+        senderId: this.id,
+        senderName: this.config.name,
+        content: typeof decision === 'object' ? JSON.stringify(decision) : String(decision),
+        channelId: context.channelId,
+        timestamp: Date.now(),
+        metadata: { decision },
+      }
+    }
+
+    // Standard text generation path
     const content = await this.generateFn(systemPrompt, chatMessages, context.instruction)
 
-    const message: Message = {
+    return {
       id: crypto.randomUUID(),
       roomId: context.roomId,
       senderId: this.id,
       senderName: this.config.name,
       content,
-      channelId: 'main',
+      channelId: context.channelId,
       timestamp: Date.now(),
     }
-
-    return message
   }
 
   observe(message: Message): void {

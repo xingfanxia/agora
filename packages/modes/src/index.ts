@@ -2,6 +2,7 @@
 // Agora Platform — Mode plugins
 // ============================================================
 
+// Roundtable Debate
 export {
   createRoundtable,
   runRoundtable,
@@ -18,3 +19,18 @@ export {
   PRESET_AGENTS,
   createPresetRoundtable,
 } from './roundtable/presets.js'
+
+// Werewolf
+export {
+  createWerewolf,
+  runWerewolf,
+  checkWinCondition,
+} from './werewolf/index.js'
+
+export type {
+  WerewolfConfig,
+  WerewolfAgentConfig,
+  WerewolfResult,
+  WerewolfRole,
+  WerewolfGameState,
+} from './werewolf/index.js'

@@ -2,21 +2,33 @@
 // Agora Platform — FlowController interface + RoundRobinFlow
 // ============================================================
 
+import type { Message } from '@agora/shared'
+
 // ── Interfaces ──────────────────────────────────────────────
 
 /** Result of each flow tick — who speaks next and metadata */
 export interface FlowTick {
   readonly nextSpeakers: readonly string[]
   readonly instruction?: string
+  /** Channel this turn's messages should be published to */
+  readonly channelId: string
+  /** Zod schema for structured output (typed as unknown to keep core LLM-agnostic) */
+  readonly schema?: unknown
   readonly phase: string
   readonly round: number
   readonly isComplete: boolean
+  /** Arbitrary mode-specific metadata */
+  readonly metadata?: Record<string, unknown>
 }
 
 /** Controls turn order and round progression */
 export interface FlowController {
   initialize(agentIds: string[]): void
   tick(): FlowTick
+  /** Notify the flow of a new message (for reactive flows like StateMachine) */
+  onMessage?(message: Message): void
+  /** Get the current phase name */
+  getCurrentPhase?(): string
   isComplete(): boolean
 }
 
@@ -63,6 +75,7 @@ export class RoundRobinFlow implements FlowController {
     if (this.complete) {
       return {
         nextSpeakers: [],
+        channelId: 'main',
         phase: 'ended',
         round: this.currentRound,
         isComplete: true,
@@ -72,6 +85,7 @@ export class RoundRobinFlow implements FlowController {
     const speakerId = this.agentIds[this.currentIndex]!
     const tick: FlowTick = {
       nextSpeakers: [speakerId],
+      channelId: 'main',
       phase: 'discussion',
       round: this.currentRound,
       isComplete: false,
