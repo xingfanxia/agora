@@ -32,7 +32,7 @@ interface DebateConfig {
 
 const MODELS = {
   claude: { provider: 'anthropic' as const, modelId: 'claude-opus-4-6' },
-  gpt: { provider: 'azure-openai' as const, modelId: 'gpt-5.4' },
+  gpt: { provider: 'openai' as const, modelId: 'gpt-5.4' },
   gemini: { provider: 'google' as const, modelId: 'gemini-3.1-pro-preview' },
 } satisfies Record<string, Pick<ModelConfig, 'provider' | 'modelId'>>
 
@@ -279,20 +279,28 @@ async function main() {
     'debate-3-social-media-kids.md',
   ]
 
-  for (let i = 0; i < DEBATES.length; i++) {
-    const debate = DEBATES[i]!
-    try {
-      const output = await runDebate(debate, i)
-      const filePath = path.join(outputDir, fileNames[i]!)
-      fs.writeFileSync(filePath, output)
-      console.log(`\nSaved to: ${filePath}`)
-    } catch (error) {
-      console.error(`\nDEBATE ${i + 1} FAILED:`, error)
-    }
-  }
+  // Run all 3 debates in parallel
+  const results = await Promise.allSettled(
+    DEBATES.map((debate, i) =>
+      runDebate(debate, i).then((output) => {
+        const filePath = path.join(outputDir, fileNames[i]!)
+        fs.writeFileSync(filePath, output)
+        console.log(`\nSaved to: ${filePath}`)
+        return filePath
+      })
+    )
+  )
 
   console.log('\n' + '='.repeat(80))
   console.log('ALL DEBATES COMPLETE')
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i]!
+    if (r.status === 'fulfilled') {
+      console.log(`  Debate ${i + 1}: ✅ saved to ${r.value}`)
+    } else {
+      console.log(`  Debate ${i + 1}: ❌ FAILED — ${r.reason}`)
+    }
+  }
   console.log('='.repeat(80))
 }
 

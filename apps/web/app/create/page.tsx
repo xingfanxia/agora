@@ -14,7 +14,7 @@ interface AgentFormData {
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
-  { value: 'gpt-5.4', label: 'GPT-5.4 (Azure)', provider: 'azure-openai' },
+  { value: 'gpt-5.4', label: 'GPT-5.4', provider: 'openai' },
   { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'google' },
 ] as const
 
