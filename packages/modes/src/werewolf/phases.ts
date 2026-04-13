@@ -16,7 +16,6 @@ import {
   createGuardProtectSchema,
   createSheriffVoteSchema,
   createSheriffTransferSchema,
-  createLastWordsSchema,
   checkWinCondition,
   type WerewolfGameState,
   type WerewolfRole,
@@ -351,21 +350,10 @@ function lastWordsPhase(phaseName: string): PhaseConfig {
       const s = ws(gs)
       return s.pendingLastWordsIds.filter((id) => !gs.activeAgentIds.has(id) || s.idiotRevealedIds.includes(id))
     },
-    getSchema: () => createLastWordsSchema(),
-    instruction: 'You have been eliminated. Share your last words with the village — any suspicions, information, or final thoughts.',
-    onExit: (gs, decisions) => {
-      const s = ws(gs)
-      for (const [agentId, decision] of decisions.decisions) {
-        const d = decision as { speech: string; revealRole: boolean }
-        const name = s.agentNames[agentId] ?? agentId
-        if (d.revealRole) {
-          const role = s.roleMap[agentId] ?? 'unknown'
-          emit(gs, `**${name}** (last words, revealing role: **${role}**): ${d.speech}`)
-        } else {
-          emit(gs, `**${name}** (last words): ${d.speech}`)
-        }
-      }
-      s.pendingLastWordsIds = []
+    // No schema — last words are free-form text, not structured output
+    instruction: 'You have been eliminated. These are your LAST WORDS — share any suspicions, reveal your role if you choose, and give final advice to the village. Keep it concise.',
+    onExit: (gs) => {
+      ws(gs).pendingLastWordsIds = []
     },
   }
 }

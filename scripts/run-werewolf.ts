@@ -26,8 +26,8 @@ function makeModel(base: Pick<ModelConfig, 'provider' | 'modelId'>): ModelConfig
 
 // ── Agent Setup ────────────────────────────────────────────
 
-// 9-player standard 预女猎 configuration: 3W + 1Seer + 1Witch + 1Hunter + 3V
-const AGENTS = [
+// All available agents (pick N based on --players flag)
+const ALL_AGENTS = [
   { name: 'Elena', model: makeModel(MODELS.claude) },
   { name: 'Marcus', model: makeModel(MODELS.gpt) },
   { name: 'Yuki', model: makeModel(MODELS.gemini) },
@@ -37,7 +37,14 @@ const AGENTS = [
   { name: 'Luna', model: makeModel(MODELS.claude) },
   { name: 'Felix', model: makeModel(MODELS.gpt) },
   { name: 'Nora', model: makeModel(MODELS.gemini) },
+  { name: 'Oscar', model: makeModel(MODELS.claude) },
+  { name: 'Ivy', model: makeModel(MODELS.gpt) },
+  { name: 'Ravi', model: makeModel(MODELS.gemini) },
 ]
+
+const playerCountArg = process.argv.find((a) => a.startsWith('--players='))
+const playerCount = playerCountArg ? parseInt(playerCountArg.split('=')[1]!, 10) : 9
+const AGENTS = ALL_AGENTS.slice(0, Math.min(playerCount, 12))
 
 // ── Runner ──────────────────────────────────────────────────
 
@@ -82,6 +89,8 @@ async function main() {
     seer: '🔮',
     witch: '🧪',
     hunter: '🏹',
+    guard: '🛡️',
+    idiot: '🃏',
   }
   for (const [agentId, role] of Object.entries(result.roleAssignments)) {
     const name = result.agentNames[agentId]
