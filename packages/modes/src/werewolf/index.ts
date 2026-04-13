@@ -168,29 +168,25 @@ export function createWerewolf(
 
   // Set up channels
   // Main channel already exists (all agents subscribed via addAgent)
-  room.channels.createChannel({
-    id: 'werewolf',
-    roomId,
-    name: 'Werewolf Night',
-    parentId: null,
-    autoBroadcast: false,
-  })
-  room.channels.createChannel({
-    id: 'seer-result',
-    roomId,
-    name: 'Seer Investigation',
-    parentId: null,
-    autoBroadcast: false,
-  })
-  room.channels.createChannel({
-    id: 'witch-action',
-    roomId,
-    name: 'Witch Action',
-    parentId: null,
-    autoBroadcast: false,
-  })
+  const privateChannels = [
+    { id: 'werewolf', name: 'Werewolf Night' },
+    { id: 'seer-result', name: 'Seer Investigation' },
+    { id: 'witch-action', name: 'Witch Action' },
+    // Blind vote channels — NO subscribers (simultaneous voting)
+    { id: 'wolf-vote', name: 'Wolf Vote (blind)' },
+    { id: 'day-vote', name: 'Day Vote (blind)' },
+  ]
+  for (const ch of privateChannels) {
+    room.channels.createChannel({
+      id: ch.id,
+      roomId,
+      name: ch.name,
+      parentId: null,
+      autoBroadcast: false,
+    })
+  }
 
-  // Subscribe roles to their private channels
+  // Subscribe roles to their private channels (blind channels get NO subscribers)
   for (const wolfId of wolfIds) {
     room.channels.subscribe('werewolf', wolfId)
   }
@@ -215,9 +211,14 @@ export function createWerewolf(
     witchSaveUsed: false,
     witchPoisonUsed: false,
     witchPoisonTarget: null,
+    witchUsedPotionTonight: false,
     seerResult: null,
     nightNumber: 1,
     agentNames,
+    hunterCanShoot: false,
+    hunterPendingId: null,
+    hunterShotTarget: null,
+    winResult: null,
   }
 
   flow.setGameState({

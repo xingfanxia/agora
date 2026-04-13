@@ -26,6 +26,7 @@ function makeModel(base: Pick<ModelConfig, 'provider' | 'modelId'>): ModelConfig
 
 // ── Agent Setup ────────────────────────────────────────────
 
+// 9-player standard 预女猎 configuration: 3W + 1Seer + 1Witch + 1Hunter + 3V
 const AGENTS = [
   { name: 'Elena', model: makeModel(MODELS.claude) },
   { name: 'Marcus', model: makeModel(MODELS.gpt) },
@@ -33,6 +34,9 @@ const AGENTS = [
   { name: 'Dmitri', model: makeModel(MODELS.claude) },
   { name: 'Zara', model: makeModel(MODELS.gpt) },
   { name: 'Kai', model: makeModel(MODELS.gemini) },
+  { name: 'Luna', model: makeModel(MODELS.claude) },
+  { name: 'Felix', model: makeModel(MODELS.gpt) },
+  { name: 'Nora', model: makeModel(MODELS.gemini) },
 ]
 
 // ── Runner ──────────────────────────────────────────────────
