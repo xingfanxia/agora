@@ -65,6 +65,7 @@ async function main() {
     villager: '👤',
     seer: '🔮',
     witch: '🧪',
+    hunter: '🏹',
   }
   for (const [agentId, role] of Object.entries(result.roleAssignments)) {
     const name = result.agentNames[agentId]
