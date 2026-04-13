@@ -1,0 +1,21 @@
+{
+  "name": "@agora/modes",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@agora/shared": "workspace:*",
+    "@agora/core": "workspace:*",
+    "@agora/llm": "workspace:*"
+  },
+  "devDependencies": {
+    "@agora/eslint-config": "workspace:*",
+    "@agora/typescript-config": "workspace:*",
+    "typescript": "5.9.2"
+  }
+}
