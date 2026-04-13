@@ -20,6 +20,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@agora/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@agora/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
       '@agora/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -134,6 +140,9 @@ importers:
       '@agora/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.19.17
       typescript:
         specifier: 5.9.2
         version: 5.9.2
@@ -156,6 +165,9 @@ importers:
       '@agora/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.15.3
+        version: 22.19.17
       typescript:
         specifier: 5.9.2
         version: 5.9.2
