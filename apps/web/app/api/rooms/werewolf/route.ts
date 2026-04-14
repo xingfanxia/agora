@@ -3,6 +3,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { TokenAccountant } from '@agora/core'
 import type { GenerateFn, GenerateObjectFn } from '@agora/core'
 import {
@@ -14,23 +15,26 @@ import {
 import { createWerewolf } from '@agora/modes'
 import type { LLMProvider, ModelConfig } from '@agora/shared'
 import type { WerewolfAdvancedRules } from '@agora/modes'
+import {
+  createRoom,
+  setGameState,
+  updateRoomStatus,
+  type AgentInfo,
+} from '../../../lib/room-store'
+import {
+  registerRuntime,
+  disposeRuntime,
+} from '../../../lib/runtime-registry'
+import {
+  flushRuntimePending,
+  wireEventPersistence,
+  wireGameStateSnapshots,
+} from '../../../lib/persist-runtime'
 
 // The LLM package types the schema as ZodSchema; core types it as unknown.
-// These are structurally incompatible at the parameter position, so cast.
 const _createGenFn: (model: ModelConfig) => GenerateFn = createGenerateFn
 const _createObjFn: (model: ModelConfig) => GenerateObjectFn = (m) =>
   createGenerateObjectFn(m) as unknown as GenerateObjectFn
-import {
-  setRoomState,
-  addMessage,
-  updateRoomStatus,
-  setThinkingAgent,
-  setCurrentPhase,
-  setAccountant,
-  setGameState,
-  addEvent,
-} from '../../../lib/room-store'
-import type { RoomState, AgentInfo } from '../../../lib/room-store'
 
 interface PlayerInput {
   name: string
@@ -83,90 +87,75 @@ export async function POST(request: Request) {
 
     const roomId = result.room.config.id
 
-    // Collect agent info for room store
-    const agentInfos: AgentInfo[] = result.room
-      .getAgentIds()
-      .map((id) => {
-        const agent = result.room.getAgent(id)!
-        return {
-          id,
-          name: agent.config.name,
-          model: agent.config.model.modelId,
-          provider: agent.config.model.provider,
-        }
-      })
+    // Gather agent info + role assignments for DB
+    const agentInfos: AgentInfo[] = result.room.getAgentIds().map((id) => {
+      const agent = result.room.getAgent(id)!
+      return {
+        id,
+        name: agent.config.name,
+        model: agent.config.model.modelId,
+        provider: agent.config.model.provider,
+      }
+    })
 
-    // Role assignments for the frontend
     const roleAssignments: Record<string, string> = {}
     for (const [id, role] of Object.entries(result.roleAssignments)) {
       roleAssignments[id] = role
     }
 
-    const roomState: RoomState = {
+    // Persist room shell
+    await createRoom({
       id: roomId,
-      topic: 'Werewolf',
-      rounds: 0, // not used by werewolf
       modeId: 'werewolf',
+      topic: 'Werewolf',
+      config: { players: body.players, advancedRules },
       agents: agentInfos,
-      messages: [],
-      events: [],
-      status: 'running',
-      currentRound: 1,
-      thinkingAgentId: null,
-      currentPhase: null,
       roleAssignments,
       advancedRules: advancedRules as Record<string, boolean>,
-    }
-    setRoomState(roomId, roomState)
+    })
 
-    // Wire the token accountant
+    // Snapshot the initial custom game state (roleMap, flags, etc.)
+    await setGameState(roomId, {
+      ...(result.flow.getGameState().custom as Record<string, unknown>),
+    })
+
+    // Build runtime + wire persistence
     const pricingMap = await buildPricingMap(agentConfigs.map((a) => a.model))
-    const calculateCost = createCostCalculator(pricingMap)
-    const accountant = new TokenAccountant(result.eventBus, calculateCost)
-    setAccountant(roomId, accountant)
-
-    // Persist token:recorded events in the room event log for observability
-    result.eventBus.on('token:recorded', (event) => {
-      addEvent(roomId, event)
+    const accountant = new TokenAccountant(result.eventBus, createCostCalculator(pricingMap))
+    const runtime = registerRuntime(roomId, {
+      eventBus: result.eventBus,
+      room: result.room,
+      flow: result.flow,
+      accountant,
     })
+    wireEventPersistence(roomId, result.eventBus, runtime)
+    wireGameStateSnapshots(
+      roomId,
+      result.eventBus,
+      runtime,
+      () => ({ ...(result.flow.getGameState().custom as Record<string, unknown>) }),
+    )
 
-    // Wire event bus → room store
-    result.eventBus.on('message:created', (event) => {
-      addMessage(roomId, event.message)
-      addEvent(roomId, event)
-    })
-
-    result.eventBus.on('agent:thinking', (event) => {
-      setThinkingAgent(roomId, event.agentId)
-      addEvent(roomId, event)
-    })
-
-    result.eventBus.on('agent:done', (event) => {
-      setThinkingAgent(roomId, null)
-      addEvent(roomId, event)
-    })
-
-    result.eventBus.on('phase:changed', (event) => {
-      setCurrentPhase(roomId, event.phase)
-      addEvent(roomId, event)
-
-      // Snapshot the custom game state after each phase for the frontend
-      const gs = result.flow.getGameState()
-      setGameState(roomId, { ...(gs.custom as Record<string, unknown>) })
-    })
-
-    result.eventBus.on('room:ended', () => {
-      // Final state snapshot so the winner + eliminated ids land in the UI
-      const gs = result.flow.getGameState()
-      setGameState(roomId, { ...(gs.custom as Record<string, unknown>) })
-      updateRoomStatus(roomId, 'completed')
-    })
-
-    // Start the game in the background
-    result.room.start(result.flow).catch((error) => {
-      console.error(`Werewolf room ${roomId} failed:`, error)
-      updateRoomStatus(roomId, 'error')
-    })
+    // Run the game in background
+    waitUntil(
+      result.room
+        .start(result.flow)
+        .then(async () => {
+          await flushRuntimePending(runtime)
+          await updateRoomStatus(roomId, 'completed')
+          disposeRuntime(roomId)
+        })
+        .catch(async (error) => {
+          console.error(`Werewolf room ${roomId} failed:`, error)
+          await flushRuntimePending(runtime)
+          await updateRoomStatus(
+            roomId,
+            'error',
+            error instanceof Error ? error.message : String(error),
+          )
+          disposeRuntime(roomId)
+        }),
+    )
 
     return NextResponse.json({ roomId })
   } catch (error) {

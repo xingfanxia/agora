@@ -3,24 +3,16 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { getRoomState } from '../../../../lib/room-store'
-import type { AgentTokenTotals, ModelTokenTotals } from '@agora/core'
-
-/** Map -> array so JSON is stable and cheap to consume. */
-function serializeTotals<T extends AgentTokenTotals | ModelTokenTotals>(
-  values: IterableIterator<T>,
-): T[] {
-  return [...values]
-}
+import { getMessagesSince, getRoomSnapshot } from '../../../../lib/room-store'
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const room = getRoomState(id)
 
-  if (!room) {
+  const snapshot = await getRoomSnapshot(id)
+  if (!snapshot) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 })
   }
 
@@ -28,36 +20,23 @@ export async function GET(
   const afterParam = url.searchParams.get('after')
   const after = afterParam ? parseInt(afterParam, 10) : 0
 
-  const messages =
-    after > 0 ? room.messages.filter((m) => m.timestamp > after) : room.messages
-
-  const tokenSummary = room.accountant
-    ? (() => {
-        const s = room.accountant.getSummary(id)
-        return {
-          totalCost: s.totalCost,
-          totalTokens: s.totalTokens,
-          callCount: s.callCount,
-          byAgent: serializeTotals(s.byAgent.values()),
-          byModel: serializeTotals(s.byModel.values()),
-        }
-      })()
-    : null
+  const messages = await getMessagesSince(id, after)
 
   return NextResponse.json({
     messages,
-    status: room.status,
-    currentRound: room.currentRound,
-    totalRounds: room.rounds,
-    currentPhase: room.currentPhase,
-    modeId: room.modeId,
-    thinkingAgentId: room.thinkingAgentId,
-    agents: room.agents,
-    topic: room.topic,
-    tokenSummary,
-    roleAssignments: room.roleAssignments ?? null,
-    advancedRules: room.advancedRules ?? null,
-    gameState: room.gameState ?? null,
-    error: room.error,
+    status: snapshot.status,
+    currentRound: snapshot.currentRound,
+    totalRounds:
+      (snapshot.config as { rounds?: number } | null)?.rounds ?? snapshot.currentRound,
+    currentPhase: snapshot.currentPhase,
+    modeId: snapshot.modeId,
+    thinkingAgentId: snapshot.thinkingAgentId,
+    agents: snapshot.agents,
+    topic: snapshot.topic ?? '',
+    tokenSummary: snapshot.tokenSummary,
+    roleAssignments: snapshot.roleAssignments,
+    advancedRules: snapshot.advancedRules,
+    gameState: snapshot.gameState,
+    error: snapshot.error,
   })
 }
