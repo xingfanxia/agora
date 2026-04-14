@@ -4,29 +4,17 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { MessageList } from '../../components/MessageList'
-import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
-import { ChannelTabs } from '../../components/ChannelTabs'
-import { PhaseIndicator } from '../../components/PhaseIndicator'
 import type { AgentData, MessageData, PollResponse } from '../../components/theme'
 import { createAgentColorMap, prefersDark } from '../../components/theme'
+import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
+import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
+import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
+import { PhaseBadge } from '../../components/v2/PhaseBadge'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
   snapshot: Omit<PollResponse, 'messages'>
-}
-
-// ── Label maps ───────────────────────────────────────────────
-
-const ROLE_EMOJI: Record<string, string> = {
-  werewolf: '🐺',
-  seer: '🔮',
-  witch: '🧪',
-  hunter: '🏹',
-  guard: '🛡️',
-  idiot: '🃏',
-  villager: '👤',
 }
 
 function isNightPhase(phase: string | null): boolean {
@@ -34,41 +22,46 @@ function isNightPhase(phase: string | null): boolean {
   return ['wolfDiscuss', 'wolfVote', 'witchAction', 'seerCheck', 'guardProtect'].includes(phase)
 }
 
-// ── View ─────────────────────────────────────────────────────
-
 export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   const params = useParams()
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
-  const [activeChannel, setActiveChannel] = useState('main')
+  const [channelFilter, setChannelFilter] = useState<string | null>(null)
+  const [modalAgentId, setModalAgentId] = useState<string | null>(null)
   const t = useTranslations('werewolf')
   const tCommon = useTranslations('common')
   const tRoom = useTranslations('room')
 
-  const phaseLabels = useMemo(() => ({
-    sheriffElection: t('phases.sheriffElection'),
-    sheriffElected: t('phases.sheriffElected'),
-    guardProtect: t('phases.guardProtect'),
-    wolfDiscuss: t('phases.wolfDiscuss'),
-    wolfVote: t('phases.wolfVote'),
-    witchAction: t('phases.witchAction'),
-    seerCheck: t('phases.seerCheck'),
-    dawn: t('phases.dawn'),
-    dayDiscuss: t('phases.dayDiscuss'),
-    dayVote: t('phases.dayVote'),
-    lastWords: t('phases.lastWords'),
-    gameOver: t('phases.gameOver'),
-  }), [t])
+  const phaseLabels = useMemo(
+    () => ({
+      sheriffElection: t('phases.sheriffElection'),
+      sheriffElected: t('phases.sheriffElected'),
+      guardProtect: t('phases.guardProtect'),
+      wolfDiscuss: t('phases.wolfDiscuss'),
+      wolfVote: t('phases.wolfVote'),
+      witchAction: t('phases.witchAction'),
+      seerCheck: t('phases.seerCheck'),
+      dawn: t('phases.dawn'),
+      dayDiscuss: t('phases.dayDiscuss'),
+      dayVote: t('phases.dayVote'),
+      lastWords: t('phases.lastWords'),
+      gameOver: t('phases.gameOver'),
+    }),
+    [t],
+  )
 
-  const channelLabels: Record<string, string> = useMemo(() => ({
-    main: t('channels.main'),
-    werewolf: t('channels.werewolf'),
-    'seer-result': t('channels.seerResult'),
-    'witch-action': t('channels.witchAction'),
-    'wolf-vote': t('channels.wolfVote'),
-    'day-vote': t('channels.dayVote'),
-    'guard-action': t('channels.guardAction'),
-  }), [t])
+  const channelLabels: Record<string, string> = useMemo(
+    () => ({
+      main: t('channels.main'),
+      werewolf: t('channels.werewolf'),
+      'seer-result': t('channels.seerResult'),
+      'witch-action': t('channels.witchAction'),
+      'wolf-vote': t('channels.wolfVote'),
+      'day-vote': t('channels.dayVote'),
+      'guard-action': t('channels.guardAction'),
+    }),
+    [t],
+  )
 
   useEffect(() => {
     setIsDark(prefersDark())
@@ -89,17 +82,18 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
     thinkingAgentId,
     tokenSummary,
     currentPhase,
+    currentRound,
     roleAssignments,
     advancedRules,
     gameState,
   } = snapshot
 
-  // Which channels have ever been populated with messages? Only show populated + main.
+  // Channels that have messages + main by default. Powers ChatSidebar filter.
   const discoveredChannels = useMemo(() => {
     const seen = new Set<string>(['main'])
     for (const m of messages) seen.add(m.channelId)
-    return [...seen]
-  }, [messages])
+    return [...seen].map((id) => ({ id, name: channelLabels[id] ?? `#${id}` }))
+  }, [messages, channelLabels])
 
   const eliminatedIds = useMemo(() => {
     const raw = gameState?.['eliminatedIds']
@@ -107,8 +101,61 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   }, [gameState])
 
   const winResult = (gameState?.['winResult'] as string | undefined) ?? null
-
   const isNight = isNightPhase(currentPhase)
+
+  // Latest message per agent — skip system/narrator so the bubble shows
+  // the agent's last utterance, not a phase announcement.
+  const latestByAgent = useMemo(() => {
+    const m = new Map<string, MessageData>()
+    for (const msg of messages) {
+      if (msg.senderId === 'system') continue
+      m.set(msg.senderId, msg)
+    }
+    return m
+  }, [messages])
+
+  const tableAgents: RoundTableAgent[] = useMemo(
+    () =>
+      agents.map((a) => {
+        const latest = latestByAgent.get(a.id)
+        const role = roleAssignments?.[a.id]
+        const dead = eliminatedIds.has(a.id)
+        return {
+          agentId: a.id,
+          name: a.name,
+          provider: a.provider,
+          color: colorFor(a.id),
+          latestMessage:
+            latest && !dead ? { id: latest.id, content: latest.content } : undefined,
+          thinking: thinkingAgentId === a.id && !dead,
+          speaking: !!latest && thinkingAgentId !== a.id && !dead,
+          role,
+          eliminated: dead,
+        }
+      }),
+    [agents, latestByAgent, colorFor, thinkingAgentId, roleAssignments, eliminatedIds],
+  )
+
+  const chatMessages: ChatSidebarMessage[] = useMemo(
+    () =>
+      messages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        senderName: m.senderName ?? 'Unknown',
+        channelId: m.channelId,
+        content: m.content,
+        timestamp: m.timestamp,
+        isSystem: m.senderId === 'system',
+        provider: agents.find((a) => a.id === m.senderId)?.provider,
+      })),
+    [messages, agents],
+  )
+
+  const selectedAgent: AgentData | undefined = modalAgentId
+    ? agents.find((a) => a.id === modalAgentId)
+    : undefined
+
+  const selectedRole = selectedAgent ? roleAssignments?.[selectedAgent.id] : undefined
 
   return (
     <div
@@ -116,10 +163,9 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        maxWidth: '960px',
+        maxWidth: '1400px',
         margin: '0 auto',
         padding: '0 1rem',
-        // Subtle night-mode tint
         background: isNight
           ? 'linear-gradient(180deg, color-mix(in srgb, #0b1020 30%, transparent), transparent 40%)'
           : 'transparent',
@@ -134,7 +180,14 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            marginBottom: '0.5rem',
+          }}
+        >
           <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
             {tCommon('appName')}
           </Link>
@@ -154,11 +207,6 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           <h1 style={{ fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
             {tRoom('werewolfMode')}
           </h1>
-          <PhaseIndicator
-            phase={currentPhase}
-            labelMap={phaseLabels}
-            accent={isNight ? '#4a4282' : undefined}
-          />
           <StatusPill status={status} />
           {advancedRules && (
             <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginLeft: 'auto' }}>
@@ -199,135 +247,94 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
         </div>
       )}
 
-      {/* Agent list with role badges */}
-      <WerewolfAgentList
-        agents={agents}
-        thinkingAgentId={thinkingAgentId}
-        colorFor={colorFor}
-        roleAssignments={roleAssignments}
-        eliminatedIds={eliminatedIds}
-      />
-
-      {/* Channel tabs */}
-      <ChannelTabs
-        channels={discoveredChannels.map((id) => ({
-          id,
-          label: channelLabels[id] ?? `#${id}`,
-        }))}
-        activeChannelId={activeChannel}
-        onChange={setActiveChannel}
-      />
-
-      {/* Messages (filtered to active channel) */}
-      <MessageList
-        messages={messages}
-        agents={agents}
-        thinkingAgentId={thinkingAgentId}
-        isRunning={status === 'running'}
-        colorFor={colorFor}
-        channelId={activeChannel}
-      />
+      {/* Main: round table + chat sidebar */}
+      <main
+        style={{
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) 340px',
+          gap: 0,
+          minHeight: 0,
+          position: 'relative',
+          marginTop: '1rem',
+        }}
+      >
+        <section style={{ position: 'relative', minHeight: 500, overflow: 'hidden' }}>
+          <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
+            <PhaseBadge
+              phase={currentPhase ?? ''}
+              label={currentPhase ? phaseLabels[currentPhase as keyof typeof phaseLabels] : undefined}
+              round={currentRound}
+              accent={isNight ? '#8b7ed8' : undefined}
+            />
+          </RoundTable>
+        </section>
+        <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+          <ChatSidebar
+            messages={chatMessages}
+            getAgentColor={colorFor}
+            channels={discoveredChannels}
+            channelFilter={channelFilter}
+            onChannelFilterChange={setChannelFilter}
+            title={tRoom('timeline')}
+          />
+        </aside>
+      </main>
 
       {status === 'completed' && !winResult && (
         <EndMessage text={t('winners.none')} />
       )}
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        @keyframes dots {
-          0% { content: ''; }
-          25% { content: '.'; }
-          50% { content: '..'; }
-          75% { content: '...'; }
-        }
-      `}</style>
+      {selectedAgent && (
+        <AgentDetailModal
+          open
+          onClose={() => setModalAgentId(null)}
+          agent={{
+            id: selectedAgent.id,
+            name: selectedAgent.name,
+            model: selectedAgent.model,
+            provider: selectedAgent.provider,
+            role: selectedRole,
+          }}
+          color={colorFor(selectedAgent.id)}
+          totals={tokenSummary?.byAgent.find((b) => b.agentId === selectedAgent.id)}
+          allMessages={chatMessages}
+        />
+      )}
     </div>
   )
 }
 
-// ── Helper components ────────────────────────────────────────
-
-function WerewolfAgentList({
-  agents,
-  thinkingAgentId,
-  colorFor,
-  roleAssignments,
-  eliminatedIds,
-}: {
-  agents: readonly AgentData[]
-  thinkingAgentId: string | null
-  colorFor: ReturnType<typeof createAgentColorMap>
-  roleAssignments: Record<string, string> | null
-  eliminatedIds: Set<string>
-}) {
-  const t = useTranslations('werewolf')
-  return (
-    <AgentList
-      agents={agents.map((a) => ({
-        ...a,
-        // Strike name if eliminated — done via renderExtra below instead
-      }))}
-      thinkingAgentId={thinkingAgentId}
-      colorFor={colorFor}
-      renderExtra={(agent) => {
-        const role = roleAssignments?.[agent.id]
-        const dead = eliminatedIds.has(agent.id)
-        return (
-          <>
-            {role && (
-              <span
-                title={role}
-                style={{
-                  fontSize: '0.85rem',
-                  marginLeft: '0.1rem',
-                  filter: dead ? 'grayscale(1) opacity(0.5)' : 'none',
-                }}
-              >
-                {ROLE_EMOJI[role] ?? '·'}
-              </span>
-            )}
-            {dead && (
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  padding: '0.08rem 0.375rem',
-                  borderRadius: '999px',
-                  background: 'var(--surface)',
-                  color: 'var(--danger)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  fontWeight: 600,
-                }}
-              >
-                {t('dead')}
-              </span>
-            )}
-          </>
-        )
-      }}
-    />
-  )
-}
+// ── Sub-components ────────────────────────────────────────────
 
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =
-    status === 'running' ? '#22c55e' : status === 'completed' ? 'var(--muted)' : 'var(--danger)'
-  const label = status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
-
+    status === 'running'
+      ? '#22c55e'
+      : status === 'completed'
+        ? 'var(--muted)'
+        : 'var(--danger)'
+  const label =
+    status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.375rem',
+        fontSize: '0.8rem',
+        color: 'var(--muted)',
+      }}
+    >
       <span
         style={{
           display: 'inline-block',
-          width: '6px',
-          height: '6px',
+          width: 6,
+          height: 6,
           borderRadius: '50%',
           background: dotColor,
-          animation: status === 'running' ? 'pulse 2s ease-in-out infinite' : 'none',
+          animation: status === 'running' ? 'agora-pulse 2s ease-in-out infinite' : 'none',
         }}
       />
       {label}
@@ -339,14 +346,14 @@ function EndMessage({ text }: { text: string }) {
   return (
     <div
       style={{
-        margin: '1rem 0',
         padding: '1rem 1.25rem',
+        margin: '1rem 0',
         borderRadius: 'var(--radius)',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
-        color: 'var(--muted)',
-        fontSize: '0.9rem',
         textAlign: 'center',
+        fontSize: '0.9rem',
+        color: 'var(--muted)',
       }}
     >
       {text}

@@ -4,11 +4,13 @@ import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { MessageList } from '../../components/MessageList'
-import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
-import type { MessageData, PollResponse } from '../../components/theme'
+import type { AgentData, MessageData, PollResponse } from '../../components/theme'
 import { createAgentColorMap, prefersDark } from '../../components/theme'
+import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
+import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
+import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
+import { PhaseBadge } from '../../components/v2/PhaseBadge'
 
 interface RoundtableViewProps {
   messages: readonly MessageData[]
@@ -19,6 +21,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
   const params = useParams()
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
+  const [modalAgentId, setModalAgentId] = useState<string | null>(null)
   const t = useTranslations('room')
   const tCommon = useTranslations('common')
 
@@ -30,7 +33,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  const colorFor = useMemo(() => createAgentColorMap(snapshot.agents, isDark), [snapshot.agents, isDark])
+  const colorFor = useMemo(
+    () => createAgentColorMap(snapshot.agents, isDark),
+    [snapshot.agents, isDark],
+  )
 
   const {
     agents,
@@ -42,13 +48,62 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
     tokenSummary,
   } = snapshot
 
+  // Latest message per agent drives the bubble content.
+  const latestByAgent = useMemo(() => {
+    const m = new Map<string, MessageData>()
+    for (const msg of messages) {
+      if (msg.senderId === 'system') continue
+      m.set(msg.senderId, msg)
+    }
+    return m
+  }, [messages])
+
+  const tableAgents: RoundTableAgent[] = useMemo(
+    () =>
+      agents.map((a) => {
+        const latest = latestByAgent.get(a.id)
+        return {
+          agentId: a.id,
+          name: a.name,
+          provider: a.provider,
+          color: colorFor(a.id),
+          latestMessage: latest
+            ? { id: latest.id, content: latest.content }
+            : undefined,
+          thinking: thinkingAgentId === a.id,
+          speaking:
+            !!latest && thinkingAgentId !== a.id,
+        }
+      }),
+    [agents, latestByAgent, colorFor, thinkingAgentId],
+  )
+
+  const chatMessages: ChatSidebarMessage[] = useMemo(
+    () =>
+      messages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        senderName: m.senderName ?? 'Unknown',
+        channelId: m.channelId,
+        content: m.content,
+        timestamp: m.timestamp,
+        isSystem: m.senderId === 'system',
+        provider: agents.find((a) => a.id === m.senderId)?.provider,
+      })),
+    [messages, agents],
+  )
+
+  const selectedAgent: AgentData | undefined = modalAgentId
+    ? agents.find((a) => a.id === modalAgentId)
+    : undefined
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        maxWidth: '860px',
+        maxWidth: '1400px',
         margin: '0 auto',
         padding: '0 1rem',
       }}
@@ -61,7 +116,14 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           flexShrink: 0,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            marginBottom: '0.5rem',
+          }}
+        >
           <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
             {tCommon('appName')}
           </Link>
@@ -90,11 +152,11 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
             flexWrap: 'wrap',
           }}
         >
-          <span>
-            {t('roundOf', { current: currentRound, total: totalRounds })}
-          </span>
+          <span>{t('roundOf', { current: currentRound, total: totalRounds })}</span>
           <StatusPill status={status} />
-          <span style={{ marginLeft: 'auto' }}>{t('agentCount', { count: agents.length })}</span>
+          <span style={{ marginLeft: 'auto' }}>
+            {t('agentCount', { count: agents.length })}
+          </span>
           <Link
             href={`/room/${roomId}/observability`}
             style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
@@ -108,51 +170,87 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
         </div>
       </header>
 
-      <AgentList agents={agents} thinkingAgentId={thinkingAgentId} colorFor={colorFor} />
+      {/* Main: round table + chat sidebar */}
+      <main
+        style={{
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) 340px',
+          gap: 0,
+          minHeight: 0,
+          position: 'relative',
+        }}
+      >
+        <section
+          style={{
+            position: 'relative',
+            minHeight: 420,
+            overflow: 'hidden',
+          }}
+        >
+          <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
+            <PhaseBadge
+              phase="debate"
+              label={t('roundOf', { current: currentRound, total: totalRounds })}
+              round={currentRound}
+            />
+          </RoundTable>
+        </section>
+        <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+          <ChatSidebar
+            messages={chatMessages}
+            getAgentColor={colorFor}
+            title={tCommon('appName')}
+          />
+        </aside>
+      </main>
 
-      <MessageList
-        messages={messages}
-        agents={agents}
-        thinkingAgentId={thinkingAgentId}
-        isRunning={status === 'running'}
-        colorFor={colorFor}
-      />
-
-      {status === 'completed' && <CompletedFooter messageCount={messages.length} rounds={totalRounds} />}
+      {status === 'completed' && (
+        <CompletedFooter messageCount={messages.length} rounds={totalRounds} />
+      )}
       {status === 'error' && <ErrorFooter error={snapshot.error} />}
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-        @keyframes dots {
-          0% { content: ''; }
-          25% { content: '.'; }
-          50% { content: '..'; }
-          75% { content: '...'; }
-        }
-      `}</style>
+      {selectedAgent && (
+        <AgentDetailModal
+          open
+          onClose={() => setModalAgentId(null)}
+          agent={{
+            id: selectedAgent.id,
+            name: selectedAgent.name,
+            model: selectedAgent.model,
+            provider: selectedAgent.provider,
+          }}
+          color={colorFor(selectedAgent.id)}
+          totals={tokenSummary?.byAgent.find((b) => b.agentId === selectedAgent.id)}
+          allMessages={chatMessages}
+        />
+      )}
     </div>
   )
 }
 
+// ── Sub-components (status pill, footers) kept from v1 ─────
+
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =
-    status === 'running' ? '#22c55e' : status === 'completed' ? 'var(--muted)' : 'var(--danger)'
-  const label = status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
-
+    status === 'running'
+      ? '#22c55e'
+      : status === 'completed'
+        ? 'var(--muted)'
+        : 'var(--danger)'
+  const label =
+    status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
       <span
         style={{
           display: 'inline-block',
-          width: '6px',
-          height: '6px',
+          width: 6,
+          height: 6,
           borderRadius: '50%',
           background: dotColor,
-          animation: status === 'running' ? 'pulse 2s ease-in-out infinite' : 'none',
+          animation: status === 'running' ? 'agora-pulse 2s ease-in-out infinite' : 'none',
         }}
       />
       {label}
@@ -160,12 +258,18 @@ function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
   )
 }
 
-function CompletedFooter({ messageCount, rounds }: { messageCount: number; rounds: number }) {
+function CompletedFooter({
+  messageCount,
+  rounds,
+}: {
+  messageCount: number
+  rounds: number
+}) {
   const t = useTranslations('room')
   return (
     <div
       style={{
-        padding: '1.5rem',
+        padding: '1rem 1.5rem',
         borderRadius: 'var(--radius)',
         border: '1px solid var(--border)',
         background: 'var(--surface)',
@@ -173,7 +277,9 @@ function CompletedFooter({ messageCount, rounds }: { messageCount: number; round
         margin: '1rem 0',
       }}
     >
-      <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>{t('debateComplete')}</p>
+      <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+        {t('debateComplete')}
+      </p>
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
         {t('messagesAcrossRounds', { messages: messageCount, rounds })}
       </p>
@@ -202,7 +308,7 @@ function ErrorFooter({ error }: { error?: string }) {
   return (
     <div
       style={{
-        padding: '1.5rem',
+        padding: '1rem 1.5rem',
         borderRadius: 'var(--radius)',
         border: '1px solid var(--danger)',
         background: 'color-mix(in srgb, var(--danger) 10%, transparent)',
