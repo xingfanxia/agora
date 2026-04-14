@@ -10,7 +10,13 @@ import {
   type GenerateFn,
   type GenerateObjectFn,
 } from '@agora/core'
-import type { ModelConfig } from '@agora/shared'
+import {
+  createSeededPrng,
+  seededShuffle,
+  seededUuid,
+  seededUuidList,
+  type ModelConfig,
+} from '@agora/shared'
 import { buildRoleSystemPrompt, getDefaultRoleDistribution } from './roles.js'
 import { createWerewolfStateMachineConfig } from './phases.js'
 import type { WerewolfRole, WerewolfGameState, WerewolfAdvancedRules } from './types.js'
@@ -30,6 +36,24 @@ export interface WerewolfConfig {
   readonly roleOverrides?: Record<string, WerewolfRole>
   /** Directive appended to every agent's system prompt (e.g. "respond in Chinese"). */
   readonly languageInstruction?: string
+  /**
+   * Deterministic seed for shuffle + id generation. When provided, two calls
+   * with the same seed (and same agents, advancedRules, roleOverrides) produce
+   * identical roomId + agentIds + roleAssignments. Required for durable
+   * runtime rehydration (room-runtime reloads from DB and rebuilds agents).
+   */
+  readonly seed?: string
+  /**
+   * Pre-generated agent ids aligned with `agents` (one per agent in order).
+   * When provided, overrides id generation. `seed` alone is usually enough;
+   * this is for callers that already persisted ids before (e.g. tick dispatcher).
+   */
+  readonly agentIds?: readonly string[]
+  /**
+   * Pre-generated room id. When `seed` is provided and `roomId` is not,
+   * `roomId` is derived deterministically from seed.
+   */
+  readonly roomId?: string
 }
 
 export interface WerewolfResult {
@@ -43,19 +67,11 @@ export interface WerewolfResult {
 
 // ── Role Assignment ────────────────────────────────────────
 
-function shuffleArray<T>(array: T[]): T[] {
-  const result = [...array]
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[result[i], result[j]] = [result[j]!, result[i]!]
-  }
-  return result
-}
-
 function assignRoles(
   agentIds: string[],
   agentNames: Record<string, string>,
   advancedRules: WerewolfAdvancedRules,
+  prng: () => number,
   roleOverrides?: Record<string, WerewolfRole>,
 ): Map<string, WerewolfRole> {
   if (roleOverrides) {
@@ -71,7 +87,7 @@ function assignRoles(
   }
 
   const roles = getDefaultRoleDistribution(agentIds.length, advancedRules)
-  const shuffledRoles = shuffleArray(roles)
+  const shuffledRoles = seededShuffle(prng, roles)
   const map = new Map<string, WerewolfRole>()
   agentIds.forEach((id, i) => map.set(id, shuffledRoles[i]!))
   return map
@@ -89,8 +105,28 @@ export function createWerewolf(
   if (config.agents.length < 6) throw new Error('Werewolf requires at least 6 players')
   if (config.agents.length > 12) throw new Error('Werewolf supports at most 12 players')
 
+  if (config.agentIds && config.agentIds.length !== config.agents.length) {
+    throw new Error('agentIds.length must match agents.length when provided')
+  }
+
   const eventBus = new EventBus()
-  const roomId = crypto.randomUUID()
+
+  // Determinism: when a seed is provided, all randomness (roomId, agentIds,
+  // role shuffle) flows from it. When no seed, fall back to crypto/Math.random
+  // for CLI-local runs that don't need replay.
+  const seed = config.seed
+  const roomId =
+    config.roomId ?? (seed ? seededUuid(seed, 'room') : crypto.randomUUID())
+  const agentIdList =
+    config.agentIds
+      ? [...config.agentIds]
+      : seed
+        ? seededUuidList(seed, config.agents.length)
+        : config.agents.map(() => crypto.randomUUID())
+  const shufflePrng = seed
+    ? createSeededPrng(`${seed}::roles`)
+    : Math.random
+
   const room = new Room(
     { id: roomId, name: 'Werewolf', modeId: 'werewolf', maxAgents: 12 },
     eventBus,
@@ -100,8 +136,9 @@ export function createWerewolf(
   const agentIds: string[] = []
   const agentNames: Record<string, string> = {}
 
-  for (const agentConfig of config.agents) {
-    const agentId = crypto.randomUUID()
+  for (let i = 0; i < config.agents.length; i++) {
+    const agentConfig = config.agents[i]!
+    const agentId = agentIdList[i]!
     agentIds.push(agentId)
     agentNames[agentId] = agentConfig.name
 
@@ -118,8 +155,8 @@ export function createWerewolf(
     room.addAgent(agent)
   }
 
-  // Assign roles
-  const roleMap = assignRoles(agentIds, agentNames, rules, config.roleOverrides)
+  // Assign roles (seeded if seed provided, otherwise Math.random)
+  const roleMap = assignRoles(agentIds, agentNames, rules, shufflePrng, config.roleOverrides)
   const roleAssignments: Record<string, WerewolfRole> = {}
   for (const [id, role] of roleMap) roleAssignments[id] = role
 
