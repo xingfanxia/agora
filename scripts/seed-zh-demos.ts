@@ -160,32 +160,30 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T
 }
 
-interface RoomSnapshot {
-  id: string
+interface PollResponse {
   status: string
-  messageCount: number
-  callCount: number
-  totalCost: number
-  modeId: string
+  messages?: Array<unknown>
+  tokenSummary?: { callCount: number; totalCost: number; totalTokens: number }
   error?: string | null
 }
 
-async function pollUntilComplete(roomId: string, label: string, timeoutMs = 30 * 60 * 1000): Promise<RoomSnapshot | null> {
+async function pollUntilComplete(roomId: string, label: string, timeoutMs = 30 * 60 * 1000): Promise<PollResponse | null> {
   const started = Date.now()
-  let lastMsgCount = -1
+  let lastCallCount = -1
   while (Date.now() - started < timeoutMs) {
-    const res = await fetch(`${apiUrl}/api/rooms/${roomId}`)
+    const res = await fetch(`${apiUrl}/api/rooms/${roomId}/messages`)
     if (!res.ok) {
       console.warn(`[${label}] snapshot fetch failed: ${res.status}`)
       await sleep(5000)
       continue
     }
-    const snapshot = (await res.json()) as RoomSnapshot
-    if (snapshot.messageCount !== lastMsgCount) {
+    const snapshot = (await res.json()) as PollResponse
+    const callCount = snapshot.tokenSummary?.callCount ?? 0
+    if (callCount !== lastCallCount) {
       console.log(
-        `[${label}] ${snapshot.status} · ${snapshot.messageCount} msgs · ${snapshot.callCount} calls · $${snapshot.totalCost.toFixed(4)}`,
+        `[${label}] ${snapshot.status} · ${(snapshot.messages ?? []).length} msgs · ${callCount} calls · $${(snapshot.tokenSummary?.totalCost ?? 0).toFixed(4)}`,
       )
-      lastMsgCount = snapshot.messageCount
+      lastCallCount = callCount
     }
     if (snapshot.status === 'completed' || snapshot.status === 'error') return snapshot
     await sleep(15000)
