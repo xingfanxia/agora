@@ -6,7 +6,9 @@
   "types": "./src/index.ts",
   "scripts": {
     "check-types": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@agora/shared": "workspace:*"
@@ -14,6 +16,7 @@
   "devDependencies": {
     "@agora/eslint-config": "workspace:*",
     "@agora/typescript-config": "workspace:*",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.1.4"
   }
 }

@@ -24,7 +24,14 @@ const db = new Proxy({} as ReturnType<typeof getDb>, {
   },
 })
 
-export type RoomStatus = 'running' | 'completed' | 'error'
+export type RoomStatus = 'running' | 'waiting' | 'completed' | 'error'
+
+export interface WaitingDescriptor {
+  /** Event type the runtime is waiting on (e.g. 'human:input'). */
+  eventName: string
+  /** Predicate the incoming event payload must match. */
+  match: Record<string, unknown>
+}
 
 export interface AgentInfo {
   id: string
@@ -68,12 +75,20 @@ export async function appendEvent(
   seq: number,
   event: PlatformEvent,
 ): Promise<void> {
-  await db.insert(events).values({
-    roomId,
-    seq,
-    type: event.type,
-    payload: event as unknown as object,
-  })
+  // ON CONFLICT DO NOTHING — under concurrent ticks (inline self-invoke
+  // overlapping pg_cron), two invocations may compute the same seq. The
+  // PK (roomId, seq) rejects duplicates; we silently swallow so the loser
+  // doesn't crash. Determinism guarantees both would have inserted the
+  // identical event payload.
+  await db
+    .insert(events)
+    .values({
+      roomId,
+      seq,
+      type: event.type,
+      payload: event as unknown as object,
+    })
+    .onConflictDoNothing({ target: [events.roomId, events.seq] })
 }
 
 // ── Incremental room updates ────────────────────────────────
@@ -109,7 +124,27 @@ export async function updateRoomStatus(
   const patch: Partial<RoomRow> = { status }
   if (status === 'completed' || status === 'error') patch.endedAt = now
   if (errorMessage) patch.errorMessage = errorMessage
+  // Clear waiting fields whenever leaving 'waiting' state.
+  if (status !== 'waiting') {
+    patch.waitingFor = null
+    patch.waitingUntil = null
+  }
   await db.update(rooms).set(patch).where(eq(rooms.id, roomId))
+}
+
+export async function setWaiting(
+  roomId: string,
+  waitingFor: WaitingDescriptor,
+  waitingUntil: Date | null,
+): Promise<void> {
+  await db
+    .update(rooms)
+    .set({
+      status: 'waiting',
+      waitingFor: waitingFor as unknown as object,
+      waitingUntil,
+    })
+    .where(eq(rooms.id, roomId))
 }
 
 // Running aggregate bumps (hot-read columns maintained incrementally)

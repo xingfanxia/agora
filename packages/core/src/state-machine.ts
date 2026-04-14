@@ -143,6 +143,64 @@ export class StateMachineFlow implements FlowController {
     return this.gameState
   }
 
+  /**
+   * Resume a game at a phase boundary (Phase 4.5a durable runtime).
+   *
+   * Replaces `initialize()` in the durable path — do NOT call initialize()
+   * before this. Rehydrate is a one-shot restore: it installs agentIds,
+   * gameState, currentPhaseName, and recomputes currentSpeakers without
+   * running any `onEnter` hook (whose side effects already applied in the
+   * original session when the phase was first entered).
+   *
+   * Per-phase counters (speakerIndex/turnCount/decisions/messages) reset to
+   * zero — the Phase 4.5a invariant is that checkpoints happen at phase
+   * boundaries, before any speaker in the new phase has spoken.
+   */
+  rehydrate(state: {
+    phaseName: string
+    round: number
+    agentIds: readonly string[]
+    roles: Map<string, string>
+    activeAgentIds: Set<string>
+    custom: Record<string, unknown>
+  }): void {
+    if (state.agentIds.length === 0) {
+      throw new Error('rehydrate: agentIds must be non-empty')
+    }
+
+    const phase = this.phaseMap.get(state.phaseName)
+    if (!phase) {
+      throw new Error(`Unknown phase during rehydrate: ${state.phaseName}`)
+    }
+
+    this.agentIds = [...state.agentIds]
+    this.gameState = {
+      roles: state.roles,
+      activeAgentIds: state.activeAgentIds,
+      custom: state.custom,
+    }
+    this.currentPhaseName = state.phaseName
+    this.round = state.round
+    this.speakerIndex = 0
+    this.turnCount = 0
+    this.phaseDecisions = new Map()
+    this.phaseMessages = []
+    this.pendingAnnouncements = []
+    this.initialized = true
+
+    // Terminal phase rehydration — mark complete, do not compute speakers.
+    if (this.config.terminalPhases.includes(state.phaseName)) {
+      this.currentSpeakers = []
+      this.complete = true
+      return
+    }
+
+    // Recompute speaker list from the restored gameState. Deterministic —
+    // same inputs produce same order.
+    this.currentSpeakers = phase.getSpeakers(this.gameState, this.agentIds)
+    this.complete = false
+  }
+
   /** Get any pending announcements and clear the queue */
   drainAnnouncements(): Announcement[] {
     // Also collect any announcements from gameState.custom (set by onEnter/onExit hooks)
