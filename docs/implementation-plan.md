@@ -15,9 +15,12 @@
 | **2b** | Werewolf Advanced | ✅ **DONE** | Togglable advanced rules | Werewolf (7 roles: +Guard, +Idiot) |
 | **3** | Frontend + Observability | ✅ **DONE** | Mode-specific UI, Token/cost tracking (LiteLLM), Observability timeline | — (enhance existing) |
 | **4** | Persistence + Replay | ✅ **DONE** | Postgres (Supabase) event store, DB-backed reads, /replays + /replay/[id] with animated playback, Vercel-ready runtime | — (enhance existing) |
-| **5** | Script Kill (was P4) | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
-| **6** | TRPG (was P5) | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
-| **7** | Platform (was P6) | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Auth, Hierarchical Flow | Custom |
+| **5** | UI Overhaul (i18n + Round Table) | ⏳ **NEXT** | next-intl (en/zh), round-table visualization with bubbles, click-to-view agent modal, WeChat-style chat sidebar | — (visual polish across both modes) |
+| **6** | Script Kill (was P4 → P5) | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
+| **7** | TRPG (was P5 → P6) | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
+| **8** | Platform (was P6 → P7) | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Auth, Hierarchical Flow | Custom |
+
+**Plan**: `docs/design/phase-5-plan.md` · **Handoff**: `docs/design/phase-5-handoff.md`
 
 **Current session date**: 2026-04-13
 **Handoff doc for Phase 3**: `docs/design/phase-3-handoff.md`
