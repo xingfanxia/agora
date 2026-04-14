@@ -4,15 +4,13 @@ Multi-agent collaboration platform where AI agents (and humans) gather to debate
 
 ## What is Agora?
 
-Agora is an open-source platform for orchestrating multiple AI agents in shared interactive sessions. Create a room, add agents with distinct personas and models, pick a mode, and watch them interact.
+Agora is an open-source platform for orchestrating multiple AI agents in shared interactive sessions. Create a room, add agents with distinct personas and models, pick a mode, and watch them interact — with live cost tracking and a full event timeline.
 
-**Initial modes** (difficulty ascending):
-- **Roundtable Debate** — Multiple AI models debate a topic, challenge each other, vote on best arguments
-- **Werewolf (狼人杀)** — Classic social deduction with information isolation and voting
-- **Script Kill (剧本杀)** — Murder mystery with private clues, investigation phases, and branching narratives
-- **TRPG (跑团)** — Tabletop RPG with an AI Game Master, dice rolls, and emergent storytelling
+**Modes shipped**:
+- **Roundtable Debate** — 2–8 AI agents debate a topic across N rounds
+- **Werewolf (狼人杀)** — 6–12 agents, Chinese standard rules, togglable Guard / Idiot / Sheriff / Last Words
 
-**Future modes**: OPC company simulation, brainstorming sessions, education scenarios, custom user-defined flows.
+**Modes on the roadmap**: Script Kill (剧本杀), TRPG (跑团), custom user-defined flows.
 
 ## Architecture
 
@@ -20,22 +18,45 @@ Three-layer design: general-purpose platform core with pluggable modes.
 
 ```
 Mode Layer        [Roundtable] [Werewolf] [Script Kill] [TRPG] [Custom]
-Platform Core     Agent | Room | Channel | FlowController | Memory | EventBus
-Infrastructure    Vercel AI SDK | Socket.io | Postgres | Next.js
+Platform Core     Agent | Room | Channel | FlowController | TokenAccountant | EventBus
+Infrastructure    Vercel AI SDK | Next.js 15 | (Postgres deferred)
 ```
 
 ## Tech Stack
 
-- **Monorepo**: Turborepo
-- **Frontend**: Next.js 15, Tailwind, shadcn/ui
-- **LLM**: Vercel AI SDK (Claude, GPT, Gemini, Qwen)
-- **Realtime**: Socket.io
-- **Storage**: Postgres (Supabase)
-- **Deployment**: Vercel
+- **Monorepo**: Turborepo + pnpm
+- **Frontend**: Next.js 15 (App Router), inline styles + CSS variables
+- **LLM**: Vercel AI SDK (Claude, GPT, Gemini, DeepSeek)
+- **Pricing**: LiteLLM registry (auto-fetched, with offline fallback)
+- **Storage**: in-memory for now (Postgres deferred)
+
+## Quick Start
+
+```bash
+pnpm install
+pnpm dev                                                     # Next.js at :3000
+npx tsx scripts/run-werewolf.ts --players=9                  # CLI werewolf game
+npx tsx scripts/run-werewolf.ts --guard --sheriff --players=12  # advanced rules
+npx tsx scripts/token-report.ts                              # LiteLLM pricing snapshot
+```
+
+`.env` keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`.
+
+## Web UI
+
+| Route | What it does |
+|-------|--------------|
+| `/` | Landing — pick a mode |
+| `/create` | Set up a roundtable debate (2-8 agents, 1-5 rounds, model + persona per agent) |
+| `/create-werewolf` | Set up a werewolf game (6-12 players, model per slot, advanced rule pills) |
+| `/room/[id]` | Live game / debate view, dispatched by mode — token cost panel, channel tabs (werewolf), role badges (werewolf) |
+| `/room/[id]/observability` | Filterable event timeline + per-call cost stream |
 
 ## Status
 
-Early development. See [docs/prd.md](docs/prd.md) for the product requirements and [docs/architecture.md](docs/architecture.md) for technical design.
+Phases 1, 2a, 2b, and 3 shipped (debate + werewolf core + advanced rules + UI + observability + token tracking). Phase 4 (Script Kill, persistent storage, replay) is up next.
+
+See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md), and [docs/implementation-plan.md](docs/implementation-plan.md).
 
 ## License
 

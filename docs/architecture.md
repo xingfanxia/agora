@@ -2205,194 +2205,293 @@ User -> Next.js API -> Room.start()
 
 ---
 
-## 11. Token Tracking & Cost Accounting (Phase 3)
+## 11. Token Tracking & Cost Accounting (Phase 3 ✅)
 
 > Captures real token usage from the AI SDK and computes cost per LLM call, per agent, per room.
+> Implemented via return-type extension (not callbacks) so usage flows naturally through `Message.metadata` and is reconstructable from any saved transcript.
 
-### 11.1 TokenUsage Type
+### 11.1 TokenUsage Type (`packages/shared/src/types.ts`)
 
 ```typescript
 interface TokenUsage {
   readonly inputTokens: number
-  readonly cachedInputTokens: number  // Claude prompt caching (free on cache hits)
   readonly outputTokens: number
+  readonly cachedInputTokens: number     // Anthropic prompt-cache READ
+  readonly cacheCreationTokens: number   // Anthropic prompt-cache WRITE
+  readonly reasoningTokens: number       // OpenAI o1-style hidden reasoning
   readonly totalTokens: number
-  readonly model: string
+}
+
+interface TokenUsageRecord {
+  readonly roomId: Id
+  readonly agentId: Id
+  readonly messageId: Id
   readonly provider: LLMProvider
+  readonly modelId: string
+  readonly usage: TokenUsage
+  readonly cost: number  // USD
   readonly timestamp: number
 }
 ```
 
+`provider` and `modelId` are stored alongside `usage` so the accountant doesn't need a reference to agents — totals can be rebuilt from any persisted message stream.
+
 ### 11.2 Capture Flow
 
 ```
-AI SDK generateText/generateObject
-  -> result.usage (input/output tokens)
-  -> result.providerMetadata.anthropic.cacheCreationInputTokens (if Claude)
-  -> createGenerateFn wrapper → onTokenUsage callback
-  -> AIAgent → forwards to Room
-  -> Room.tokenAccountant.record(usage)
-  -> EventBus.emit('token:recorded', { ..., cost })
-  -> Message.metadata.tokenUsage (per-turn persistence)
+AI SDK generateText / generateObject
+  → extractUsage(result)            // pulls usage + providerMetadata
+  → GenerateFn returns { content, usage }
+  → AIAgent.reply()                 // builds Message
+  → Message.metadata = { tokenUsage, provider, modelId, decision? }
+  → Room emits 'message:created'
+  → TokenAccountant.onMessage()     // listener
+  → calculateCost(usage, pricing)
+  → records.push(TokenUsageRecord)
+  → EventBus.emit('token:recorded', { ..., cost })
 ```
+
+No hidden state, no side-channel callbacks. Anthropic prompt-caching fields come from `result.providerMetadata.anthropic.{cacheReadInputTokens, cacheCreationInputTokens}`.
 
 ### 11.3 Pricing Source (LiteLLM)
 
-Pricing data fetched from LiteLLM's public JSON:
+`packages/llm/src/pricing.ts` fetches the LiteLLM registry once per process:
+
 `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/model_prices_and_context_window_backup.json`
 
-Structure per model:
-```json
-{
-  "claude-opus-4-6": {
-    "input_cost_per_token": 0.000015,
-    "cache_read_input_token_cost": 0.0000015,
-    "output_cost_per_token": 0.000075
-  }
-}
-```
-
-Cached at startup, refreshed periodically (or on demand).
-
-### 11.4 TokenAccountant API
+If the fetch fails, an offline fallback map covers the default lineup (Claude Opus/Sonnet 4.6, GPT-5.4, Gemini 3.1 Pro, DeepSeek Chat). LiteLLM stores prices as `cost_per_token` — the resolver multiplies by 1M so the public API exposes the more intuitive per-million unit.
 
 ```typescript
-class TokenAccountant {
-  record(usage: TokenUsage): number  // returns cost for this call
-  getAgentTotals(agentId: Id): { usage: TokenUsage; cost: number }
-  getRoomTotal(): { usage: TokenUsage; cost: number }
-  getModelBreakdown(): Map<string, { usage: TokenUsage; cost: number }>
-}
+async function resolvePricing(provider, modelId): Promise<ModelPricing | null>
+function calculateCost(usage, pricing): number
+function createCostCalculator(pricingMap): (provider, modelId, usage) => number
+async function buildPricingMap(modelConfigs): Promise<Map<string, ModelPricing>>
 ```
 
-Attached to Room at construction. Agents call `onTokenUsage` after each LLM call.
+`buildPricingMap` is called once at room creation; the resulting map gives a synchronous `calculateCost` for the hot path.
+
+### 11.4 TokenAccountant API (`packages/core/src/token-accountant.ts`)
+
+```typescript
+type CalculateCostFn = (provider: LLMProvider, modelId: string, usage: TokenUsage) => number
+
+class TokenAccountant {
+  constructor(eventBus: EventBus, calculateCost: CalculateCostFn)
+  dispose(): void
+
+  getRecords(roomId?: Id): readonly TokenUsageRecord[]
+  getSummary(roomId: Id): RoomTokenSummary
+}
+
+interface RoomTokenSummary {
+  roomId: Id
+  totalCost: number
+  totalTokens: number
+  callCount: number
+  records: readonly TokenUsageRecord[]
+  byAgent: ReadonlyMap<Id, AgentTokenTotals>
+  byModel: ReadonlyMap<string, ModelTokenTotals>
+}
+
+function formatSummary(summary, agentNames?): string  // console-friendly
+```
+
+Subscribes to `message:created` at construction. Agnostic of LLM packages — `calculateCost` is injected so core stays layered.
 
 ---
 
-## 12. Observability Layer (Phase 3)
+## 12. Observability Layer (Phase 3 ✅)
 
-> Captures granular events for debugging, replay, and demos. Extends EventBus with structured events.
+> Per-room event log streamed to a filterable timeline. In-memory for now; Postgres event store is the path to durable replay (see §14).
 
-### 12.1 Observability Events (extension of PlatformEvent)
+### 12.1 Shipped Events
 
 ```typescript
 type PlatformEvent =
-  // ... existing events ...
-  | { type: 'token:recorded'; roomId: Id; agentId: Id; messageId: Id; usage: TokenUsage; cost: number }
-  | { type: 'decision:made'; roomId: Id; agentId: Id; phase: string; decision: unknown; schema: string }
-  | { type: 'memory:snapshot'; roomId: Id; agentId: Id; messageCount: number; visibleChannels: readonly Id[] }
-  | { type: 'channel:published'; roomId: Id; channelId: Id; messageId: Id; receivers: readonly Id[] }
+  | { type: 'room:created' | 'room:started' | 'room:ended'; roomId: Id }
+  | { type: 'agent:joined'; roomId: Id; agent: AgentSummary }
+  | { type: 'agent:left'; roomId: Id; agentId: Id }
+  | { type: 'agent:thinking' | 'agent:done'; roomId: Id; agentId: Id }
+  | { type: 'message:created'; message: Message }
+  | { type: 'round:changed'; roomId: Id; round: number; maxRounds: number }
+  | { type: 'phase:changed'; roomId: Id; phase: string; previousPhase: string | null; metadata? }
+  | { type: 'token:recorded'; roomId: Id; agentId: Id; messageId: Id; provider; modelId; usage; cost }
 ```
+
+`decision:made`, `memory:snapshot`, and `channel:published` were considered but **deferred** — decisions already surface inline in `Message.metadata.decision` (the timeline tags them with a `decision` pill), and `message:created` + the existing channel filter cover what `channel:published` would carry.
 
 ### 12.2 Event Log
 
-Events are accumulated in a per-room event log (in-memory for Phase 3, Postgres in Phase 4):
+Stored on the in-memory `RoomState.events: PlatformEvent[]` (`apps/web/app/lib/room-store.ts`). Event ordering is captured by array index — the API exposes `?after=<index>` for incremental polling. Persistence is the open piece (Phase 4 goal).
+
+### 12.3 Timeline View (`apps/web/app/room/[id]/components/Timeline.tsx`)
+
+Filterable client-side by:
+- Event type: All / Messages / Phases / Tokens / Thinking
+- Agent: dropdown of all participants
+
+Color-coded dots per event type. Decision messages get an inline `decision` pill. Token rows render `name · model · totalTokens · cost`.
+
+### 12.4 Endpoint (`apps/web/app/api/rooms/[id]/events/route.ts`)
 
 ```typescript
-interface EventLog {
-  readonly events: readonly StampedEvent[]
-  append(event: PlatformEvent): void
-  filter(predicate: (e: StampedEvent) => boolean): readonly StampedEvent[]
-  slice(fromTimestamp: number, toTimestamp: number): readonly StampedEvent[]
-}
+GET /api/rooms/:id/events?after=<index>
+→ { events: { index, timestamp, event }[], total, status }
 ```
 
-### 12.3 Timeline View
+The dedicated `/room/[id]/observability` page polls events + the messages snapshot in parallel.
 
-UI subscribes to the event stream and renders a chronological timeline. Filters:
-- By event type (message, decision, token, phase, channel)
-- By agent
-- By phase
-- By channel
+### 12.5 Deferred
 
-### 12.4 Agent Memory Inspector
-
-Reconstructs an agent's view at any point in time:
-1. Filter events to `message:created` and `memory:snapshot` up to time T
-2. Apply `ChannelManager.filterMessagesForAgent` using the agent's subscriptions at time T
-3. Render as a per-agent message feed
-
-**Critical for werewolf debugging**: easily verify wolves don't see villager-private channels.
+- **AgentMemoryInspector** (planned §12.4 originally) — reconstructing per-agent visible history at time T. Less needed than expected since channel-aware Timeline filtering covers most werewolf-debugging cases.
+- **DecisionTree drill-down** — decisions already surface in MessageList with JSON pretty-print.
 
 ---
 
-## 13. Frontend Architecture (Phase 3)
+## 13. Frontend Architecture (Phase 3 ✅)
 
-> Generic + mode-specific pattern. Base components work for any mode; mode components compose them with mode-specific logic and styling.
+> Generic + mode-specific pattern. Shared components compose into mode views.
 
-### 13.1 Mode Dispatch
+### 13.1 Directory Layout
+
+```
+apps/web/app/
+├── page.tsx                              # landing — mode cards
+├── create/page.tsx                       # roundtable setup
+├── create-werewolf/page.tsx              # werewolf setup
+├── lib/room-store.ts                     # in-memory globalThis store
+├── api/rooms/
+│   ├── route.ts                          # POST /api/rooms (debate)
+│   ├── werewolf/route.ts                 # POST /api/rooms/werewolf
+│   └── [id]/
+│       ├── messages/route.ts             # GET /messages — snapshot + tokenSummary
+│       └── events/route.ts               # GET /events?after=N — timeline stream
+└── room/[id]/
+    ├── page.tsx                          # dispatcher by room.modeId
+    ├── observability/page.tsx            # timeline + cost panel
+    ├── components/                       # shared
+    │   ├── theme.ts
+    │   ├── MessageList.tsx
+    │   ├── AgentList.tsx
+    │   ├── ChannelTabs.tsx
+    │   ├── PhaseIndicator.tsx
+    │   ├── TokenCostPanel.tsx
+    │   └── Timeline.tsx
+    ├── hooks/
+    │   └── useRoomPoll.ts                # snapshot polling
+    └── modes/
+        ├── roundtable/RoundtableView.tsx
+        └── werewolf/WerewolfView.tsx
+```
+
+### 13.2 Mode Dispatch
 
 ```typescript
 // apps/web/app/room/[id]/page.tsx
-export default function RoomPage({ params }) {
-  const { room } = useRoom(params.id)
-  switch (room.modeId) {
-    case 'roundtable': return <RoundtableView room={room} />
-    case 'werewolf': return <WerewolfView room={room} />
-    default: return <GenericRoomView room={room} />
-  }
-}
+const { messages, snapshot } = useRoomPoll(roomId)
+if (snapshot.modeId === 'werewolf')   return <WerewolfView ... />
+if (snapshot.modeId === 'roundtable') return <RoundtableView ... />
+return <RoundtableView ... />  // safe default
 ```
 
-### 13.2 Shared Components
+### 13.3 Shared Components
 
 | Component | Responsibility |
 |-----------|---------------|
-| `MessageList` | Scrollable message feed, renders announcements + decisions differently |
-| `AgentList` | Avatars, names, roles (if revealed), model, status |
-| `ChannelTabs` | Tab selector for multi-channel rooms, filtered by viewer permissions |
-| `PhaseIndicator` | Current phase + progress within phase (turn N of M) |
-| `TokenCostPanel` | Live cost, breakdown per agent/model |
-| `Timeline` | Event timeline (observability) |
-| `AgentMemoryInspector` | Per-agent message history |
+| `MessageList` | Scrollable feed; renders system announcements, decisions (JSON pretty-print), and free-text differently. Optional `channelId` filter. |
+| `AgentList` | Pill row with name + model badge + thinking-state highlight. `renderExtra` slot for mode-specific decoration (role emoji, alive/dead). |
+| `ChannelTabs` | Tabs for multi-channel rooms. Hidden when only `main` is present. |
+| `PhaseIndicator` | Phase badge with optional `labelMap` (werewolf maps `wolfDiscuss` → "Wolves Conspire") and accent color. |
+| `TokenCostPanel` | Collapsible panel — total cost + tokens + call count, expands to per-model and per-agent breakdown. |
+| `Timeline` | Event timeline with type + agent filters. |
+| `theme.ts` | 8-color palette (light + dark variants) assigned by agent index, model-id label map, wire types, formatters. |
 
-### 13.3 Mode-Specific Components
+### 13.4 Mode-Specific Components
 
-**Roundtable:**
-- `RoundtableView` — wraps shared components with debate-specific styling
-- `RoundIndicator` — Round N of M
+**Roundtable** (`modes/roundtable/RoundtableView.tsx`)
+- Single-channel view, round counter, status pill, Timeline link
+- Composes `AgentList` + `MessageList` + `TokenCostPanel`
 
-**Werewolf:**
-- `WerewolfView` — main game view, switches layout based on phase (night/day)
-- `RoleCard` — private role display with strategy hints
-- `NightOverlay` — dim screen during night phases (for spectators)
-- `PhaseBanner` — dramatic phase transition (Night 1, Dawn, Day 1 Vote, etc.)
-- `VoteSummary` — post-vote tally animation with weighted sheriff visualization
+**Werewolf** (`modes/werewolf/WerewolfView.tsx`)
+- Phase banner with Chinese-rules labels (`PHASE_LABELS`)
+- Role emoji per agent (`🐺 🔮 🧪 🏹 🛡️ 🃏 👤`) with grayscale + "dead" tag for eliminated players
+- `ChannelTabs` over discovered channels (main / wolves / seer / witch / vote channels)
+- Subtle night-mode gradient when current phase is `wolfDiscuss / wolfVote / witchAction / seerCheck / guardProtect`
+- Winner banner pulled from `gameState.winResult`
 
-### 13.4 Spectator Mode
+### 13.5 Spectator Mode (deferred)
 
-A `?spectator=true` query param reveals all channels and all roles. Includes a **player perspective switcher**:
+The current implementation shows **all roles to all viewers** since rooms aren't user-scoped yet. A `?spectator=true` query param + per-viewer perspective switcher is **deferred** until auth/sessions land.
 
-```typescript
-// Switch to viewing as if you were Agent X
-const [perspectiveAgentId, setPerspective] = useState<Id | null>(null)
-const visibleMessages = perspectiveAgentId
-  ? filterMessagesForAgent(allMessages, perspectiveAgentId)
-  : allMessages  // god mode
-```
+### 13.6 State Management
 
-Critical for werewolf: spectators can experience the game from any player's perspective (seer's view, wolf's view, villager's view).
-
-### 13.5 State Management
-
-Phase 3 keeps polling-based updates (1-2s interval). SSE/WebSocket upgrade deferred to Phase 4.
+Polling-based, 1.5s interval (5s when `status !== 'running'`). SSE/WebSocket upgrade deferred until persistence lands.
 
 ```typescript
-function useRoom(id: Id) {
-  const [state, setState] = useState(...)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      const res = await fetch(`/api/rooms/${id}/state`)
-      setState(await res.json())
-    }, 1500)
-    return () => clearInterval(interval)
-  }, [id])
-  return state
-}
+useRoomPoll(roomId) → { messages, snapshot, errorMsg, loading }
+// snapshot:
+//   { agents, status, currentRound, totalRounds, currentPhase, modeId,
+//     thinkingAgentId, topic, tokenSummary, roleAssignments, advancedRules, gameState }
 ```
 
-API endpoints:
-- `GET /api/rooms/:id/state` — current phase, channels, agent roles (respects spectator/role filters)
-- `GET /api/rooms/:id/messages?after=T&channel=X` — filtered messages
-- `GET /api/rooms/:id/events?after=T&type=X` — observability event stream
-- `GET /api/rooms/:id/token-usage` — aggregated usage + cost
+### 13.7 API Endpoints (shipped)
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/rooms/:id/messages?after=<ts>` | Full snapshot + new messages since `ts` (includes `tokenSummary`, `roleAssignments`, `gameState`) |
+| `GET /api/rooms/:id/events?after=<index>` | Indexed event envelopes for the timeline |
+| `POST /api/rooms` | Create roundtable debate |
+| `POST /api/rooms/werewolf` | Create werewolf game |
+
+**Not built** (deferred — would land with persistence):
+- `GET /api/rooms/:id/state` (split out from `/messages` — currently bundled)
+- Per-viewer permission filtering on `/messages`
+
+---
+
+## 14. Persistence & Replay (Phase 4 — planned)
+
+> Current limitation: `RoomState` lives on `globalThis`. Restarting the dev server loses all games. Shared-link demos and post-hoc replay both need durable storage.
+
+### 14.1 Approach
+
+Persist the **event log** (not derived state) — the timeline + transcript can be replayed by re-emitting events in order. This matches the existing in-memory shape and adds optional storage as a strict addition.
+
+### 14.2 Tables (planned)
+
+```sql
+CREATE TABLE rooms (
+  id            UUID PRIMARY KEY,
+  mode_id       TEXT NOT NULL,
+  topic         TEXT,
+  config        JSONB NOT NULL,        -- agent list, advancedRules, etc.
+  status        TEXT NOT NULL,         -- running / completed / error
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  ended_at      TIMESTAMPTZ
+);
+
+CREATE TABLE events (
+  room_id       UUID REFERENCES rooms(id) ON DELETE CASCADE,
+  seq           INTEGER NOT NULL,      -- monotonic per room
+  type          TEXT NOT NULL,
+  payload       JSONB NOT NULL,
+  occurred_at   TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (room_id, seq)
+);
+
+CREATE INDEX events_room_seq ON events(room_id, seq);
+```
+
+`Message` and `TokenUsageRecord` are already inside event payloads — no separate tables needed for v1.
+
+### 14.3 Replay Routes
+
+- `GET /replay/[id]` — mode-aware view that re-emits events at configurable speed (1×, 5×, instant)
+- `GET /replays` — list of completed games with title, mode, duration, cost
+- A `[?from=<seq>]` parameter resumes mid-replay for deep-linking moments
+
+### 14.4 Live Server Path
+
+The simplest fit is Vercel Postgres or Supabase. The room-store gains `appendEvent(roomId, event)` on every `eventBus.emit`, and the polling endpoints can read from the same store — same shape, durable backend.
+
+**Open question for implementation**: SSE for live (push events to subscribers as they're appended) vs continuing to poll. Polling stays the cheaper default; SSE gets unlocked once durable storage lands since reconnect-after-disconnect becomes safe.
