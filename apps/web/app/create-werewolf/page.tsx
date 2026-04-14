@@ -6,21 +6,6 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { SettingsMenu } from '../components/SettingsMenu'
 
-const DEFAULT_NAMES = [
-  'Elena',
-  'Marcus',
-  'Yuki',
-  'Dmitri',
-  'Zara',
-  'Kai',
-  'Luna',
-  'Felix',
-  'Nora',
-  'Oscar',
-  'Ivy',
-  'Ravi',
-]
-
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' as const },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' as const },
@@ -44,9 +29,11 @@ export default function CreateWerewolf() {
   const router = useRouter()
   const t = useTranslations('werewolf')
   const tCommon = useTranslations('common')
+  // Locale-aware default player names so zh users see Chinese names.
+  const defaultNames = t.raw('defaultPlayerNames') as string[]
   const [playerCount, setPlayerCount] = useState(9)
   const [players, setPlayers] = useState<PlayerFormData[]>(() =>
-    DEFAULT_NAMES.slice(0, 9).map((name, i) => ({
+    defaultNames.slice(0, 9).map((name, i) => ({
       id: crypto.randomUUID(),
       name,
       model: defaultModelFor(i),
@@ -70,7 +57,7 @@ export default function CreateWerewolf() {
         for (let i = prev.length; i < newCount; i++) {
           next.push({
             id: crypto.randomUUID(),
-            name: DEFAULT_NAMES[i] ?? `Player${i + 1}`,
+            name: defaultNames[i] ?? `Player${i + 1}`,
             model: defaultModelFor(i),
           })
         }

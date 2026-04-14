@@ -20,34 +20,22 @@ const MODEL_OPTIONS = [
   { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', provider: 'google' },
 ] as const
 
-const DEFAULT_AGENTS: AgentFormData[] = [
-  {
-    id: crypto.randomUUID(),
-    name: 'The Optimist',
-    persona: 'You see the bright side of every argument. You believe in progress, human potential, and positive outcomes. You back up your optimism with concrete examples and evidence.',
-    model: 'claude-opus-4-6',
-  },
-  {
-    id: crypto.randomUUID(),
-    name: 'The Skeptic',
-    persona: 'You question assumptions and challenge conventional wisdom. You play devil\'s advocate and demand evidence. You\'re not negative — you\'re rigorous and intellectually honest.',
-    model: 'gpt-5.4',
-  },
-  {
-    id: crypto.randomUUID(),
-    name: 'The Pragmatist',
-    persona: 'You focus on practical implications and real-world constraints. You bridge idealism and realism by asking "how would this actually work?" You draw on historical precedents.',
-    model: 'gemini-3.1-pro-preview',
-  },
-]
-
 export default function CreateRoom() {
   const router = useRouter()
   const t = useTranslations('create')
   const tCommon = useTranslations('common')
+  // Pull locale-aware defaults from the dictionary. next-intl's
+  // t.raw() returns the raw JSON value so we get the array as-is.
+  const defaultAgentsRaw = t.raw('defaultAgents') as Array<{
+    name: string
+    persona: string
+    model: string
+  }>
   const [topic, setTopic] = useState('')
   const [rounds, setRounds] = useState(3)
-  const [agents, setAgents] = useState<AgentFormData[]>(DEFAULT_AGENTS)
+  const [agents, setAgents] = useState<AgentFormData[]>(() =>
+    defaultAgentsRaw.map((a) => ({ id: crypto.randomUUID(), ...a })),
+  )
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

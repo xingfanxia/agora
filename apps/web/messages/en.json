@@ -69,7 +69,24 @@
       "generic": "Something went wrong"
     },
     "submitStarting": "Starting...",
-    "submit": "Start Debate"
+    "submit": "Start Debate",
+    "defaultAgents": [
+      {
+        "name": "The Optimist",
+        "persona": "You see the bright side of every argument. You believe in progress, human potential, and positive outcomes. You back up your optimism with concrete examples and evidence.",
+        "model": "claude-opus-4-6"
+      },
+      {
+        "name": "The Skeptic",
+        "persona": "You question assumptions and challenge conventional wisdom. You play devil's advocate and demand evidence. You're not negative — you're rigorous and intellectually honest.",
+        "model": "gpt-5.4"
+      },
+      {
+        "name": "The Pragmatist",
+        "persona": "You focus on practical implications and real-world constraints. You bridge idealism and realism by asking \"how would this actually work?\" You draw on historical precedents.",
+        "model": "gemini-3.1-pro-preview"
+      }
+    ]
   },
   "werewolf": {
     "breadcrumb": "Werewolf",
@@ -129,7 +146,21 @@
       "hunter": "Hunter",
       "guard": "Guard",
       "idiot": "Idiot"
-    }
+    },
+    "defaultPlayerNames": [
+      "Elena",
+      "Marcus",
+      "Yuki",
+      "Dmitri",
+      "Zara",
+      "Kai",
+      "Luna",
+      "Felix",
+      "Nora",
+      "Oscar",
+      "Ivy",
+      "Ravi"
+    ]
   },
   "room": {
     "debateMode": "Debate",
