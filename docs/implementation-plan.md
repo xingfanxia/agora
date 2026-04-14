@@ -14,9 +14,10 @@
 | **2a** | Werewolf Core | ✅ **DONE** | Channel isolation, StateMachine Flow, Structured Output | Werewolf (5 roles) |
 | **2b** | Werewolf Advanced | ✅ **DONE** | Togglable advanced rules | Werewolf (7 roles: +Guard, +Idiot) |
 | **3** | Frontend + Observability | ✅ **DONE** | Mode-specific UI, Token/cost tracking (LiteLLM), Observability timeline | — (enhance existing) |
-| **4** | Script Kill | ⏸ Later | Long-term Memory, Clue/Evidence system, Branching Narrative | Script Kill |
-| **5** | TRPG | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
-| **6** | Platform | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay, Hierarchical Flow | Custom |
+| **4** | Persistence + Replay | ✅ **DONE** | Postgres (Supabase) event store, DB-backed reads, /replays + /replay/[id] with animated playback, Vercel-ready runtime | — (enhance existing) |
+| **5** | Script Kill (was P4) | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
+| **6** | TRPG (was P5) | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
+| **7** | Platform (was P6) | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Auth, Hierarchical Flow | Custom |
 
 **Current session date**: 2026-04-13
 **Handoff doc for Phase 3**: `docs/design/phase-3-handoff.md`
@@ -227,7 +228,21 @@ These deferred to Phase 3.5 or later — good post-Phase-3 work once the core UI
 
 ---
 
-## Phase 4: Script Kill — Deep Narrative + Memory
+## Phase 4: Persistence Foundation + Replay ✅ DONE
+
+**Shipped 2026-04-14.** See `docs/design/phase-4-plan.md` for the full rationale.
+
+Commits on main:
+- **ba4986d** — Phase 4 plan doc
+- **52e05f8** — packages/db with Drizzle + schema + migration + Supabase hookup
+- **52e05f8** — room-store rewrite: Postgres reads, waitUntil-based game runtime, event-log write-through
+- **8dec1c1** — /replays + animated /replay/[id] with scrubber + speed controls
+
+Validated locally: debate + werewolf games persist across server restarts; replays reconstruct full UI state from events.
+
+---
+
+## Phase 5: Script Kill — Deep Narrative + Memory
 
 **Goal**: Full murder mystery game with private clues, investigation phases, and branching narrative. Introduces long-term memory.
 
@@ -265,7 +280,7 @@ These deferred to Phase 3.5 or later — good post-Phase-3 work once the core UI
 
 ---
 
-## Phase 5: TRPG — Open-World Narrative
+## Phase 6: TRPG — Open-World Narrative
 
 **Goal**: AI Game Master runs a tabletop RPG session with AI/human players. Most complex mode.
 
@@ -301,7 +316,7 @@ These deferred to Phase 3.5 or later — good post-Phase-3 work once the core UI
 
 ---
 
-## Phase 6: Platform — Open Up
+## Phase 7: Platform — Open Up
 
 **Goal**: Let users create their own modes. Build the ecosystem.
 

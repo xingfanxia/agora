@@ -28,7 +28,8 @@ Infrastructure    Vercel AI SDK | Next.js 15 | (Postgres deferred)
 - **Frontend**: Next.js 15 (App Router), inline styles + CSS variables
 - **LLM**: Vercel AI SDK (Claude, GPT, Gemini, DeepSeek)
 - **Pricing**: LiteLLM registry (auto-fetched, with offline fallback)
-- **Storage**: in-memory for now (Postgres deferred)
+- **Storage**: Supabase Postgres (events table as source of truth, rooms as denormalized snapshot) via Drizzle
+- **Runtime**: Vercel Functions with `waitUntil()` for long-running game orchestration; Pro plan recommended
 
 ## Quick Start
 
@@ -46,15 +47,17 @@ npx tsx scripts/token-report.ts                              # LiteLLM pricing s
 
 | Route | What it does |
 |-------|--------------|
-| `/` | Landing — pick a mode |
+| `/` | Landing — pick a mode or browse replays |
 | `/create` | Set up a roundtable debate (2-8 agents, 1-5 rounds, model + persona per agent) |
 | `/create-werewolf` | Set up a werewolf game (6-12 players, model per slot, advanced rule pills) |
 | `/room/[id]` | Live game / debate view, dispatched by mode — token cost panel, channel tabs (werewolf), role badges (werewolf) |
 | `/room/[id]/observability` | Filterable event timeline + per-call cost stream |
+| `/replays` | List of completed games, filterable by mode |
+| `/replay/[id]` | Animated playback with scrubber, play/pause, speed control (0.5×–10×, max) |
 
 ## Status
 
-Phases 1, 2a, 2b, and 3 shipped (debate + werewolf core + advanced rules + UI + observability + token tracking). Phase 4 (Script Kill, persistent storage, replay) is up next.
+Phases 1, 2a, 2b, 3, and **4 (Persistence + Replay)** shipped. Every room now persists to Supabase Postgres (via Drizzle); games survive server restarts; replay pages reconstruct the full UI from the event log. Phase 5 (Script Kill) is up next.
 
 See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md), and [docs/implementation-plan.md](docs/implementation-plan.md).
 
