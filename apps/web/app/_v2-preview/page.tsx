@@ -20,6 +20,8 @@ import { PhaseBadge } from '../room/[id]/components/v2/PhaseBadge'
 import { AgentAvatar } from '../room/[id]/components/v2/AgentAvatar'
 import { Bubble } from '../room/[id]/components/v2/Bubble'
 import { AgentDetailModal } from '../room/[id]/components/v2/AgentDetailModal'
+import { ChatSidebar, type ChatSidebarMessage } from '../room/[id]/components/v2/ChatSidebar'
+import { createAgentColorMap } from '../room/[id]/components/theme'
 
 const NAMES = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hugo', 'Ivy', 'Jules', 'Kai', 'Luna']
 const PROVIDERS = ['anthropic', 'openai', 'google', 'deepseek'] as const
@@ -31,6 +33,34 @@ const SAMPLE_MESSAGES = [
   'Let me be clear: I am a villager. Vote for Diana — she has been protecting Eve all game.',
   '{"action":"save","poisonTarget":"none","reason":"Eve is our best reasoner, keep her alive"}',
 ]
+
+function mkChatMessages(agents: readonly RoundTableAgent[]): ChatSidebarMessage[] {
+  const now = Date.now()
+  return agents.slice(0, 6).flatMap((a, i) => {
+    const msgText = SAMPLE_MESSAGES[i % SAMPLE_MESSAGES.length]!
+    return [
+      i === 2
+        ? ({
+            id: `sys-${i}`,
+            senderId: 'system',
+            senderName: 'Narrator',
+            channelId: 'main',
+            content: 'Night falls. Wolves, open your eyes.',
+            timestamp: now - (6 - i) * 45_000 + 5_000,
+            isSystem: true,
+          } satisfies ChatSidebarMessage)
+        : ({
+            id: `chat-${i}`,
+            senderId: a.agentId,
+            senderName: a.name,
+            provider: a.provider,
+            channelId: i % 3 === 0 ? 'wolf-chat' : 'main',
+            content: msgText,
+            timestamp: now - (6 - i) * 45_000,
+          } satisfies ChatSidebarMessage),
+    ]
+  })
+}
 
 function mkAgents(n: number, isDark: boolean, animate: boolean): RoundTableAgent[] {
   const palette = isDark ? AGENT_COLORS_DARK : AGENT_COLORS_LIGHT
@@ -111,21 +141,42 @@ export default function V2Preview() {
         </div>
       </header>
 
-      {/* Round table */}
+      {/* Round table + ChatSidebar side-by-side (desktop layout preview) */}
       <section
         style={{
           height: '72vh',
           minHeight: 520,
+          display: 'grid',
+          gridTemplateColumns: '1fr 320px',
+          gap: 0,
           background: 'var(--surface)',
           borderRadius: 16,
           border: '1px solid var(--border)',
           overflow: 'hidden',
           marginBottom: 32,
+          position: 'relative',
         }}
       >
         <RoundTable agents={agents} onAgentClick={setModalAgentId}>
           <PhaseBadge phase="dayDiscuss" label="Day Discussion" round={2} />
         </RoundTable>
+        <ChatSidebar
+          messages={mkChatMessages(agents)}
+          getAgentColor={createAgentColorMap(
+            agents.map((a) => ({
+              id: a.agentId,
+              name: a.name,
+              model: '',
+              provider: a.provider ?? 'anthropic',
+            })),
+            isDark,
+          )}
+          channels={[
+            { id: 'main', name: '#main' },
+            { id: 'wolf-chat', name: '#wolf-chat' },
+          ]}
+          title="Chat"
+        />
       </section>
 
       {/* Agent detail modal (Phase 5.3) */}
