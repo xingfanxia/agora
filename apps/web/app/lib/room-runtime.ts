@@ -25,7 +25,6 @@
 import {
   StateMachineFlow,
   TokenAccountant,
-  type EventBus,
   type GenerateFn,
   type GenerateObjectFn,
 } from '@agora/core'
@@ -276,6 +275,3 @@ async function rehydrateWerewolfFromDb(
   })
 }
 
-// ── Helper: eventBus parameter only typed for downstream imports ──
-
-export type { EventBus }

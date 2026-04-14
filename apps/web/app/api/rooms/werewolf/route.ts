@@ -1,40 +1,31 @@
 // ============================================================
-// POST /api/rooms/werewolf — Create a werewolf game
+// POST /api/rooms/werewolf — Create a werewolf game (Phase 4.5a)
 // ============================================================
+//
+// Creates the DB row, pre-computes deterministic roleAssignments, and
+// fires the first /api/rooms/tick invocation in the background. The
+// durable runtime (room-runtime.ts) then walks the game to completion
+// via chained ticks, each bounded to ~60s.
+//
+// Legacy note: this previously bundled the entire game into a single
+// waitUntil(room.start(flow)) — which hit Vercel's 5-min function wall
+// for werewolf. That path is gone.
 
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import { TokenAccountant } from '@agora/core'
-
-export const dynamic = 'force-dynamic'
 import type { GenerateFn, GenerateObjectFn } from '@agora/core'
 import {
   createGenerateFn,
   createGenerateObjectFn,
-  buildPricingMap,
-  createCostCalculator,
 } from '@agora/llm'
 import { createWerewolf } from '@agora/modes'
 import type { LLMProvider, ModelConfig } from '@agora/shared'
 import type { WerewolfAdvancedRules } from '@agora/modes'
-import {
-  createRoom,
-  setGameState,
-  updateRoomStatus,
-  type AgentInfo,
-} from '../../../lib/room-store'
-import {
-  registerRuntime,
-  disposeRuntime,
-} from '../../../lib/runtime-registry'
-import {
-  flushRuntimePending,
-  wireEventPersistence,
-  wireGameStateSnapshots,
-} from '../../../lib/persist-runtime'
+import { createRoom, setGameState, type AgentInfo } from '../../../lib/room-store'
 import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
 
-// The LLM package types the schema as ZodSchema; core types it as unknown.
+export const dynamic = 'force-dynamic'
+
 const _createGenFn: (model: ModelConfig) => GenerateFn = createGenerateFn
 const _createObjFn: (model: ModelConfig) => GenerateObjectFn = (m) =>
   createGenerateObjectFn(m) as unknown as GenerateObjectFn
@@ -84,16 +75,25 @@ export async function POST(request: Request) {
       } satisfies ModelConfig,
     }))
 
-    // Build the werewolf game
+    // Generate roomId upfront — it seeds deterministic agentId + role
+    // shuffle so rehydration during ticks produces identical state.
+    const roomId = crypto.randomUUID()
+
+    // Build the runtime solely to get deterministic agentIds +
+    // roleAssignments for the DB snapshot. We discard the runtime; the
+    // first tick rebuilds a fresh one from the DB row.
     const result = createWerewolf(
-      { agents: agentConfigs, advancedRules, languageInstruction: languageDirective },
+      {
+        agents: agentConfigs,
+        advancedRules,
+        languageInstruction: languageDirective,
+        seed: roomId,
+        roomId,
+      },
       _createGenFn,
       _createObjFn,
     )
 
-    const roomId = result.room.config.id
-
-    // Gather agent info + role assignments for DB
     const agentInfos: AgentInfo[] = result.room.getAgentIds().map((id) => {
       const agent = result.room.getAgent(id)!
       return {
@@ -109,58 +109,36 @@ export async function POST(request: Request) {
       roleAssignments[id] = role
     }
 
-    // Persist room shell
+    // Persist room shell. `language` is stored in config so the tick
+    // rehydration path can rebuild agents with the same language
+    // directive.
     await createRoom({
       id: roomId,
       modeId: 'werewolf',
       topic: 'Werewolf',
-      config: { players: body.players, advancedRules },
+      config: { players: body.players, advancedRules, language },
       agents: agentInfos,
       roleAssignments,
       advancedRules: advancedRules as Record<string, boolean>,
     })
 
-    // Snapshot the initial custom game state (roleMap, flags, etc.)
+    // Snapshot the initial WerewolfGameState so rehydration has a
+    // baseline even if the first tick errors before phase:changed fires.
     await setGameState(roomId, {
       ...(result.flow.getGameState().custom as Record<string, unknown>),
     })
 
-    // Build runtime + wire persistence
-    const pricingMap = await buildPricingMap(agentConfigs.map((a) => a.model))
-    const accountant = new TokenAccountant(result.eventBus, createCostCalculator(pricingMap))
-    const runtime = registerRuntime(roomId, {
-      eventBus: result.eventBus,
-      room: result.room,
-      flow: result.flow,
-      accountant,
-    })
-    wireEventPersistence(roomId, result.eventBus, runtime)
-    wireGameStateSnapshots(
-      roomId,
-      result.eventBus,
-      runtime,
-      () => ({ ...(result.flow.getGameState().custom as Record<string, unknown>) }),
-    )
-
-    // Run the game in background
+    // Fire the first tick asynchronously.
+    const tickUrl = new URL('/api/rooms/tick', request.url)
+    tickUrl.searchParams.set('id', roomId)
     waitUntil(
-      result.room
-        .start(result.flow)
-        .then(async () => {
-          await flushRuntimePending(runtime)
-          await updateRoomStatus(roomId, 'completed')
-          disposeRuntime(roomId)
-        })
-        .catch(async (error) => {
-          console.error(`Werewolf room ${roomId} failed:`, error)
-          await flushRuntimePending(runtime)
-          await updateRoomStatus(
-            roomId,
-            'error',
-            error instanceof Error ? error.message : String(error),
-          )
-          disposeRuntime(roomId)
-        }),
+      fetch(tickUrl.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+      }).catch((err) =>
+        console.error(`[werewolf-create] ${roomId} first-tick fetch failed:`, err),
+      ),
     )
 
     return NextResponse.json({ roomId })
