@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { fmtTokens, fmtUSD, modelLabel } from '../room/[id]/components/theme'
-import { LocaleSwitcher } from '../components/LocaleSwitcher'
+import { SettingsMenu } from '../components/SettingsMenu'
 
 interface AgentInfo {
   id: string
@@ -61,7 +61,7 @@ export default function ReplaysPage() {
   return (
     <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '960px', margin: '0 auto', position: 'relative' }}>
       <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
-        <LocaleSwitcher />
+        <SettingsMenu />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>

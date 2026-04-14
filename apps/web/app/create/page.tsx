@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useLocale, useTranslations } from 'next-intl'
-import { LocaleSwitcher } from '../components/LocaleSwitcher'
+import { useTranslations } from 'next-intl'
+import { SettingsMenu } from '../components/SettingsMenu'
 
 interface AgentFormData {
   id: string
@@ -45,7 +45,6 @@ export default function CreateRoom() {
   const router = useRouter()
   const t = useTranslations('create')
   const tCommon = useTranslations('common')
-  const locale = useLocale()
   const [topic, setTopic] = useState('')
   const [rounds, setRounds] = useState(3)
   const [agents, setAgents] = useState<AgentFormData[]>(DEFAULT_AGENTS)
@@ -99,7 +98,6 @@ export default function CreateRoom() {
         body: JSON.stringify({
           topic: topic.trim(),
           rounds,
-          language: locale,
           agents: agents.map((a) => {
             const modelOption = MODEL_OPTIONS.find((m) => m.value === a.model)
             return {
@@ -134,7 +132,7 @@ export default function CreateRoom() {
       position: 'relative',
     }}>
       <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
-        <LocaleSwitcher />
+        <SettingsMenu />
       </div>
       {/* Header */}
       <div style={{

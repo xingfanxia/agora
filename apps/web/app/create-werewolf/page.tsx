@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useLocale, useTranslations } from 'next-intl'
-import { LocaleSwitcher } from '../components/LocaleSwitcher'
+import { useTranslations } from 'next-intl'
+import { SettingsMenu } from '../components/SettingsMenu'
 
 const DEFAULT_NAMES = [
   'Elena',
@@ -44,7 +44,6 @@ export default function CreateWerewolf() {
   const router = useRouter()
   const t = useTranslations('werewolf')
   const tCommon = useTranslations('common')
-  const locale = useLocale()
   const [playerCount, setPlayerCount] = useState(9)
   const [players, setPlayers] = useState<PlayerFormData[]>(() =>
     DEFAULT_NAMES.slice(0, 9).map((name, i) => ({
@@ -112,7 +111,6 @@ export default function CreateWerewolf() {
             }
           }),
           advancedRules,
-          language: locale,
         }),
       })
 
@@ -132,7 +130,7 @@ export default function CreateWerewolf() {
   return (
     <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '820px', margin: '0 auto', position: 'relative' }}>
       <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
-        <LocaleSwitcher />
+        <SettingsMenu />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', paddingTop: '1rem' }}>
         <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>

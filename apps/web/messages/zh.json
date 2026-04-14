@@ -13,6 +13,13 @@
       "label": "语言",
       "english": "English",
       "chinese": "中文"
+    },
+    "settings": {
+      "title": "设置",
+      "uiLanguage": "界面语言",
+      "agentLanguage": "智能体使用语言",
+      "followUi": "跟随界面",
+      "hint": "智能体会使用选定的语言回复,与人设的原始语种无关。"
     }
   },
   "landing": {

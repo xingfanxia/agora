@@ -13,6 +13,13 @@
       "label": "Language",
       "english": "English",
       "chinese": "中文"
+    },
+    "settings": {
+      "title": "Settings",
+      "uiLanguage": "UI Language",
+      "agentLanguage": "Agents speak",
+      "followUi": "Follow UI",
+      "hint": "Agents will respond in the selected language regardless of their persona's original wording."
     }
   },
   "landing": {

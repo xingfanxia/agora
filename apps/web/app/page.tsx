@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getTranslations } from 'next-intl/server'
-import { LocaleSwitcher } from './components/LocaleSwitcher'
+import { SettingsMenu } from './components/SettingsMenu'
 
 export default async function Home() {
   const t = await getTranslations('landing')
@@ -20,7 +20,7 @@ export default async function Home() {
       }}
     >
       <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
-        <LocaleSwitcher />
+        <SettingsMenu />
       </div>
 
       <div
