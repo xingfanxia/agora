@@ -245,29 +245,68 @@ Validated locally: debate + werewolf games persist across server restarts; repla
 
 ---
 
-## Phase 5: Script Kill — Deep Narrative + Memory
+## Phase 5: UI Overhaul — i18n + Round-Table Visualization
+
+**Goal**: Replace the message-list UI with a round-table layout (agents in a circle, speech bubbles above each seat), WeChat-style chat sidebar, and click-to-view agent details modal. Add en/zh i18n so the platform works for Chinese users.
+
+**Plan**: `docs/design/phase-5-plan.md` · **Handoff**: `docs/design/phase-5-handoff.md`
+
+### 5.1: i18n foundation + agent-language directive ✅ DONE (commits c158eca, 446677e)
+- [x] next-intl wired (cookie-based locale, no URL prefix)
+- [x] Dictionaries `apps/web/messages/{en,zh}.json` (8 namespaces)
+- [x] LocaleSwitcher component + `/api/locale` route
+- [x] All pages translated (landing, create, create-werewolf, replays, replay, room, observability, all components)
+- [x] Agent-language directive: `/api/rooms` and `/api/rooms/werewolf` accept `language: 'en'|'zh'`; falls back to cookie then UI locale. `createWerewolf` accepts `languageInstruction`.
+- [x] Frontend create pages send `language: useLocale()` so agents default to UI language
+- [x] 6 zh demo replays seeded via `scripts/seed-zh-demos.ts`
+
+### 5.2: RoundTable + AgentSeat + Bubble + AgentAvatar + PhaseBadge
+- [ ] Build in `apps/web/app/room/[id]/components/v2/` isolated first
+- [ ] Ellipse geometry (rx=280, ry=200), bubbles above, crossfade transitions
+- [ ] Test with mock data for 6/9/12 agent counts
+
+### 5.3: AgentDetailModal
+- [ ] Click AgentSeat opens modal with model/persona/stats
+- [ ] "View all messages from this agent" sub-view (filter by senderId)
+
+### 5.4: ChatSidebar (WeChat-style)
+- [ ] Right column 320px scrollable timeline
+- [ ] Channel filter dropdown, mobile drawer via FAB
+
+### 5.5: Wire both mode views
+- [ ] Rewrite `RoundtableView.tsx` + `WerewolfView.tsx` to use v2 components
+- [ ] Move legacy components to `components/legacy/` (kept for observability)
+
+### 5.6: Polish + deploy
+- [ ] Mobile breakpoints (375/768/1024px); ≤640px fallback strategy
+- [ ] Reduced-motion + keyboard a11y (Esc, Tab)
+- [ ] Vercel deploy + smoke-test en/zh × debate/werewolf/replay
+
+---
+
+## Phase 6: Script Kill — Deep Narrative + Memory
 
 **Goal**: Full murder mystery game with private clues, investigation phases, and branching narrative. Introduces long-term memory.
 
-### Step 4.1: Session Memory Compression (packages/core)
+### Step 6.1: Session Memory Compression (packages/core)
 - [ ] `SessionMemory` class with LLM-powered compression
 - [ ] When messages > threshold (e.g., 40), compress old messages into summary
 - [ ] Keep summary + recent N messages in context window
 - [ ] Use cheap model (Haiku) for compression
 
-### Step 4.2: Agent Long-Term Memory (packages/core)
+### Step 6.2: Agent Long-Term Memory (packages/core)
 - [ ] `AgentLongTermMemory` with pgvector
 - [ ] record(event) → embed → store in Postgres
 - [ ] retrieve(query) → cosine similarity search → inject into prompt
 - [ ] reflect() — periodic self-reflection (Stanford Generative Agents pattern)
 
-### Step 4.3: Clue/Evidence System
+### Step 6.3: Clue/Evidence System
 - [ ] `Clue` type — content, visibility (who has seen it), importance
 - [ ] Private clue distribution — each character gets unique clues at game start
 - [ ] Clue discovery — agents can find new clues during investigation phases
 - [ ] Clue sharing — agents can choose to share or withhold clues in discussion
 
-### Step 4.4: Script Kill Mode (packages/modes/script-kill)
+### Step 6.4: Script Kill Mode (packages/modes/script-kill)
 - [ ] Script template system: define characters, clues, timeline, true culprit
 - [ ] Phases: Introduction → Investigation Round 1-3 → Discussion → Accusation → Reveal
 - [ ] Branching: investigation choices affect what clues are found
@@ -283,28 +322,28 @@ Validated locally: debate + werewolf games persist across server restarts; repla
 
 ---
 
-## Phase 6: TRPG — Open-World Narrative
+## Phase 7: TRPG — Open-World Narrative
 
 **Goal**: AI Game Master runs a tabletop RPG session with AI/human players. Most complex mode.
 
-### Step 5.1: GM Agent
+### Step 7.1: GM Agent
 - [ ] Specialized agent type with world-state awareness
 - [ ] Narrative generation: describe scenes, NPCs, consequences
 - [ ] Rules engine integration: D&D 5e-lite skill checks
 - [ ] Dynamic difficulty adjustment based on player engagement
 
-### Step 5.2: Dice System
+### Step 7.2: Dice System
 - [ ] `DiceRoll` type — notation (d20, 2d6+3), result, context
 - [ ] Skill check flow: player declares action → GM sets DC → roll → GM narrates outcome
 - [ ] Visual dice animation in UI
 
-### Step 5.3: Character System
+### Step 7.3: Character System
 - [ ] Character sheet: name, class, stats, inventory, backstory
 - [ ] Character creation wizard (AI-assisted)
 - [ ] Character growth: XP, level up, new abilities
 - [ ] Persistent characters across sessions
 
-### Step 5.4: TRPG Mode (packages/modes/trpg)
+### Step 7.4: TRPG Mode (packages/modes/trpg)
 - [ ] Semi-freeform flow: GM-guided with player agency
 - [ ] Combat mode (structured) vs Exploration mode (freeform)
 - [ ] NPC management: GM creates and voices NPCs
@@ -319,28 +358,28 @@ Validated locally: debate + werewolf games persist across server restarts; repla
 
 ---
 
-## Phase 7: Platform — Open Up
+## Phase 8: Platform — Open Up
 
 **Goal**: Let users create their own modes. Build the ecosystem.
 
-### Step 6.1: Custom Mode SDK
+### Step 8.1: Custom Mode SDK
 - [ ] Mode definition schema (JSON/YAML for non-developers)
 - [ ] Mode builder UI: define roles, flow, channels, prompts visually
 - [ ] Mode validation: ensure mode definition is complete and consistent
 - [ ] Mode testing sandbox: run a mode in preview before publishing
 
-### Step 6.2: Agent Marketplace
+### Step 8.2: Agent Marketplace
 - [ ] Public persona gallery: browse and fork community-created agents
 - [ ] Tags, ratings, usage counts
 - [ ] Featured agents/modes curation
 
-### Step 6.3: Enhanced Replay
+### Step 8.3: Enhanced Replay
 - [ ] Record all events with timestamps
 - [ ] Replay viewer: step through a session like a recording
 - [ ] Export as shareable link or video-like format
 - [ ] Highlight reel: AI-generated summary of best moments
 
-### Step 6.4: Hierarchical FlowController
+### Step 8.4: Hierarchical FlowController
 - [ ] Leader-worker pattern (三省六部 style)
 - [ ] Task delegation and aggregation
 - [ ] Review gates (propose → review → approve/reject)
