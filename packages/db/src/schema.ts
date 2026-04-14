@@ -59,6 +59,13 @@ export const rooms = pgTable(
     // Errors
     errorMessage: text('error_message'),
 
+    // Durable runtime state (Phase 4.5a).
+    // When status='waiting', `waitingFor` holds the predicate the room is
+    // paused on ({ eventName, match }) and `waitingUntil` the wall-clock
+    // deadline after which fallback logic fires.
+    waitingFor: jsonb('waiting_for'),
+    waitingUntil: timestamp('waiting_until', { withTimezone: true }),
+
     // Provenance (future-proof for auth)
     createdBy: text('created_by'), // user id when auth lands; nullable for now
 
@@ -66,6 +73,7 @@ export const rooms = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index('rooms_status_created_idx').on(table.status, table.createdAt),

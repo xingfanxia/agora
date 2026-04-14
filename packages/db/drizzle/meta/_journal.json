@@ -8,6 +8,20 @@
       "when": 1776150933785,
       "tag": "0000_productive_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776169435146,
+      "tag": "0001_narrow_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776170000000,
+      "tag": "0002_runtime_polish",
+      "breakpoints": true
     }
   ]
 }
