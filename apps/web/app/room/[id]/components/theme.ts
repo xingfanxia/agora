@@ -119,6 +119,12 @@ export interface PollResponse {
   agents: AgentData[]
   topic: string
   tokenSummary: TokenSummary | null
+  /** Werewolf-only: agentId → role */
+  roleAssignments: Record<string, string> | null
+  /** Werewolf-only */
+  advancedRules: Record<string, boolean> | null
+  /** Werewolf-only: snapshot of custom game state (eliminated, winResult, etc.) */
+  gameState: Record<string, unknown> | null
   error?: string
 }
 

@@ -4,6 +4,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useRoomPoll } from './hooks/useRoomPoll'
 import { RoundtableView } from './modes/roundtable/RoundtableView'
+import { WerewolfView } from './modes/werewolf/WerewolfView'
 
 /**
  * Thin dispatcher — polls the room, then renders the mode-specific
@@ -28,7 +29,9 @@ export default function RoomPage() {
   }
 
   // Route to the mode-specific view.
-  // Werewolf/script-kill/etc. will plug in here once their Views ship.
+  if (snapshot.modeId === 'werewolf') {
+    return <WerewolfView messages={messages} snapshot={snapshot} />
+  }
   if (snapshot.modeId === 'roundtable') {
     return <RoundtableView messages={messages} snapshot={snapshot} />
   }

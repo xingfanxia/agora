@@ -28,6 +28,12 @@ export interface RoomState {
   thinkingAgentId: string | null
   currentPhase: string | null
   accountant?: TokenAccountant
+  /** Werewolf-only: agentId → role name */
+  roleAssignments?: Record<string, string>
+  /** Werewolf-only: which advanced rules are on */
+  advancedRules?: Record<string, boolean>
+  /** Werewolf-only: per-phase metadata announced by state machine (eliminated ids, winResult, etc.) */
+  gameState?: Record<string, unknown>
   error?: string
 }
 
@@ -96,5 +102,12 @@ export function setAccountant(roomId: string, accountant: TokenAccountant): void
   const room = getRooms().get(roomId)
   if (room) {
     room.accountant = accountant
+  }
+}
+
+export function setGameState(roomId: string, gameState: Record<string, unknown>): void {
+  const room = getRooms().get(roomId)
+  if (room) {
+    room.gameState = gameState
   }
 }

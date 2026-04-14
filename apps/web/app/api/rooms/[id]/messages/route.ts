@@ -55,6 +55,9 @@ export async function GET(
     agents: room.agents,
     topic: room.topic,
     tokenSummary,
+    roleAssignments: room.roleAssignments ?? null,
+    advancedRules: room.advancedRules ?? null,
+    gameState: room.gameState ?? null,
     error: room.error,
   })
 }

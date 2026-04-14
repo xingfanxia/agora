@@ -32,6 +32,9 @@ importers:
       '@agora/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@agora/modes':
+        specifier: workspace:*
+        version: link:../../packages/modes
       '@agora/shared':
         specifier: workspace:*
         version: link:../../packages/shared
