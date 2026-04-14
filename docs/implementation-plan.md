@@ -15,8 +15,11 @@
 | **2b** | Werewolf Advanced | ✅ **DONE** | Togglable advanced rules | Werewolf (7 roles: +Guard, +Idiot) |
 | **3** | Frontend + Observability | ✅ **DONE** | Mode-specific UI, Token/cost tracking (LiteLLM), Observability timeline | — (enhance existing) |
 | **4** | Persistence + Replay | ✅ **DONE** | Postgres (Supabase) event store, DB-backed reads, /replays + /replay/[id] with animated playback, Vercel-ready runtime | — (enhance existing) |
-| **4.5** | Durable Workflows + Human-in-the-Loop | ⏳ **NEXT** | Self-hosted workflow runtime on Postgres+pg_cron, Agent abstraction, Supabase Auth, room_memberships, ViewerContext, Supabase Realtime, human seats | — (foundation; mixed human+AI rooms) |
-| **5** | UI Overhaul (i18n + Round Table) | ⏸ After 4.5 | next-intl (en/zh) ✅ 5.1 shipped; round-table viz + click-to-view + chat sidebar pending; human-aware from day 1 | — (visual polish across both modes) |
+| **4.5a** | Durable Runtime (AI-only) | ⏳ **NEXT** | Bespoke advanceRoom + chained tick dispatcher, deterministic agent IDs, waiting state, /admin observability, replay determinism | — (foundation; AI-only games complete reliably) |
+| **5** | UI Overhaul (i18n + Round Table) | ⏸ After 4.5a | next-intl (en/zh) ✅ 5.1 shipped; round-table viz + click-to-view + chat sidebar pending | — (visual polish; spectator-first) |
+| **4.5b** | Human-Play UX Design | ⏸ After 5 | Design-only: wireframes + copy for every human turn type, timeout + fallback UX | — (doc deliverable only) |
+| **4.5c** | Seat Tokens + Human Play | ⏸ After 4.5b | HumanAgent, JWT seat tokens, human-input route, Supabase Realtime, ViewerContext, MyInputPanel, per-mode timeouts | 1-human-8-AI games |
+| **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth (magic-link + OAuth), room_memberships + RLS, presence, fan-in, disconnection grace | N-human rooms |
 | **6** | Script Kill (was P4 → P5) | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
 | **7** | TRPG (was P5 → P6) | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
 | **8** | Platform (was P6 → P7) | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Auth, Hierarchical Flow | Custom |
@@ -246,45 +249,68 @@ Validated locally: debate + werewolf games persist across server restarts; repla
 
 ---
 
-## Phase 4.5: Durable Workflows + Human-in-the-Loop Foundation
+## Phase 4.5: Durable Runtime + Human-in-the-Loop (V2, reordered around Phase 5)
 
-**Goal**: Move game loop from `waitUntil()` (bounded by Vercel 5-min function limit) into a proper durable workflow runtime self-hosted on Supabase Postgres + pg_cron. Introduce `Agent` abstraction that supports both AI and human seats. Add Supabase Auth + `room_memberships` so mixed human+AI rooms are possible. Replace all-or-nothing spectator view with per-viewer `ViewerContext` + server-side channel visibility filter. Supabase Realtime replaces polling for interactive rooms.
+**Goal**: Replace `waitUntil()`-bundled game loops with a bespoke ~500 LOC durable runtime (`advanceRoom` + chained `/api/rooms/tick` invocations). Add Agent abstraction (AI + Human), seat-token MVP auth, Supabase Realtime, and ultimately Supabase Auth. Mixed human+AI rooms with N humans supported architecturally.
 
-**Triggered by**: 3 of 6 zh seed werewolf games orphaned at the 5-min wall. Proper long-term fix, not a stopgap.
+**Triggered by**: 3 of 6 zh seed werewolf games orphaned at the 5-min wall. Proper fix, not stopgap.
 
-**Plan**: `docs/design/phase-4.5-plan.md` — full decisions, schema, sub-phase breakdown.
+**Plan**: `docs/design/phase-4.5-plan.md` — V2 design after self-critique of initial V1 (V1 over-engineered a generic workflow engine; V2 is bespoke + reordered).
 
-### 4.5a: Workflow runtime + mode migration (~4 days)
-- [ ] `packages/workflow` with defineWorkflow / step.run / step.waitForEvent / step.sleep (replay-based execution)
-- [ ] Migrations: workflow_runs, workflow_steps, workflow_events
-- [ ] pg_cron → POST /api/workflows/tick dispatcher
-- [ ] `Agent` interface refactor; AIAgent implements it; HumanAgent stub
-- [ ] werewolf + roundtable ports from Room.start() to workflow definitions
-- [ ] Exit: 12p AI-only werewolf completes via workflow runtime on prod
+**Key architectural choices**:
+- Bespoke runtime in `apps/web/app/lib/room-runtime.ts`, NOT a generic workflow engine
+- Event sourcing IS the step log (no new `workflow_*` tables)
+- Determinism via seeded agent IDs + seeded shuffle in `createWerewolf`
+- Seat tokens (signed JWT bound to `room_id` + `agent_seat_id`) as MVP auth — zero friction for zh users, no email/OAuth dependency
+- Supabase Auth arrives in 4.5d as a layer atop seat tokens (persistent identity)
+- TDD for replay determinism; `/admin/rooms/:id` for observability from day 1
 
-### 4.5b: Auth + memberships + seat claims (~3 days)
-- [ ] Supabase Auth (magic link MVP)
-- [ ] Migration: room_memberships, RLS on rooms/memberships
-- [ ] Login/logout pages, /api/auth/callback
-- [ ] Seat claim flow + invite URL generation
-- [ ] Exit: two users sign in, claim different seats, memberships persist
+### 4.5a: AI-only durable runtime (~4 days) — **unblocks Phase 5**
+- [ ] Migration: `rooms.waiting_for`, `rooms.waiting_until`, status CHECK adds `'waiting'`
+- [ ] `advanceRoom(roomId)`, `loadRoomState`, state folding helpers in `apps/web/app/lib/room-runtime.ts`
+- [ ] Deterministic refactor: `createWerewolf` takes pre-generated agent IDs + seed
+- [ ] Mode-specific `advance.ts` files in `packages/modes/<mode>/`
+- [ ] `/api/rooms/tick` dispatcher + inline self-invoke chain; pg_cron every 5s as safety net
+- [ ] `/admin/rooms/:id` observability view (phase timeline, waiting state)
+- [ ] TDD: replay determinism test suite
+- [ ] Remove `waitUntil` game-loop bundling from /api/rooms + /api/rooms/werewolf
+- [ ] **Exit**: 12p AI-only werewolf completes on Vercel prod; replay determinism verified
 
-### 4.5c: Human input + player view + realtime (~3 days)
-- [ ] HumanAgent full implementation (pause workflow via waitForEvent)
-- [ ] `POST /api/rooms/:id/human-input` route
-- [ ] Supabase Realtime subscription (useRoomLive)
-- [ ] ViewerContext, MyInputPanel, SchemaForm components
-- [ ] Server-side channel filter based on viewer's seat
+### (Phase 5: UI overhaul — 5.2-5.6 ~10-12 days) — unblocked after 4.5a
+
+Runs in parallel-ish with itself, see `docs/design/phase-5-plan.md`. Human seats render identical to AI seats; kind-aware affordances land in 4.5c.
+
+### 4.5b: Human-play UX design spec (~2 days, design-only, no code)
+- [ ] `docs/design/phase-4.5b-human-ux.md`: wireframes + copy for each turn type (vote, witch, seer, speak, last-words)
+- [ ] Info visibility matrix per role × phase
+- [ ] Microcopy for prompts, timeouts, fallbacks
+- [ ] Disconnection UX
+- [ ] V1 → self-critique → V2 iteration
+- [ ] **Exit**: user signs off on the UX spec before any code
+
+### 4.5c: Seat tokens + human play implementation (~4-5 days)
+- [ ] `packages/core/src/agent.ts`: `Agent` interface + `HumanAgent` implementation
+- [ ] `apps/web/app/lib/seat-tokens.ts`: JWT signing/verification
+- [ ] `POST /api/rooms/:id/invites`: owner generates N seat-bound invite URLs
+- [ ] `GET /r/:roomId?seat=X&token=Y`: token landing, stores in localStorage
+- [ ] `POST /api/rooms/:id/human-input`: token-gated, inserts `'human:input'` event
+- [ ] `useRoomLive` hook: Supabase Realtime subscription + polling fallback
+- [ ] `ViewerContext`, `MyInputPanel`, `SchemaForm` components
+- [ ] Server-side channel filter in `/api/rooms/:id/messages`
 - [ ] Per-mode timeout policies + fallbacks
-- [ ] Exit: 1-human-8-AI werewolf completes with human witch
+- [ ] **Exit**: 1-human-8-AI werewolf game completes end-to-end with human witch
 
-### 4.5d: Multi-human coordination (~2 days)
-- [ ] Parallel `waitForEvent` fan-in (day vote)
-- [ ] Presence detection + disconnection grace
-- [ ] N-invite link generation for owner
-- [ ] Exit: 2-human-7-AI werewolf completes including day-vote round + one disconnection recovery
+### 4.5d: Multi-human + Supabase Auth layer (~3-4 days)
+- [ ] Supabase Auth (magic-link + Google OAuth)
+- [ ] `room_memberships` table + RLS policies
+- [ ] Seat tokens stay for invite flow; Auth adds persistent identity
+- [ ] Presence detection via Supabase Realtime
+- [ ] Disconnection grace (30s default)
+- [ ] Parallel fan-in helper (day-vote)
+- [ ] Invite panel UI for owner
+- [ ] **Exit**: 2-human-7-AI werewolf completes including day-vote fan-in + disconnection recovery
 
-**Total**: ~12 focused days. Ships as 4 commits / 4 deploys. Blocks Phase 5 UI (round-table viz must bake in ViewerContext from day 1).
+**Total**: ~27 focused days split across 5 ship-able milestones. UI overhaul ships ~day 16 instead of ~day 28.
 
 ---
 

@@ -5,7 +5,7 @@
 > **Triggered by**: current message-list UI is "terrible"; user wants Accio Work-style polish, agents around a round table with bubbles, click-to-view agent details, plus en/zh i18n
 > **Pushes**: Script Kill from P5 → P6, TRPG P6 → P7, Platform P7 → P8
 >
-> ⚠️ **Phase 4.5 insertion (2026-04-14 late)**: Durable workflows + human-in-the-loop foundation must ship first (see `docs/design/phase-4.5-plan.md`). The round-table viz will use ViewerContext + HumanAgent affordances introduced in 4.5; retrofitting those onto a spectator-only UI would mean rewriting Phase 5 UI.
+> ⚠️ **Phase 4.5 V2 (2026-04-14 late)**: Only Phase 4.5a (AI-only durable runtime) blocks Phase 5 now. Human-in-the-loop layer (4.5b design → 4.5c code → 4.5d multi-human) comes AFTER Phase 5 ships. Phase 5 UI is spectator-first; human seats render like AI seats until 4.5c adds kind-aware affordances. See `docs/design/phase-4.5-plan.md` V2.
 
 ---
 

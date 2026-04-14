@@ -4,7 +4,7 @@
 > **Target**: Next Claude session starting fresh after compact
 > **Phase 4 status**: ✅ shipped, deployed at https://agora-panpanmao.vercel.app
 >
-> ⚠️ **IMPORTANT UPDATE (2026-04-14 late)**: Phase 4.5 was inserted and must ship **before** Phase 5.2-5.6. See `docs/design/phase-4.5-plan.md`. Phase 5.1 (i18n + agent-language) ✅ shipped. Phase 5.2-5.6 (round-table viz) now blocks on 4.5 completing, because the new UI must bake in `ViewerContext` + `HumanAgent` affordances from day 1 rather than retrofitting.
+> ⚠️ **IMPORTANT UPDATE (2026-04-14 late, V2)**: Phase 4.5 was inserted. V2 plan reorders so **only 4.5a (AI-only durable runtime) blocks Phase 5**. Phase 5.2-5.6 UI can ship right after 4.5a, BEFORE human-in-the-loop lands. Human seats are stub-rendered in Phase 5 (identical to AI seats); kind-aware play affordances added in 4.5c as a later layer. See `docs/design/phase-4.5-plan.md` V2.
 
 ---
 

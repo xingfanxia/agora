@@ -1,560 +1,385 @@
-# Phase 4.5 — Durable Workflows + Human-in-the-Loop Foundation
+# Phase 4.5 — Durable Runtime + Human-in-the-Loop (V2)
 
 > **Date**: 2026-04-14
-> **Status**: Drafting (pending sign-off)
+> **Status**: V2 — signed off after V1 self-critique
 > **Triggers**:
-> 1. 3 of 6 zh seed werewolf games orphaned at Vercel's 5-min function wall (run-count 35-42 / of ~60-80 needed). `waitUntil()` bundled the whole game loop into a single request.
-> 2. Long-term goal: mixed rooms with N humans + N agents. Requires pausing indefinitely while waiting on human input, cleanly resuming from DB state, per-seat visibility.
+> 1. 3 of 6 zh seed werewolf games orphaned at Vercel's 5-min function wall. Need durable runtime.
+> 2. Long-term goal: rooms with N humans + N AI agents. Need agent abstraction + human input primitives.
 >
-> Phase 5 (round-table viz) is **blocked on this** — Phase 5 UI must bake in viewer-context + human-seat affordances from day 1.
+> **V2 changes from V1**:
+> - Cut scope: no generic `packages/workflow`. Bespoke ~500 LOC runtime inside `apps/web`.
+> - Reorder: 4.5a (AI-only runtime) ships, then **Phase 5 UI overhaul ships before human-in-the-loop**. User sees beautiful UI 2 weeks earlier.
+> - Seat tokens for human MVP, not Supabase Auth (magic-link email is unreliable for zh users; Auth arrives in 4.5d as a layer).
+> - Add design-only phase 4.5b for human-play UX before writing any human-input code.
+> - TDD for replay determinism. Observability budgeted.
+> - Dispatcher latency addressed: inline self-invoke after each phase, pg_cron as safety net.
 
 ---
 
-## 1. Resolved decisions
+## 1. Resolved decisions (V2)
 
 | # | Question | Answer |
 |---|----------|--------|
-| 1 | Workflow engine | **Self-host on Supabase Postgres + pg_cron.** Preserves one-vendor architecture (Postgres = state + realtime + auth). ~1500-2000 LOC. Full control, no vendor lock-in, data stays on Supabase. Inngest alternative rejected to keep architecture coherent. |
-| 2 | Realtime | Supabase Realtime — subscribe to `events` table WHERE `room_id = X`. Replace 1-2s polling for interactive views. Keep polling for spectator/replay. |
-| 3 | Auth | Supabase Auth, **magic link MVP**. Email delivery — accept reliability risk for zh users; fall back to OAuth (Google/GitHub) when we hit friction. |
-| 4 | Identity model | `auth.users` → `room_memberships (room_id, user_id, agent_seat_id, role)`. Role ∈ {owner, player, spectator}. |
-| 5 | Spectator from day 1 | Yes — public rooms support anonymous spectate; **playing** requires auth + seat claim. Today's replay URLs stay anonymous-accessible. |
-| 6 | Timeout policy | Per-mode configurable. Default: **indefinite** if only one human in the room, **per-turn bounded** for multi-human. On timeout: mode-specific fallback (werewolf witch → no save; werewolf vote → abstain; debate speak → AI-persona takeover). |
-| 7 | Scope phasing | 4 sub-phases (4.5a workflow, 4.5b auth, 4.5c human input, 4.5d multi-human). Each ships independently with its own deploy + validation. |
-| 8 | Workflow determinism | Workflows use replay-based execution (Inngest/Temporal pattern). Every wake-up re-runs handler from top; `step.run` calls short-circuit when their output is already persisted. Implication: **workflow bodies must be deterministic** — no `Math.random`, no `Date.now` outside `step.run`. |
-| 9 | Existing replays | 6 shipped zh seed replays + any future ones before this phase stay readable. No schema-breaking changes; only additions. |
-| 10 | Python vs TS SDK for pg_cron | pg_cron invokes HTTPS webhook on Vercel → no additional runtime needed. |
+| 1 | Runtime abstraction | **Bespoke, not generic.** ~500 LOC `advanceRoom(roomId)` helper inside `apps/web/app/lib/room-runtime.ts`. No `step.run` primitives, no `packages/workflow`. Event sourcing (existing `events` table) IS the step log. |
+| 2 | Dispatcher | `/api/rooms/tick` invoked by pg_cron every 5s as safety net AND inline self-invoked after each phase transition for low AI-only latency. |
+| 3 | Determinism | Refactor `createWerewolf` to accept pre-generated agent IDs + a seed for role assignment. Move `crypto.randomUUID()` and `shuffleArray` under a deterministic seed derived from roomId. |
+| 4 | Realtime | Supabase Realtime on `events` table (by room_id). Replaces 1-2s polling for interactive views. Keep polling for replays. |
+| 5 | Auth — MVP | **Seat tokens only.** Owner creates room → N invite URLs, each signed JWT bound to `(room_id, agent_seat_id)`. Friend opens link → localStorage → plays. No email, no OAuth, zero friction for zh audience. |
+| 6 | Auth — later | Supabase Auth magic-link + OAuth in Phase 4.5d as a layer on top of seat tokens. Tokens remain as the invite mechanism; Auth adds persistent cross-room identity. |
+| 7 | Human play UX | **Design-only phase 4.5b** (~2 days of mockups + copy) before any implementation. Low-fi but specific: vote radio grid, witch potion cards, seer target picker, speak textarea with pressure cues. Validate with user. |
+| 8 | Scope phasing | 4.5a (runtime) → Phase 5 UI (unblocked) → 4.5b (human UX design) → 4.5c (human play implementation) → 4.5d (multi-human + Auth layer). |
+| 9 | Timeout policy | Per-mode configurable. Default: indefinite for rooms with 1 human, per-turn bounded for multi-human. Fallback: mode-specific (witch no-save, vote abstain, AI takeover of unresponsive seat). |
+| 10 | Observability | `/admin/rooms/:id` route showing room's state-over-time (phase transitions, events timeline, pending waiting_for). Minimal but non-negotiable. Budget: 0.5 day in 4.5a. |
+| 11 | Tests | **TDD for runtime.** Write replay tests first: `expect(advanceTwice(room)).toEmitIdenticalEventSeq()`. Then implement. Non-negotiable for determinism safety. |
+| 12 | Legacy replays | 6 shipped zh seed replays keep working. No breaking schema changes; only additions. |
 
 ---
 
-## 2. Problem decomposition
+## 2. Architecture
 
-**What's broken today**:
-- Game loop runs inside one Vercel function via `waitUntil()`. Bounded by 5-min function lifetime.
-- Runtime (Room, EventBus, Flow, agents) held in `globalThis.__agora_runtime__` registry. Dies with the function instance.
-- Agent abstraction is `AIAgent`-only. No primitive for pausing until human input.
-- `/api/rooms/:id/messages` returns everything; no per-seat visibility filtering.
-- No auth → can't identify who's who, can't enforce channel visibility.
+### 2.1 How we replace `waitUntil()` bundling
 
-**What we need for human-in-the-loop**:
-- Pause indefinitely (hours, days) waiting for human input.
-- Resume exactly where we left off when human submits.
-- Multiple humans possible; might submit in parallel (day vote) or serially (speak-order).
-- Per-viewer DB-level visibility (wolves can't see seer's private channel, enforced at backend).
-- Timeout + fallback when human unresponsive.
+**Today**: `POST /api/rooms/werewolf` calls `room.start(flow)` inside `waitUntil()`. One Vercel function instance tries to finish the entire 40-80 LLM-call game within 5 min. Fails for werewolf.
 
----
-
-## 3. Architecture overview
+**V2**: Same endpoint creates the room in DB and **kicks off a single `/api/rooms/tick` self-invocation**. That tick loads the room, runs ONE phase (e.g., `wolfDiscuss` round), persists events, inline-invokes the next tick for the same room, returns. Each tick is bounded to one phase (10-60s), well under the 5-min function limit. Chained ticks walk the game to completion.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  Browser (Next.js client)                                        │
-│  ├─ Supabase Realtime WS subscribe to events(room_id=X)         │
-│  ├─ ViewerContext: { userId, seatAgentId?, role, visibleChannels } │
-│  ├─ RoundTable / ChatSidebar / MyInputPanel (Phase 5)           │
-│  └─ POST /api/rooms/:id/human-input  (on turn submission)       │
-└──────────────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  Vercel Functions (Next.js App Router)                          │
-│  ├─ /api/rooms        — creates room + workflow_run, returns 200│
-│  ├─ /api/rooms/:id/messages — filters by viewer's seat         │
-│  ├─ /api/rooms/:id/human-input — inserts workflow_event        │
-│  ├─ /api/workflows/tick — dispatcher (invoked by pg_cron)       │
-│  └─ /api/auth/* — Supabase Auth callbacks (magic link)          │
-└──────────────────────────────────────────────────────────────────┘
-                    │
-                    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│  Supabase Postgres                                               │
-│  ├─ rooms (existing)                                            │
-│  ├─ events (existing)                                           │
-│  ├─ workflow_runs (NEW)                                         │
-│  ├─ workflow_steps (NEW, append-only step log for replay)       │
-│  ├─ workflow_events (NEW, for step.waitForEvent)                │
-│  ├─ room_memberships (NEW, user ↔ seat binding)                 │
-│  ├─ auth.users (Supabase-managed)                               │
-│  └─ RLS policies on events/messages/memberships                  │
-│                                                                  │
-│  pg_cron: every 5s → POST /api/workflows/tick                   │
-│  Supabase Realtime: broadcasts events row changes               │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  POST /api/rooms/werewolf                                 │
+│   ├─ INSERT rooms (status='running', agents, role...)    │
+│   ├─ INSERT events (seq=0, type='room:created')          │
+│   └─ fetch /api/rooms/tick?id=X  (fire and forget)       │
+└──────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌──────────────────────────────────────────────────────────┐
+│  POST /api/rooms/tick?id=X  (each call ≤60s)              │
+│   ├─ loadRoomState(X) — fold events into memory state    │
+│   ├─ advanceRoom(X, state) — run ONE phase                │
+│   │    ├─ invoke agent.reply() (or read pre-emitted hint)│
+│   │    ├─ append events for new messages                 │
+│   │    ├─ transition phase in gameState                  │
+│   │    └─ update rooms.currentPhase, rooms.status         │
+│   ├─ if status='running': fetch /api/rooms/tick?id=X     │
+│   ├─ if status='waiting': DO NOT re-fire; wait for event │
+│   └─ if status='completed': done                          │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│  pg_cron every 5s → POST /api/rooms/tick-all             │
+│   ├─ SELECT rooms WHERE status='running'                 │
+│   │    AND updated_at < now() - interval '10 seconds'    │
+│   └─ Re-fire /api/rooms/tick for each (safety net)       │
+└──────────────────────────────────────────────────────────┘
 ```
 
----
+**Why this works**:
+- Each tick is one phase = one LLM call (werewolf wolves vote) or a few (wolf-discuss round with 2-4 wolves speaking). 10-60s typical.
+- Inline self-invoke keeps AI-only latency low (~0.5-1s between ticks for HTTP overhead, NOT 5s).
+- pg_cron catches rooms whose inline chain broke (network glitch, function killed mid-invoke).
+- "Waiting" state cleanly represents "paused until human input" without a heavyweight workflow engine.
 
-## 4. Schema additions
-
-### 4.1 Workflow tables (in `packages/db`)
-
-```sql
--- A workflow run = one game playthrough
-CREATE TABLE workflow_runs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  workflow_id TEXT NOT NULL,                  -- 'werewolf-v1' | 'roundtable-v1'
-  status TEXT NOT NULL DEFAULT 'queued',      -- queued|running|waiting|sleeping|completed|failed
-  input JSONB NOT NULL,                       -- initial workflow input
-  -- Wait state (only populated when status='waiting')
-  waiting_event_name TEXT,
-  waiting_predicate JSONB,                    -- match filter for resumption
-  waiting_timeout_at TIMESTAMPTZ,
-  -- Sleep state
-  sleeping_until TIMESTAMPTZ,
-  -- Result
-  output JSONB,
-  error_message TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX workflow_runs_dispatcher_idx
-  ON workflow_runs (status, waiting_timeout_at, sleeping_until);
-CREATE INDEX workflow_runs_room_idx ON workflow_runs (room_id);
-
--- Step log — enables replay-based resumption (each step's output persisted once)
-CREATE TABLE workflow_steps (
-  run_id UUID NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
-  seq INTEGER NOT NULL,
-  step_id TEXT NOT NULL,                      -- stable user-provided identifier
-  kind TEXT NOT NULL,                         -- run|waitForEvent|sleep
-  input JSONB,
-  output JSONB,                               -- set on completion
-  status TEXT NOT NULL,                       -- pending|running|completed|failed
-  attempts INTEGER NOT NULL DEFAULT 0,
-  next_retry_at TIMESTAMPTZ,
-  error TEXT,
-  started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ,
-  PRIMARY KEY (run_id, seq),
-  UNIQUE (run_id, step_id)                    -- dedup by stable id
-);
-
--- External signals that wake waiting workflows (e.g., human input submissions)
-CREATE TABLE workflow_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_name TEXT NOT NULL,
-  payload JSONB NOT NULL,                     -- includes fields for predicate matching
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  consumed_by_run_id UUID REFERENCES workflow_runs(id),
-  consumed_at TIMESTAMPTZ
-);
-
-CREATE INDEX workflow_events_unconsumed_idx
-  ON workflow_events (event_name) WHERE consumed_at IS NULL;
-```
-
-### 4.2 Memberships + auth coupling
-
-```sql
-CREATE TABLE room_memberships (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  agent_seat_id UUID,                         -- which agent seat (nullable for spectators)
-  role TEXT NOT NULL,                         -- owner|player|spectator
-  joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (room_id, user_id)
-);
-CREATE UNIQUE INDEX room_memberships_seat_unique
-  ON room_memberships (room_id, agent_seat_id)
-  WHERE agent_seat_id IS NOT NULL;
-
--- Extend the agents JSONB in rooms: add `kind: 'ai' | 'human'` per seat.
--- No schema change needed; just new field conventions. Existing rooms default to 'ai'.
-
--- Tighten rooms.created_by to NOT NULL (only new rows; backfill existing as NULL → owner=null is OK since room becomes owned on first claim)
--- Deferred: left nullable for now; auth phase will backfill a special "system" user for legacy rooms.
-```
-
-### 4.3 RLS policies (enabled after auth wires in 4.5b)
-
-```sql
--- rooms: public rooms are readable by anyone
-ALTER TABLE rooms ENABLE ROW LEVEL SECURITY;
-CREATE POLICY rooms_public_read ON rooms FOR SELECT USING (true);
-CREATE POLICY rooms_owner_write ON rooms FOR ALL USING (created_by = auth.uid());
-
--- events: visible if
---   (a) spectator-safe (all-AI room, no humans present), OR
---   (b) viewer is a member AND the event's channel is visible to their seat
--- We compute visibility in the API layer initially. RLS policies added in 4.5b once
--- channel-subscription info is queryable.
-
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
--- Permissive for now; tighten in 4.5b
-CREATE POLICY events_read_all ON events FOR SELECT USING (true);
-
--- room_memberships: user sees their own memberships + room owner sees all
-ALTER TABLE room_memberships ENABLE ROW LEVEL SECURITY;
-CREATE POLICY memberships_self ON room_memberships FOR SELECT
-  USING (user_id = auth.uid()
-         OR EXISTS (SELECT 1 FROM rooms WHERE rooms.id = room_memberships.room_id AND rooms.created_by = auth.uid()));
-CREATE POLICY memberships_write_self ON room_memberships FOR INSERT
-  WITH CHECK (user_id = auth.uid());
-```
-
----
-
-## 5. Core abstractions
-
-### 5.1 `packages/workflow` (NEW)
+### 2.2 `advanceRoom` contract
 
 ```typescript
-// packages/workflow/src/index.ts
+// apps/web/app/lib/room-runtime.ts (NEW)
 
-export interface WorkflowDefinition<Input = unknown, Output = unknown> {
-  id: string
-  version: number
-  handler: (input: Input, ctx: WorkflowContext) => Promise<Output>
+export interface RoomState {
+  room: RoomRow
+  agents: AgentInfo[]
+  gameState: Record<string, unknown>  // mode-specific (werewolf has roleMap, eliminatedIds, etc.)
+  events: EventRow[]
+  pendingEvents: PlatformEvent[]       // emitted during this advance, not yet persisted
 }
 
-export interface WorkflowContext {
-  runId: string
-  roomId: string
-  step: {
-    run<T>(stepId: string, fn: () => Promise<T>, opts?: StepRunOpts): Promise<T>
-    waitForEvent<T = unknown>(eventName: string, opts: WaitForEventOpts): Promise<T>
-    sleep(stepId: string, ms: number): Promise<void>
-  }
-}
+export type AdvanceResult =
+  | { kind: 'continue' }                                       // ready for next tick
+  | { kind: 'wait'; eventName: string; predicate: Record<string, unknown>; timeoutAt?: Date }
+  | { kind: 'complete'; result: 'village_wins' | 'wolves_win' | null }
+  | { kind: 'error'; message: string }
 
-export interface StepRunOpts {
-  retries?: number                    // default 3
-  retryBackoffMs?: number             // default 5000
-}
-
-export interface WaitForEventOpts {
-  stepId: string
-  predicate?: Record<string, unknown> // JSON-equal subset of event.payload
-  timeoutMs?: number                  // default: no timeout (wait forever)
-}
-
-// Sentinel errors thrown to suspend execution
-export class WaitForEventSuspension { /* ... */ }
-export class SleepSuspension { /* ... */ }
-
-// Public API
-export function defineWorkflow<I, O>(def: WorkflowDefinition<I, O>): WorkflowDefinition<I, O>
-export async function startWorkflow<I>(id: string, input: I, roomId: string): Promise<string>  // returns runId
-export async function publishEvent(eventName: string, payload: Record<string, unknown>): Promise<void>
-export async function tickDispatcher(limit?: number): Promise<TickResult>  // called by /api/workflows/tick
+export async function advanceRoom(roomId: string): Promise<AdvanceResult>
 ```
 
-Implementation strategy — **replay-based execution**:
-- On dispatcher tick, for each `queued` or newly-woken `waiting`/`sleeping` run:
-  1. Load run + all its persisted `workflow_steps`.
-  2. Re-invoke `handler(input, ctx)` from the top.
-  3. Each `ctx.step.run(id, fn)` checks persisted steps: if completed, return cached output; otherwise execute fn, persist, return.
-  4. `ctx.step.waitForEvent` first checks persisted match; if found, return; else check `workflow_events` for unconsumed match; if found, consume and return; else throw `WaitForEventSuspension` — dispatcher catches and marks run `waiting`.
-  5. `ctx.step.sleep` — if persisted completion, return; else throw `SleepSuspension` with `wakeAt`.
-  6. Handler returns normally → run marked `completed`.
+Internal steps:
+1. Load room + events from DB
+2. Fold events → `RoomState` (this helper already exists for replay; reuse)
+3. Dispatch by `room.modeId` to mode-specific advance function
+4. Mode function runs ONE phase, returns `AdvanceResult` + emits events
+5. Transactionally: insert new events + update room columns (status, currentPhase, gameState, waitingFor)
 
-Determinism contract:
-- Workflow handler body must be deterministic given same (input, step outputs). Non-deterministic ops (LLM calls, random, DB reads, current time) must live inside `step.run`.
-- Helpers: `ctx.step.run('now', () => Date.now())` for timestamps that need to persist consistently.
+Mode-specific advance lives in `packages/modes/<mode>/advance.ts` (NEW per mode). Each is pure-ish: takes current state, produces next events + updated state. Side effects limited to LLM calls which are the only non-deterministic ops.
 
-### 5.2 `packages/core/src/agent.ts` — refactor
+### 2.3 Determinism contract
 
+Refactor `createWerewolf`:
+
+**Before** (non-deterministic):
 ```typescript
-export type AgentKind = 'ai' | 'human'
-
-export interface Agent {
-  readonly id: string
-  readonly name: string
-  readonly kind: AgentKind
-  readonly config: AgentConfig
-  observe(msg: Message): void | Promise<void>
-  // reply/decide defined by subclasses; runtime introspects .kind
-}
-
-export class AIAgent implements Agent {
-  readonly kind = 'ai' as const
-  // existing implementation, unchanged signature
-  async reply(...): Promise<{ content: string; usage: TokenUsage; ... }>
-  async decide<T>(ctx, schema): Promise<T>
-}
-
-export class HumanAgent implements Agent {
-  readonly kind = 'human' as const
-  // No reply(); runtime checks kind and uses workflow.waitForEvent instead
-}
+const agentId = crypto.randomUUID()
+const shuffled = shuffleArray(roles)  // Math.random
 ```
 
-### 5.3 Mode workflows
-
-Each mode gets a `workflow.ts` exporting a `WorkflowDefinition`:
-
+**After** (deterministic per room):
 ```typescript
-// packages/modes/src/werewolf/workflow.ts
-
-export const werewolfWorkflow = defineWorkflow({
-  id: 'werewolf-v1',
-  version: 1,
-  async handler({ roomId, agentConfigs, advancedRules }, ctx) {
-    // Initialize game state
-    await ctx.step.run('init', async () => {
-      await seedWerewolfChannels(roomId, advancedRules)
-      await seedInitialGameState(roomId, agentConfigs, advancedRules)
-    })
-    
-    while (true) {
-      const state = await ctx.step.run('load-state', () => loadGameState(roomId))
-      if (state.winResult) break
-      
-      // Execute current phase as a single step bundling its turn sequence
-      await executePhase(state.currentPhase, roomId, ctx)
-      
-      await ctx.step.run(`transition-after-${state.currentPhase}`, () => 
-        advancePhase(roomId)
-      )
-    }
-  }
-})
-
-async function executePhase(phase: WerewolfPhase, roomId: string, ctx: WorkflowContext) {
-  switch (phase) {
-    case 'wolfDiscuss': return wolfDiscussPhase(roomId, ctx)
-    case 'wolfVote': return wolfVotePhase(roomId, ctx)
-    case 'witchAction': return witchActionPhase(roomId, ctx)
-    // ... one function per phase
-  }
-}
-
-async function witchActionPhase(roomId: string, ctx: WorkflowContext) {
-  const witch = await ctx.step.run('load-witch', () => findAgentByRole(roomId, 'witch'))
-  if (!witch || isEliminated(witch)) return
-  
-  const decision = await requestDecision(witch, WitchNightSchema, 'witch-night', ctx)
-  await ctx.step.run('apply-witch', () => applyWitchDecision(roomId, decision))
-}
-
-// Generic helper — AI vs human branching
-async function requestDecision<T>(
-  agent: Agent, 
-  schema: ZodSchema<T>, 
-  turnId: string, 
-  ctx: WorkflowContext
-): Promise<T> {
-  if (agent.kind === 'ai') {
-    return await ctx.step.run(`ai-decide-${turnId}-${agent.id}`, async () => {
-      return (agent as AIAgent).decide(buildContext(ctx.roomId), schema)
-    })
-  }
-  // Human: emit input request event, wait for response
-  await ctx.step.run(`emit-input-req-${turnId}-${agent.id}`, () => 
-    emitInputRequest(ctx.roomId, agent.id, turnId, schemaToUI(schema))
-  )
-  const input = await ctx.step.waitForEvent<{ decision: T }>('room/human-input', {
-    stepId: `wait-${turnId}-${agent.id}`,
-    predicate: { roomId: ctx.roomId, agentId: agent.id, turnId },
-    timeoutMs: await getTimeoutMs(ctx.roomId, turnId)
-  })
-  return input.decision
-}
+const seed = hashRoomId(roomId)
+const agentIds = seedPregenerated(seed, agentConfigs.length)  // same seed → same IDs
+const shuffled = seededShuffle(seed, roles)
 ```
 
-The mode workflow is declarative — AI vs human is handled by one helper.
+This is the key refactor. All non-determinism moves to one place: LLM API calls, which get their outputs persisted as events. Everything else folds deterministically.
+
+### 2.4 Side effect idempotency
+
+Every event has a monotonic `seq` per room. Before inserting events from a tick, runtime checks `max(seq) in DB vs. seq of first new event`. If mismatch → another tick beat us → skip this batch (another tick already advanced the state).
+
+Dedup cheap at tick level: `ON CONFLICT (room_id, seq) DO NOTHING`. Events are idempotent by construction.
+
+### 2.5 "Waiting" state
+
+Add columns to `rooms`:
+
+```sql
+ALTER TABLE rooms
+  ADD COLUMN waiting_for JSONB,   -- { eventName, predicate } for resumption
+  ADD COLUMN waiting_until TIMESTAMPTZ;
+```
+
+Update status CHECK constraint to include `'waiting'`.
+
+When a mode's advance returns `{ kind: 'wait', ... }`:
+- Runtime sets `status='waiting'`, `waiting_for=<predicate>`, `waiting_until=<timeout>`
+- Does NOT fire next tick
+- Waits for either (a) matching event insert to `/api/rooms/:id/human-input` OR (b) pg_cron catches timeout and transitions to fallback
+
+No separate `workflow_events` table. Human input routes insert directly into the existing `events` table with a special event type, e.g., `'human:input'`. The next tick's folding picks it up like any other event.
 
 ---
 
-## 6. Sub-phase plans
+## 3. Sub-phase plans
 
-### 6.1 Phase 4.5a — Workflow runtime + mode migration (~4 days)
+### 3.1 Phase 4.5a — AI-only durable runtime (~4 days)
 
-**Goal**: AI-only werewolf games complete reliably under the new runtime.
+**Goal**: 12-player AI-only werewolf games complete reliably via `/api/rooms/tick` chain. Phase 5 UI unblocked.
 
 **Tasks**:
-- [ ] Create `packages/workflow` with defineWorkflow / startWorkflow / step.run / step.waitForEvent / step.sleep
-- [ ] Drizzle migration: workflow_runs, workflow_steps, workflow_events
-- [ ] pg_cron extension enabled on Supabase; cron entry invokes POST /api/workflows/tick every 5s with shared secret
-- [ ] `/api/workflows/tick` route: picks up runs, runs handlers, handles suspension, retries
-- [ ] Refactor `packages/core/src/agent.ts` — `Agent` interface, `AIAgent` implements it, `HumanAgent` stub
-- [ ] Port werewolf from StateMachineFlow.start() → `werewolfWorkflow` definition
-- [ ] Port roundtable from Room.start() → `roundtableWorkflow` definition
-- [ ] Modify `/api/rooms` + `/api/rooms/werewolf`: create room in DB, then `startWorkflow()`, return 200. No more `waitUntil`.
-- [ ] Deprecate `runtime-registry.ts` + `persist-runtime.ts` (still used by scripts/run-*.ts; migrate those too OR keep standalone in-process path for CLI scripts)
-- [ ] Unit tests for workflow runtime (step.run dedup, waitForEvent resume, timeout, retries)
-- [ ] Integration test: 12-player werewolf completes end-to-end via workflow
-- [ ] Validation: seed 12-player zh game, verify completion
+- [ ] Drizzle migration: add `rooms.waiting_for`, `rooms.waiting_until`, update status CHECK
+- [ ] `apps/web/app/lib/room-runtime.ts`: `advanceRoom(roomId)`, `loadRoomState`, state folding helpers
+- [ ] Deterministic refactor in `packages/modes/werewolf/`: seeded shuffle, pre-generated agent IDs
+- [ ] `packages/modes/werewolf/advance.ts`: per-phase advance functions that return AdvanceResult
+- [ ] `packages/modes/roundtable/advance.ts`: simpler, one round = one phase
+- [ ] `apps/web/app/api/rooms/tick/route.ts`: dispatcher, inline self-invoke, idempotent
+- [ ] pg_cron setup in Supabase dashboard (or via drizzle migration): every 5s → `/api/rooms/tick-all`
+- [ ] `apps/web/app/api/rooms/tick-all/route.ts`: sweeps stale running rooms
+- [ ] Rewire `/api/rooms` + `/api/rooms/werewolf` POST: create in DB, fire single tick, return 200. Remove `waitUntil()` game-loop bundling.
+- [ ] **TDD**: test suite in `packages/modes/__tests__/werewolf-replay.test.ts` — assert `advanceTwice === advanceOnce` by event seq; test pause/resume at every phase boundary.
+- [ ] `/admin/rooms/:id/page.tsx`: observability view — phase timeline, recent events, waiting state
+- [ ] Deprecate `runtime-registry.ts` + `persist-runtime.ts` — still used by `scripts/run-*.ts` for standalone-Node local dev, but not in the Vercel request path.
 
 **Files**:
-- NEW `packages/workflow/{package.json, src/{index,runtime,storage,context,types}.ts}`
-- NEW `packages/db/drizzle/migrations/0002_workflow_tables.sql`
-- NEW `packages/db/src/workflow-schema.ts`
-- NEW `apps/web/app/api/workflows/tick/route.ts`
-- MOD `packages/core/src/agent.ts`
-- NEW `packages/modes/src/werewolf/workflow.ts`
-- NEW `packages/modes/src/roundtable/workflow.ts`
-- MOD `apps/web/app/api/rooms/route.ts`
-- MOD `apps/web/app/api/rooms/werewolf/route.ts`
-- MOD `scripts/run-werewolf.ts`, `scripts/run-debate.ts`
+- NEW `apps/web/app/lib/room-runtime.ts` (~300 LOC)
+- NEW `apps/web/app/api/rooms/tick/route.ts` (~100 LOC)
+- NEW `apps/web/app/api/rooms/tick-all/route.ts` (~50 LOC)
+- NEW `packages/modes/src/werewolf/advance.ts` (~400 LOC — the bulk of the work)
+- NEW `packages/modes/src/roundtable/advance.ts` (~100 LOC)
+- NEW `packages/modes/__tests__/werewolf-replay.test.ts` (~300 LOC of tests)
+- NEW `apps/web/app/admin/rooms/[id]/page.tsx` (~150 LOC)
+- NEW `packages/db/drizzle/migrations/0002_waiting_state.sql`
+- MOD `packages/modes/src/werewolf/index.ts` (accept seed + pre-gen IDs)
+- MOD `apps/web/app/api/rooms/route.ts`, `apps/web/app/api/rooms/werewolf/route.ts`
+- MOD `apps/web/app/api/rooms/[id]/messages/route.ts` (no changes to response shape)
 
-**Deploy**: commit after integration test passes. Vercel auto-deploy. Smoke-test 12p game on prod. 
+**Budget**: 4 focused days including 0.5 day TDD + 0.5 day observability.
 
-**Exit criterion**: 12-player werewolf game completes cleanly (60+ messages, winResult set).
+**Exit criterion**:
+- 12-player AI-only werewolf completes cleanly (60+ events, winResult set) on Vercel prod
+- Replay of any completed game produces identical event sequence to original run
+- `/admin/rooms/:id` shows the room's state history
 
-### 6.2 Phase 4.5b — Auth + memberships + seat claims (~3 days)
+**Ship after 4.5a**: commit + deploy. Re-run zh werewolf seeds (the 3 that timed out before). Verify they complete.
 
-**Goal**: Users can sign up, rooms have owners + members, seats can be claimed.
+### 3.2 Phase 5 — UI overhaul (~10-12 days, unblocked after 4.5a)
+
+Proceeds per `docs/design/phase-5-plan.md`. No changes needed to that plan — the spectator-first UI still works. Human seats in Phase 5 look visually identical to AI seats; kind-aware affordances land in 4.5c.
+
+### 3.3 Phase 4.5b — Human-play UX design spec (~2 days, design-only)
+
+**Goal**: Before writing human-input code, lock the play experience. Mockups + copy in a doc.
+
+**Deliverables**:
+- `docs/design/phase-4.5b-human-ux.md` with:
+  - Wireframe (ASCII or described) for each werewolf turn type: vote, witch-save, witch-poison, seer-check, speak, last-words
+  - Wireframe for debate turn: human's round prompt + textarea
+  - Info visibility matrix: for each role, what can they see at each phase?
+  - Microcopy for every prompt, every timeout warning, every fallback message
+  - Timeout defaults per mode
+  - "My turn" indicator design (ambient? notification? banner? sound?)
+  - Disconnection UX: what does a human see when their seat's about to time out?
+
+**Process**:
+- Claude drafts V1 wireframes + copy
+- Self-critique: where are the holes? (e.g., what if two humans want to speak at the same time?)
+- V2 after feedback
+- V3 if needed
+- Lock with user before 4.5c begins
+
+**No code this phase.** Pure design.
+
+### 3.4 Phase 4.5c — Seat tokens + human play (~4-5 days)
+
+**Goal**: 1-human-8-AI werewolf completes end-to-end. Human plays the witch seat, takes decisions, game finishes.
 
 **Tasks**:
-- [ ] Enable Supabase Auth in project dashboard (magic-link only for MVP)
-- [ ] `@supabase/ssr` and client setup in `apps/web`
-- [ ] Drizzle migration: room_memberships table + RLS policies for rooms/memberships/events
-- [ ] `/api/auth/callback` + login/logout pages (simple email input → magic link sent → verify)
-- [ ] On room creation: insert owner membership automatically
-- [ ] Seat claim flow: `POST /api/rooms/:id/claim-seat { seat_agent_id }` — requires auth, inserts membership with role='player'
-- [ ] Room page: show "Claim this seat" buttons next to unclaimed HumanAgent slots when logged in
-- [ ] Invite URL generation: `https://agora.app/room/:id?invite=TOKEN` — signed invite token valid for room
-- [ ] Spectator fallback: unauthed users still see /replays + /replay/[id] as before
+- [ ] Seat token signing/verification: `apps/web/app/lib/seat-tokens.ts` — JWT with room_id + agent_seat_id, signed with `AGORA_SEAT_SECRET` env var
+- [ ] `POST /api/rooms/:id/invites`: owner generates N invite URLs (one per human seat)
+- [ ] `GET /r/:roomId?seat=X&token=Y`: landing page validates token, stores in localStorage, redirects to room
+- [ ] `HumanAgent` in `packages/core/src/agent.ts`: implements `Agent` interface, `kind='human'`, `reply()` throws "waiting" signal that mode-advance recognizes
+- [ ] Mode advance branches on agent.kind: if human, emit `'human:input-required'` event + set room waiting_for, return `{ kind: 'wait' }`
+- [ ] `POST /api/rooms/:id/human-input`: validates seat token, inserts `'human:input'` event matching the waiting_for predicate, fires tick
+- [ ] `useRoomLive.ts` hook: Supabase Realtime subscription on `events` WHERE `room_id=X`, falls back to polling
+- [ ] `ViewerContext` provider: reads seat token from localStorage, resolves seat + role + visible channels
+- [ ] Server-side channel filter in `/api/rooms/:id/messages`: looks up viewer seat from Authorization header or query param, returns only messages on channels the seat subscribes to
+- [ ] `MyInputPanel` component: subscribes to waiting_for, renders appropriate input form from 4.5b specs
+- [ ] `SchemaForm` helper: renders structured decision schemas (vote, witch-action, etc.)
+- [ ] Per-mode timeout policies: werewolf 60s per turn default, debate 300s, configurable per room
+- [ ] Fallback implementations: witch no-save on timeout, vote abstain, AI takeover for speak
+
+**Files**:
+- NEW `apps/web/app/lib/seat-tokens.ts` (~100 LOC)
+- NEW `apps/web/app/api/rooms/[id]/invites/route.ts` (~80 LOC)
+- NEW `apps/web/app/r/[roomId]/page.tsx` (token landing, ~60 LOC)
+- NEW `apps/web/app/api/rooms/[id]/human-input/route.ts` (~80 LOC)
+- NEW `apps/web/app/room/[id]/hooks/useRoomLive.ts` (~120 LOC)
+- NEW `apps/web/app/room/[id]/components/ViewerContext.tsx` (~80 LOC)
+- NEW `apps/web/app/room/[id]/components/MyInputPanel.tsx` (~200 LOC based on 4.5b spec)
+- NEW `apps/web/app/room/[id]/components/SchemaForm.tsx` (~150 LOC)
+- MOD `packages/core/src/agent.ts`: add `HumanAgent`, refactor `Agent` interface
+- MOD `packages/modes/src/werewolf/advance.ts`: branch on agent.kind
+- MOD `packages/modes/src/roundtable/advance.ts`: same
+- MOD `apps/web/app/api/rooms/[id]/messages/route.ts`: viewer filter
+
+**Budget**: 4-5 days.
+
+**Exit criterion**: Owner creates 1-human-8-AI werewolf game, sends invite link to human friend (or second tab), friend plays witch seat through two nights, game completes with correct winner.
+
+### 3.5 Phase 4.5d — Multi-human + Supabase Auth layer (~3-4 days)
+
+**Goal**: 2-human-7-AI werewolf with parallel day-vote fan-in + persistent Supabase Auth identity.
+
+**Tasks**:
+- [ ] Supabase Auth setup (magic-link + Google OAuth from day 1 since zh users now have WeChat-using-friends who might prefer OAuth)
+- [ ] `auth.users` integration: seat tokens become "attached" to users on first claim for authed users; anon users still work via token alone
+- [ ] `room_memberships` table: `(room_id, user_id, agent_seat_id, role)` — persists identity across rooms for authed users
+- [ ] Presence via Supabase Realtime presence channel per room
+- [ ] Disconnection grace: 30s before timeout applies
+- [ ] Fan-in primitive: `waitForAllInputs(agentIds, eventName, timeoutMs)` helper in room-runtime
+- [ ] Day-vote refactor: wait for all living humans' votes + resolve AI votes in parallel, then tally
+- [ ] Invite panel UI for owner (N seat links)
+- [ ] RLS policies on events/memberships (authed users see their rooms, anon users see via token)
 
 **Files**:
 - NEW `apps/web/app/login/page.tsx`, `apps/web/app/auth/callback/route.ts`
 - NEW `apps/web/app/lib/supabase-{server,client}.ts`
-- NEW `apps/web/app/api/rooms/[id]/claim-seat/route.ts`
-- NEW `apps/web/app/room/[id]/components/ClaimSeatButton.tsx`
-- NEW `packages/db/drizzle/migrations/0003_memberships_and_rls.sql`
-- MOD `apps/web/app/api/rooms/route.ts` (insert owner membership on create)
-- MOD `apps/web/app/api/rooms/werewolf/route.ts` (same)
+- NEW `apps/web/app/room/[id]/components/InvitePanel.tsx`, `PresenceIndicators.tsx`
+- NEW `packages/db/drizzle/migrations/0003_memberships_and_auth.sql`
+- MOD `apps/web/app/lib/room-runtime.ts`: add fan-in helper
+- MOD `packages/modes/src/werewolf/advance.ts`: day-vote + night-vote fan-in
 
-**Deploy**: after auth flow verified on prod + seat claim works.
+**Budget**: 3-4 days.
 
-**Exit criterion**: Two devices → two users sign in, create room, claim different seats, see memberships in DB.
-
-### 6.3 Phase 4.5c — Human input + player view + realtime (~3 days)
-
-**Goal**: A 1-human-8-AI werewolf game plays end-to-end. Human witch saves someone; game continues.
-
-**Tasks**:
-- [ ] `HumanAgent` full implementation
-- [ ] `POST /api/rooms/:id/human-input { agentId, turnId, decision }` — validates user owns seat, inserts workflow_event
-- [ ] Supabase Realtime subscription in `useRoomPoll` (or new `useRoomLive`) hook
-- [ ] `ViewerContext` provider: resolve viewer's seat, role, visibleChannels
-- [ ] Server-side channel filter in `/api/rooms/:id/messages` based on auth header
-- [ ] `MyInputPanel` component: renders form for pending input requests
-- [ ] Schema-to-form renderer: handle text, enum/radio (vote for player), optional target selector
-- [ ] Per-mode timeout policies + fallback handlers
-- [ ] Disconnection grace: Supabase Realtime presence → 30s grace → timeout path
-
-**Files**:
-- MOD `packages/core/src/agent.ts` (HumanAgent implementation)
-- NEW `apps/web/app/api/rooms/[id]/human-input/route.ts`
-- NEW `apps/web/app/room/[id]/hooks/useRoomLive.ts`
-- NEW `apps/web/app/room/[id]/components/ViewerContext.tsx`
-- NEW `apps/web/app/room/[id]/components/MyInputPanel.tsx`
-- NEW `apps/web/app/room/[id]/components/SchemaForm.tsx`
-- MOD `apps/web/app/api/rooms/[id]/messages/route.ts` (viewer filter)
-- MOD `packages/modes/src/werewolf/workflow.ts` (timeout handling)
-- MOD `packages/modes/src/roundtable/workflow.ts` (same)
-
-**Deploy**: after 1-human werewolf completes on prod.
-
-**Exit criterion**: Log in on two devices (or two profiles) → create werewolf game → one human claims "witch" seat → game progresses; when night falls, human gets prompt, submits save decision, game continues to day.
-
-### 6.4 Phase 4.5d — Multi-human coordination (~2 days)
-
-**Goal**: 2-human-7-AI werewolf game completes with parallel day-vote fan-in and at least one disconnection recovery.
-
-**Tasks**:
-- [ ] Update workflow helper: parallel `waitForEvent` for fan-in scenarios (e.g., day vote with 3 humans + 4 AI)
-- [ ] Presence detection via Supabase Realtime: track which humans are online
-- [ ] Grace period for disconnected humans before applying fallback
-- [ ] Multi-human invite flow: owner creates room → generates N invite links (one per human seat)
-- [ ] Tests: disconnect one human mid-turn, verify timeout + fallback
-- [ ] Tests: two humans submit simultaneously, both accepted
-
-**Files**:
-- NEW `apps/web/app/room/[id]/components/InvitePanel.tsx`
-- MOD `packages/workflow/src/runtime.ts` (fan-in primitive: `Promise.allSettled` semantics)
-- MOD `packages/modes/src/werewolf/workflow.ts` (day-vote fan-in)
-
-**Deploy**: final Phase 4.5 deploy.
-
-**Exit criterion**: Three devices play a werewolf game with 2 humans + 7 AI; game completes including a day vote round with both humans voting, and a simulated disconnection recovery.
+**Exit criterion**: 3 devices (or browser profiles), 2 human seats + 7 AI, werewolf game completes including day vote round with simultaneous human votes and one disconnection recovery.
 
 ---
 
-## 7. Migration + backward compatibility
+## 4. Reordered sequencing
 
-- Existing 6 shipped zh replays continue working: old rooms stored with status='completed', events intact, no schema-breaking changes.
-- `/replays` and `/replay/[id]` continue as anonymous-spectator routes (RLS permissive on rooms/events read, until 4.5b tightens for humans-present rooms).
-- CLI scripts (`scripts/run-werewolf.ts`, `scripts/run-debate.ts`) migrated to invoke workflows via localhost API OR keep a standalone in-process path for local dev. Decision: **keep standalone in-process path** (no Vercel timeout applies locally; dev iteration stays fast). These scripts run the game loop directly against packages/modes without going through the workflow runtime.
-- Seed script `scripts/seed-zh-demos.ts` stays as HTTP client; works against the new /api/rooms endpoints.
-- Token tracking, observability endpoints, Timeline component — all continue reading from `events`, unchanged.
+```
+4.5a (4d)  ─┬─ commit + deploy + seed zh werewolf re-runs (verify)
+5.2 (4d)   ─┼─ round-table components + avatar + bubbles + modal (can start day 5)
+5.3 (2d)   ─┤  agent detail modal
+5.4 (2d)   ─┤  chat sidebar
+5.5 (2d)   ─┤  wire both modes — commit + deploy beautiful UI
+5.6 (2d)   ─┼─ mobile/polish/deploy
+4.5b (2d)  ─┼─ human-play UX design spec (no code)
+4.5c (5d)  ─┼─ seat tokens + human play — commit + deploy 1-human werewolf
+4.5d (4d)  ─┴─ multi-human + Auth — final deploy
+```
+
+**Total**: ~27 focused days, 5 ship-able milestones.
+
+**Key win**: beautiful UI ships at day 16 instead of day 28. Human-in-the-loop lands at day 23. By day 27 you have 2-human werewolf with Auth.
 
 ---
 
-## 8. Risks + mitigations
+## 5. Risks + mitigations (V2)
 
 | Risk | Likelihood | Mitigation |
 |------|-----------|------------|
-| Replay-based workflow determinism bugs (e.g., `Math.random` outside step.run) | High | Lint rule + code review; unit tests that replay a workflow twice and assert identical step outputs |
-| pg_cron 5s dispatcher latency → AI-only games feel slower | Medium | Fire dispatcher from /api/rooms immediately after insert; pg_cron is backup. Also consider Supabase pg_net for inline triggers. |
-| Supabase magic-link email delivery flaky for zh users | Medium | Accept for MVP; bolt on OAuth (Google/WeChat) when friction hits |
-| RLS policies too permissive → data leak | High | Explicit test suite: each role tries to read each table, assert deny/allow matrix |
-| Werewolf rule regression during rewrite | High | Preserve existing rule tests; port them; add 12-player integration test |
-| workflow_steps table bloat (append-only, 100s of rows per game) | Low | Periodic archival job (defer to Phase 8); ~100 KB per 100-step game, negligible at current scale |
-| Mode workflows become rigid (every change requires v bump) | Medium | Version field on workflow definitions; old runs continue with old version; new runs use new. Migration story in 4.5a docs. |
-| Timeout fallback policy surprises players | Medium | Expose fallback outcomes in transcript: "Witch failed to act (timeout)" |
+| Determinism bug in room-runtime replay | High | TDD from day 1. `expect(replayTwice).toEmitIdenticalEventSeq()`. Lint against `Math.random`, raw `Date.now()`, `crypto.randomUUID()` outside the deterministic seed helper. |
+| pg_cron latency compounds | Medium | Inline self-invoke after each phase. pg_cron is safety net, not primary. Monitor tick-to-tick latency in /admin view. |
+| Side-effect double-emission on tick race | Medium | Event seq uniqueness + `ON CONFLICT (room_id, seq) DO NOTHING`. Each tick's first action is to check current max seq. |
+| `createWerewolf` refactor regresses rules | High | Preserve existing unit tests in `packages/modes`. Port them unchanged. Integration test: 12p base game runs 3× and produces 3 different winners (seed rotation) but each winner is deterministic per seed. |
+| Seat tokens leak in chat/screenshots | Medium | Short JWT expiry (24 hr); rotation on request. Post-4.5d, tokens become auth-attached. |
+| zh magic-link still flaky in 4.5d | Medium | OAuth (Google, GitHub, later WeChat) from day 1 of 4.5d. Magic-link is fallback only. |
+| Phase 5 UI built before human UX spec exists | Low | Phase 5 is spectator-first; human seats render identical to AI seats in Phase 5. 4.5b/c add kind-aware affordances on top without breaking Phase 5. |
+| `/admin` view leaks data in public prod | Low | Gate `/admin` behind `AGORA_ADMIN_SECRET` header check for pre-auth phase. After 4.5d, gate on user role. |
 
 ---
 
-## 9. Validation (end-of-phase)
+## 6. Validation
 
-Full end-state verification checklist:
+Each sub-phase ships with its own criterion (see sub-phase sections). End-state full-system check:
 
-- [ ] `pnpm check-types` clean across all packages
-- [ ] 12p AI-only werewolf: completes cleanly, events persisted, winResult set
-- [ ] 1-human-8-AI werewolf: human claims witch, saves someone, game completes
-- [ ] 2-human-7-AI werewolf: day vote fan-in works, disconnection + timeout tested
-- [ ] 1-human-2-AI debate: human submits 3 rounds, debate completes
-- [ ] /replays still loads for anonymous users; shows all 6 zh seeds + new human games
-- [ ] RLS matrix: viewer without seat can't see seer channel events; verified via direct DB query with auth context
-- [ ] Legacy scripts/run-werewolf.ts still runs locally (standalone path)
-- [ ] Workflow resume: kill dispatcher mid-game, start it again → game picks up exactly where it left off
-
----
-
-## 10. Sequencing + milestones
-
-```
-4.5a (4d) ─┬─ commit ─ deploy ─ smoke prod ─ start 4.5b
-4.5b (3d) ─┼─ commit ─ deploy ─ smoke prod ─ start 4.5c
-4.5c (3d) ─┼─ commit ─ deploy ─ smoke prod ─ start 4.5d
-4.5d (2d) ─┴─ commit ─ deploy ─ smoke prod ─ Phase 4.5 complete
-```
-
-**Total**: ~12 focused days. **Ship quality**: each sub-phase independently valuable and verifiable.
-
-After 4.5d: begin **Phase 5 UI overhaul** — now builds on top of ViewerContext + HumanAgent; round table natively shows human seats with input panels, not just spectator view.
+- [ ] `pnpm check-types` clean
+- [ ] 12p AI-only werewolf completes on prod (4.5a)
+- [ ] Phase 5 UI renders all completed replays including new zh seeds (Phase 5)
+- [ ] 1-human werewolf completes (4.5c)
+- [ ] 2-human werewolf completes with day-vote fan-in + disconnection recovery (4.5d)
+- [ ] Replay reproducibility: any completed game, re-advanced from event 0, produces identical event seq
+- [ ] /admin/rooms/:id shows clean state history for all room types
+- [ ] All 6 zh demo replays from earlier session still render correctly
+- [ ] CLI scripts (scripts/run-*.ts) still work for local dev
 
 ---
 
-## 11. Open questions (to resolve during 4.5a)
+## 7. What was NOT in V1 that V2 adds
 
-1. **Workflow definition location**: `packages/modes/*/workflow.ts` (per mode, local) or `packages/workflow/workflows/*` (centralized registry)? → local keeps mode self-contained; prefer local.
-2. **Retry policy default**: 3 attempts w/ 5s backoff reasonable? → yes for LLM calls; zero retries for deterministic logic (it won't help).
-3. **Dispatcher concurrency**: how many runs to process per tick? → limit 20 per tick initially; tune on prod load.
-4. **Does a CLI script still make sense after workflow migration**? → Yes for local-dev iteration; keeps dev velocity. But skip "orchestration" and just run the game loop straight in a Node process.
-5. **pg_cron cost**: Supabase free tier allows cron; at 5s interval = 17,280 invocations/day. Vercel function invocation cost modest. → OK.
+- Explicit determinism strategy (seeded IDs + shuffle)
+- Side-effect idempotency via event seq
+- TDD budget
+- Observability budget
+- Reordering Phase 5 UI before human work
+- Seat tokens replacing Supabase Auth MVP
+- Phase 4.5b as design-only sub-phase
+- pg_cron latency mitigation via inline self-invoke
+- Cost to remove `packages/workflow` overhead
+
+## 8. What was in V1 that V2 removed
+
+- `packages/workflow` package (too generic; bespoke is simpler)
+- `workflow_runs`, `workflow_steps`, `workflow_events` tables (reuse `events`)
+- Generic `step.run` / `step.waitForEvent` primitives (reuse event sourcing)
+- Supabase Auth magic-link MVP (deferred to 4.5d layer)
+- Interleaved UI + human work (UI ships first now)
 
 ---
 
-## 12. Appendix: Glossary
+## 9. Open questions (resolved during 4.5a, non-blocking)
 
-- **Workflow**: a durable, resumable game loop persisted in workflow_runs + workflow_steps tables.
-- **Step**: atomic unit within a workflow; each step's output is memoized by stable step_id.
-- **Replay**: workflow handler is re-executed from the top on each wake-up; steps short-circuit to cached outputs.
-- **Suspension**: thrown sentinel (`WaitForEventSuspension`, `SleepSuspension`) that the dispatcher catches to park the run.
-- **Event** (workflow_events): an external signal that resumes a waiting workflow. Not the same as `events` table (which stores game events for replay).
-- **Seat**: a slot in a room that an Agent (AI or human) occupies. Identified by agent_id in rooms.agents JSONB.
-- **Membership**: a user's claim on a seat or spectator role in a room.
-- **ViewerContext**: frontend state about who's viewing the room right now — determines visibility + input affordances.
+1. **Seeded shuffle algorithm**: Fisher-Yates with seed from `hash(room_id + 'shuffle-v1')`? → yes, commits room to version so we can bump if needed.
+2. **Tick function concurrency**: if inline invoke overlaps pg_cron, do we dedup? → yes: `SELECT FOR UPDATE SKIP LOCKED` on the room row at tick start.
+3. **Fallback for unresponsive AI**: if an LLM call fails after 3 retries, does the mode abort or skip that agent's turn? → skip with a system-emitted "thinking…" timeout message. Mode-specific TBD in advance.ts.
+4. **Event types for human inputs**: one `'human:input'` type with payload shape per turnId, or distinct types per decision? → one type, payload shape typed by turnId string.
 
 ---
 
-**Next**: tasks created in TaskList (4.5a → 4.5d); `docs/implementation-plan.md` and `memory/project_agora.md` updated. After user signs off on this doc, begin 4.5a.
+## 10. Sequencing checkpoint (sign-off)
+
+Before starting 4.5a code, confirm:
+- ✅ Bespoke runtime approach (not generic workflow engine)
+- ✅ Reorder: 4.5a → Phase 5 → 4.5b → 4.5c → 4.5d
+- ✅ Seat tokens for MVP, Supabase Auth layer in 4.5d
+- ✅ TDD for determinism
+- ✅ 2 days of pure design in 4.5b before human-play code
+
+Then: begin 4.5a, committing after TDD green + observability view, deploying to Vercel, re-running the 3 timed-out zh werewolf seeds to verify completion.
