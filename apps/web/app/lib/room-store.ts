@@ -401,6 +401,32 @@ export async function listCompletedRooms(limit = 100): Promise<RoomRow[]> {
     .limit(limit)
 }
 
+/** Rooms whose durable runtime may be stuck — pg_cron / Vercel Cron sweeper
+ * uses this to re-fire ticks for rooms that haven't been updated recently.
+ * Returns at most `limit` rooms in either 'running' or 'waiting' state whose
+ * updated_at is older than `olderThanSeconds`. */
+export async function getStuckRooms(
+  olderThanSeconds = 30,
+  limit = 20,
+): Promise<{ id: string; status: string; updatedAt: Date }[]> {
+  const cutoff = new Date(Date.now() - olderThanSeconds * 1000)
+  const rows = await db
+    .select({ id: rooms.id, status: rooms.status, updatedAt: rooms.updatedAt })
+    .from(rooms)
+    .where(
+      and(
+        sql`${rooms.status} IN ('running', 'waiting')`,
+        sql`${rooms.updatedAt} < ${cutoff}`,
+      ),
+    )
+    .limit(limit)
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    updatedAt: r.updatedAt,
+  }))
+}
+
 /** Flag any rooms that were running but now orphaned (e.g. crashed on deploy). */
 export async function markOrphanedAsError(maxAgeMinutes = 15): Promise<number> {
   const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000)
