@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { AIAgent, Room, RoundRobinFlow, EventBus, TokenAccountant } from '@agora/core'
+
+export const dynamic = 'force-dynamic'
 import { createGenerateFn, buildPricingMap, createCostCalculator } from '@agora/llm'
 import type { LLMProvider, ModelConfig, PersonaConfig } from '@agora/shared'
 import {

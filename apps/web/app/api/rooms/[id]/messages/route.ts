@@ -5,6 +5,8 @@
 import { NextResponse } from 'next/server'
 import { getMessagesSince, getRoomSnapshot } from '../../../../lib/room-store'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },

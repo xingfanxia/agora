@@ -5,6 +5,8 @@
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { TokenAccountant } from '@agora/core'
+
+export const dynamic = 'force-dynamic'
 import type { GenerateFn, GenerateObjectFn } from '@agora/core'
 import {
   createGenerateFn,

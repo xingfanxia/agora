@@ -13,7 +13,16 @@ import type { EventRow, RoomRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
 
-const db = getDb()
+// Lazy accessor: defers Postgres client creation until the first actual
+// query. Prevents Next.js build-time page data collection from crashing
+// when DB env vars aren't set.
+const db = new Proxy({} as ReturnType<typeof getDb>, {
+  get(_target, prop) {
+    const instance = getDb() as unknown as Record<string | symbol, unknown>
+    const value = instance[prop]
+    return typeof value === 'function' ? (value as Function).bind(instance) : value
+  },
+})
 
 export type RoomStatus = 'running' | 'completed' | 'error'
 
