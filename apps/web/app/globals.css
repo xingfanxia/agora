@@ -67,3 +67,32 @@ textarea,
 select {
   font-family: inherit;
 }
+
+/* ============================================================
+ * Phase 5.2 round-table animations
+ * ============================================================ */
+
+@keyframes agora-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.85; }
+}
+
+@keyframes agora-bubble-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes agora-bubble-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agora-animated,
+  [class*='agora-'] {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
