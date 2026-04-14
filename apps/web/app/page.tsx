@@ -69,6 +69,19 @@ export default function Home() {
         />
       </div>
 
+      <Link
+        href="/replays"
+        style={{
+          fontSize: '0.8rem',
+          color: 'var(--muted)',
+          textDecoration: 'none',
+          borderBottom: '1px solid var(--border)',
+          paddingBottom: '0.2rem',
+        }}
+      >
+        Browse replays →
+      </Link>
+
       <div
         style={{
           display: 'flex',

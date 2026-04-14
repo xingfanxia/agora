@@ -1,5 +1,6 @@
 // ============================================================
 // POST /api/rooms — Create a roundtable debate
+// GET  /api/rooms  — List rooms (filterable by status/mode)
 // ============================================================
 
 import { NextResponse } from 'next/server'
@@ -9,6 +10,7 @@ import { createGenerateFn, buildPricingMap, createCostCalculator } from '@agora/
 import type { LLMProvider, ModelConfig, PersonaConfig } from '@agora/shared'
 import {
   createRoom,
+  listCompletedRooms,
   updateRoomStatus,
   type AgentInfo,
 } from '../../lib/room-store'
@@ -42,6 +44,8 @@ function resolveProvider(modelId: string): LLMProvider {
   throw new Error(`Unknown model: ${modelId}`)
 }
 
+// ── POST: create ────────────────────────────────────────────
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreateRoomBody
@@ -59,27 +63,19 @@ export async function POST(request: Request) {
     const roomId = crypto.randomUUID()
     const eventBus = new EventBus()
 
-    // Build agents
     const agentInfos: AgentInfo[] = []
     const aiAgents: AIAgent[] = []
 
     for (const agentInput of body.agents) {
       const agentId = crypto.randomUUID()
       const provider = (agentInput.provider as LLMProvider) ?? resolveProvider(agentInput.model)
-
       const modelConfig: ModelConfig = {
         provider,
         modelId: agentInput.model,
         temperature: 0.8,
         maxTokens: 1024,
       }
-
-      const persona: PersonaConfig = {
-        name: agentInput.name,
-        description: agentInput.persona,
-      }
-
-      const generateFn = createGenerateFn(modelConfig)
+      const persona: PersonaConfig = { name: agentInput.name, description: agentInput.persona }
 
       const agent = new AIAgent(
         {
@@ -95,19 +91,13 @@ export async function POST(request: Request) {
             'Be substantive and specific. Avoid generic platitudes.',
           ].join('\n'),
         },
-        generateFn,
+        createGenerateFn(modelConfig),
       )
 
       aiAgents.push(agent)
-      agentInfos.push({
-        id: agentId,
-        name: agentInput.name,
-        model: agentInput.model,
-        provider,
-      })
+      agentInfos.push({ id: agentId, name: agentInput.name, model: agentInput.model, provider })
     }
 
-    // Persist room shell to DB
     await createRoom({
       id: roomId,
       modeId: 'roundtable',
@@ -117,7 +107,6 @@ export async function POST(request: Request) {
       currentRound: 1,
     })
 
-    // Build room + register runtime + wire persistence
     const room = new Room(
       { id: roomId, name: body.topic, modeId: 'roundtable', topic: body.topic, maxAgents: 8 },
       eventBus,
@@ -133,7 +122,6 @@ export async function POST(request: Request) {
     const runtime = registerRuntime(roomId, { eventBus, room, flow, accountant })
     wireEventPersistence(roomId, eventBus, runtime)
 
-    // Return roomId immediately; game runs in background until completion
     waitUntil(
       room
         .start(flow)
@@ -162,4 +150,33 @@ export async function POST(request: Request) {
       { status: 500 },
     )
   }
+}
+
+// ── GET: list completed rooms ───────────────────────────────
+
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '50', 10), 1), 200)
+  const modeId = url.searchParams.get('mode')
+
+  const rooms = await listCompletedRooms(limit)
+  const filtered = modeId ? rooms.filter((r) => r.modeId === modeId) : rooms
+
+  return NextResponse.json({
+    rooms: filtered.map((r) => ({
+      id: r.id,
+      modeId: r.modeId,
+      topic: r.topic,
+      agents: r.agents,
+      currentPhase: r.currentPhase,
+      gameState: r.gameState,
+      totalCost: r.totalCost,
+      totalTokens: r.totalTokens,
+      callCount: r.callCount,
+      messageCount: r.messageCount,
+      createdAt: r.createdAt,
+      startedAt: r.startedAt,
+      endedAt: r.endedAt,
+    })),
+  })
 }
