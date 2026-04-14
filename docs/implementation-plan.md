@@ -15,8 +15,8 @@
 | **2b** | Werewolf Advanced | ✅ **DONE** | Togglable advanced rules | Werewolf (7 roles: +Guard, +Idiot) |
 | **3** | Frontend + Observability | ✅ **DONE** | Mode-specific UI, Token/cost tracking (LiteLLM), Observability timeline | — (enhance existing) |
 | **4** | Persistence + Replay | ✅ **DONE** | Postgres (Supabase) event store, DB-backed reads, /replays + /replay/[id] with animated playback, Vercel-ready runtime | — (enhance existing) |
-| **4.5a** | Durable Runtime (AI-only) | ⏳ **NEXT** | Bespoke advanceRoom + chained tick dispatcher, deterministic agent IDs, waiting state, /admin observability, replay determinism | — (foundation; AI-only games complete reliably) |
-| **5** | UI Overhaul (i18n + Round Table) | ⏸ After 4.5a | next-intl (en/zh) ✅ 5.1 shipped; round-table viz + click-to-view + chat sidebar pending | — (visual polish; spectator-first) |
+| **4.5a** | Durable Runtime (AI-only) | ✅ **DONE** | Bespoke advanceRoom + chained tick dispatcher, deterministic agent IDs, waiting state, /admin observability, replay determinism | — (foundation; AI-only games complete reliably) |
+| **5** | UI Overhaul (i18n + Round Table) | ⏳ **NEXT** | next-intl (en/zh) ✅ 5.1 shipped; round-table viz + click-to-view + chat sidebar pending | — (visual polish; spectator-first) |
 | **4.5b** | Human-Play UX Design | ⏸ After 5 | Design-only: wireframes + copy for every human turn type, timeout + fallback UX | — (doc deliverable only) |
 | **4.5c** | Seat Tokens + Human Play | ⏸ After 4.5b | HumanAgent, JWT seat tokens, human-input route, Supabase Realtime, ViewerContext, MyInputPanel, per-mode timeouts | 1-human-8-AI games |
 | **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth (magic-link + OAuth), room_memberships + RLS, presence, fan-in, disconnection grace | N-human rooms |
