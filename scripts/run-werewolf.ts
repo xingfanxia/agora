@@ -4,7 +4,8 @@
 // Runs a full werewolf game with 6 agents + channel isolation
 // ============================================================
 
-import { createGenerateFn, createGenerateObjectFn } from '../packages/llm/src/index'
+import { createGenerateFn, createGenerateObjectFn, buildPricingMap, createCostCalculator } from '../packages/llm/src/index'
+import { TokenAccountant, formatSummary } from '../packages/core/src/index'
 import { createWerewolf, type WerewolfRole, type WerewolfAdvancedRules } from '../packages/modes/src/werewolf/index'
 import type { ModelConfig, Message } from '../packages/shared/src/index'
 import * as fs from 'fs'
@@ -81,6 +82,11 @@ async function main() {
     createGenerateObjectFn,
   )
 
+  // ── Token tracking ────────────────────────────────────────
+  const pricingMap = await buildPricingMap(AGENTS.map((a) => a.model))
+  const calculateCost = createCostCalculator(pricingMap)
+  const accountant = new TokenAccountant(result.eventBus, calculateCost)
+
   // Print role assignments
   console.log('ROLE ASSIGNMENTS:')
   const roleEmoji: Record<WerewolfRole, string> = {
@@ -135,9 +141,15 @@ async function main() {
   console.log('Starting game...\n')
   await result.room.start(result.flow)
 
+  // Print token summary
+  const summary = accountant.getSummary(result.room.config.id)
+  console.log('\n' + '─'.repeat(80))
+  console.log(formatSummary(summary, result.agentNames))
+  console.log('─'.repeat(80))
+
   // Build output document
   const messages = result.room.getMessages()
-  const doc = buildTranscript(result, messages, startTime)
+  const doc = buildTranscript(result, messages, startTime, summary)
 
   // Save to file
   const outputDir = path.join(process.cwd(), 'docs', 'report', 'werewolf')
@@ -153,6 +165,7 @@ function buildTranscript(
   result: Awaited<ReturnType<typeof createWerewolf>>,
   messages: readonly Message[],
   startTime: number,
+  tokenSummary?: ReturnType<TokenAccountant['getSummary']>,
 ): string {
   const lines: string[] = []
   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1)
@@ -163,6 +176,11 @@ function buildTranscript(
   lines.push(`> **Players**: ${Object.values(result.agentNames).join(', ')}`)
   lines.push(`> **Messages**: ${messages.length}`)
   lines.push(`> **Duration**: ${totalTime}s`)
+  if (tokenSummary) {
+    lines.push(`> **LLM calls**: ${tokenSummary.callCount}`)
+    lines.push(`> **Total tokens**: ${tokenSummary.totalTokens.toLocaleString()}`)
+    lines.push(`> **Total cost**: $${tokenSummary.totalCost.toFixed(4)}`)
+  }
   lines.push('')
 
   // Role table
@@ -210,6 +228,41 @@ function buildTranscript(
     } else {
       lines.push(`**${msg.senderName}**:`)
       lines.push(msg.content)
+    }
+    lines.push('')
+  }
+
+  // Token usage breakdown
+  if (tokenSummary) {
+    lines.push('## Token Usage & Cost')
+    lines.push('')
+    lines.push('| Agent | Model | Calls | Input | Cached | Output | Cost |')
+    lines.push('|-------|-------|-------|-------|--------|--------|------|')
+    const agentRows = [...tokenSummary.byAgent.values()].sort((a, b) => b.cost - a.cost)
+    for (const agent of agentRows) {
+      const name = result.agentNames[agent.agentId] ?? agent.agentId
+      const agentDef = AGENTS.find((a) => a.name === name)
+      const model = agentDef?.model.modelId ?? '?'
+      lines.push(
+        `| **${name}** | ${model} | ${agent.callCount} | ` +
+          `${agent.inputTokens.toLocaleString()} | ` +
+          `${agent.cachedInputTokens.toLocaleString()} | ` +
+          `${agent.outputTokens.toLocaleString()} | ` +
+          `$${agent.cost.toFixed(4)} |`,
+      )
+    }
+    lines.push('')
+    lines.push('### By Model')
+    lines.push('')
+    lines.push('| Provider / Model | Calls | Input Tokens | Output Tokens | Cost |')
+    lines.push('|------------------|-------|--------------|---------------|------|')
+    for (const model of tokenSummary.byModel.values()) {
+      lines.push(
+        `| ${model.provider} / ${model.modelId} | ${model.callCount} | ` +
+          `${model.inputTokens.toLocaleString()} | ` +
+          `${model.outputTokens.toLocaleString()} | ` +
+          `$${model.cost.toFixed(4)} |`,
+      )
     }
     lines.push('')
   }

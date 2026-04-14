@@ -183,7 +183,7 @@ async function runDebate(config: DebateConfig, debateIndex: number): Promise<str
     const generateFn = createGenerateFn(judge.model)
     const judgeSystemPrompt = `You are ${judge.name}, a debate judge. ${judge.persona}`
     try {
-      const evaluation = await generateFn(judgeSystemPrompt, [], judgePrompt)
+      const { content: evaluation } = await generateFn(judgeSystemPrompt, [], judgePrompt)
       judgeResults.push({
         name: judge.name,
         model: `${judge.model.modelId} (${judge.model.provider})`,

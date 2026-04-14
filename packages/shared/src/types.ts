@@ -64,6 +64,47 @@ export interface Message {
   readonly metadata?: Record<string, unknown>
 }
 
+// ── Token Usage ─────────────────────────────────────────────
+
+/**
+ * Normalized token-usage snapshot for a single LLM call.
+ * Superset across providers — unused fields default to 0.
+ *
+ * - `cachedInputTokens`: Anthropic prompt-cache read (reused cache blocks)
+ * - `cacheCreationTokens`: Anthropic prompt-cache write (new cache blocks)
+ * - `reasoningTokens`: OpenAI o1-style hidden reasoning tokens
+ */
+export interface TokenUsage {
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly cachedInputTokens: number
+  readonly cacheCreationTokens: number
+  readonly reasoningTokens: number
+  readonly totalTokens: number
+}
+
+/** Per-1M-token pricing for a specific provider/model */
+export interface ModelPricing {
+  readonly provider: LLMProvider
+  readonly modelId: string
+  readonly inputPricePerMillion: number
+  readonly outputPricePerMillion: number
+  readonly cachedInputPricePerMillion: number
+  readonly cacheCreationPricePerMillion: number
+}
+
+/** One token-usage observation tied to a message + agent */
+export interface TokenUsageRecord {
+  readonly roomId: Id
+  readonly agentId: Id
+  readonly messageId: Id
+  readonly provider: LLMProvider
+  readonly modelId: string
+  readonly usage: TokenUsage
+  readonly cost: number
+  readonly timestamp: number
+}
+
 /** Room configuration */
 export interface RoomConfig {
   readonly id: Id
@@ -92,6 +133,22 @@ export type PlatformEvent =
   | { type: 'agent:left'; roomId: Id; agentId: Id }
   | { type: 'message:created'; message: Message }
   | { type: 'round:changed'; roomId: Id; round: number; maxRounds: number }
-  | { type: 'phase:changed'; roomId: Id; phase: string; previousPhase: string | null; metadata?: Record<string, unknown> }
+  | {
+      type: 'phase:changed'
+      roomId: Id
+      phase: string
+      previousPhase: string | null
+      metadata?: Record<string, unknown>
+    }
   | { type: 'agent:thinking'; roomId: Id; agentId: Id }
   | { type: 'agent:done'; roomId: Id; agentId: Id }
+  | {
+      type: 'token:recorded'
+      roomId: Id
+      agentId: Id
+      messageId: Id
+      provider: LLMProvider
+      modelId: string
+      usage: TokenUsage
+      cost: number
+    }

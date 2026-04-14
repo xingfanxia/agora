@@ -1,6 +1,6 @@
 import { generateText, generateObject } from 'ai'
 import type { LanguageModel } from 'ai'
-import type { ModelConfig } from '@agora/shared'
+import type { ModelConfig, TokenUsage } from '@agora/shared'
 import type { ZodSchema } from 'zod'
 import { createModel } from './provider'
 
@@ -9,29 +9,84 @@ export interface ChatMessage {
   readonly content: string
 }
 
+/** Text generation result with token usage attached. */
+export interface GenerateResult {
+  readonly content: string
+  readonly usage: TokenUsage
+}
+
+/** Structured output result with token usage attached. */
+export interface GenerateObjectResult {
+  readonly object: unknown
+  readonly usage: TokenUsage
+}
+
 export type GenerateFn = (
   systemPrompt: string,
   messages: { role: string; content: string }[],
-  instruction?: string
-) => Promise<string>
+  instruction?: string,
+) => Promise<GenerateResult>
 
 /**
  * Structured output generate function — returns a parsed object
- * conforming to the provided Zod schema. Used for constrained
- * decisions like votes, role actions, etc.
+ * conforming to the provided Zod schema + token usage.
  */
 export type GenerateObjectFn = (
   systemPrompt: string,
   messages: { role: string; content: string }[],
   schema: ZodSchema,
-  instruction?: string
-) => Promise<unknown>
+  instruction?: string,
+) => Promise<GenerateObjectResult>
+
+// ── Usage extraction ─────────────────────────────────────────
+
+/**
+ * Shape-flexible extraction — covers both v4 (promptTokens/completionTokens)
+ * and any future renames. Provider-specific fields (prompt caching, reasoning)
+ * come from `providerMetadata`.
+ */
+function extractUsage(result: {
+  usage?: Record<string, unknown>
+  providerMetadata?: Record<string, unknown>
+}): TokenUsage {
+  const usage = (result.usage ?? {}) as Record<string, number | undefined>
+  const meta = (result.providerMetadata ?? {}) as Record<string, unknown>
+
+  const anthropic = (meta['anthropic'] ?? {}) as Record<string, number | undefined>
+  const openai = (meta['openai'] ?? {}) as Record<string, number | undefined>
+
+  const inputTokens =
+    usage['promptTokens'] ?? usage['inputTokens'] ?? usage['prompt_tokens'] ?? 0
+  const outputTokens =
+    usage['completionTokens'] ??
+    usage['outputTokens'] ??
+    usage['completion_tokens'] ??
+    0
+  const cachedInputTokens = Number(anthropic['cacheReadInputTokens'] ?? 0)
+  const cacheCreationTokens = Number(anthropic['cacheCreationInputTokens'] ?? 0)
+  const reasoningTokens = Number(
+    openai['reasoningTokens'] ?? usage['reasoningTokens'] ?? 0,
+  )
+  const totalTokens =
+    usage['totalTokens'] ?? usage['total_tokens'] ?? inputTokens + outputTokens
+
+  return {
+    inputTokens: Number(inputTokens),
+    outputTokens: Number(outputTokens),
+    cachedInputTokens,
+    cacheCreationTokens,
+    reasoningTokens,
+    totalTokens: Number(totalTokens),
+  }
+}
+
+// ── Core primitive ───────────────────────────────────────────
 
 export async function generate(
   model: LanguageModel,
   messages: ChatMessage[],
-  options?: { temperature?: number; maxTokens?: number }
-): Promise<string> {
+  options?: { temperature?: number; maxTokens?: number },
+): Promise<GenerateResult> {
   try {
     const result = await generateText({
       model,
@@ -39,12 +94,14 @@ export async function generate(
       temperature: options?.temperature,
       maxTokens: options?.maxTokens,
     })
-    return result.text
+    return { content: result.text, usage: extractUsage(result) }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`LLM generation failed: ${message}`)
   }
 }
+
+// ── Factories ────────────────────────────────────────────────
 
 export function createGenerateFn(config: ModelConfig): GenerateFn {
   const model = createModel(config)
@@ -102,7 +159,10 @@ export function createGenerateObjectFn(config: ModelConfig): GenerateObjectFn {
 
     // Vercel AI SDK requires at least one non-system message
     if (chatMessages.length === 1 && chatMessages[0]!.role === 'system') {
-      chatMessages.push({ role: 'user', content: 'Please make your decision. Respond with a valid JSON object.' })
+      chatMessages.push({
+        role: 'user',
+        content: 'Please make your decision. Respond with a valid JSON object.',
+      })
     }
 
     const maxAttempts = 3
@@ -112,21 +172,23 @@ export function createGenerateObjectFn(config: ModelConfig): GenerateObjectFn {
           model,
           messages: chatMessages,
           schema: schema as ZodSchema,
-          temperature: attempt === 1 ? config.temperature : Math.max(0.3, (config.temperature ?? 0.7) - 0.2),
+          temperature:
+            attempt === 1 ? config.temperature : Math.max(0.3, (config.temperature ?? 0.7) - 0.2),
           maxTokens: config.maxTokens ? Math.max(config.maxTokens, 500) : 500,
         })
-        return result.object
+        return { object: result.object, usage: extractUsage(result) }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         if (attempt < maxAttempts) {
-          console.warn(`Structured generation attempt ${attempt}/${maxAttempts} failed: ${message}. Retrying...`)
+          console.warn(
+            `Structured generation attempt ${attempt}/${maxAttempts} failed: ${message}. Retrying...`,
+          )
           continue
         }
         throw new Error(`Structured generation failed after ${maxAttempts} attempts: ${message}`)
       }
     }
 
-    // Unreachable, but TypeScript needs it
     throw new Error('Structured generation failed')
   }
 }

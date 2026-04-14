@@ -2,7 +2,7 @@
 // Agora Platform — Agent interface + AIAgent implementation
 // ============================================================
 
-import type { Id, Message, ModelConfig, PersonaConfig } from '@agora/shared'
+import type { Id, Message, ModelConfig, PersonaConfig, TokenUsage } from '@agora/shared'
 
 // ── Interfaces ──────────────────────────────────────────────
 
@@ -32,6 +32,18 @@ export interface ChatMessage {
   readonly content: string
 }
 
+/** Text generation result with token usage attached. */
+export interface GenerateResult {
+  readonly content: string
+  readonly usage: TokenUsage
+}
+
+/** Structured output result with token usage attached. */
+export interface GenerateObjectResult {
+  readonly object: unknown
+  readonly usage: TokenUsage
+}
+
 /**
  * Generate function signature — injected into AIAgent so core
  * has zero dependency on any LLM package.
@@ -40,7 +52,7 @@ export type GenerateFn = (
   systemPrompt: string,
   messages: ChatMessage[],
   instruction?: string,
-) => Promise<string>
+) => Promise<GenerateResult>
 
 /**
  * Structured output generate function — injected optionally
@@ -51,7 +63,7 @@ export type GenerateObjectFn = (
   messages: ChatMessage[],
   schema: unknown,
   instruction?: string,
-) => Promise<unknown>
+) => Promise<GenerateObjectResult>
 
 /** Core agent contract: reply + observe */
 export interface Agent {
@@ -128,10 +140,16 @@ export class AIAgent implements Agent {
     }
 
     const chatMessages = allMessages.map(messageToChatMessage)
+    const { provider, modelId } = this.config.model
 
     // Structured output path — constrained decision via schema
     if (context.schema && this.generateObjectFn) {
-      const decision = await this.generateObjectFn(systemPrompt, chatMessages, context.schema, context.instruction)
+      const { object: decision, usage } = await this.generateObjectFn(
+        systemPrompt,
+        chatMessages,
+        context.schema,
+        context.instruction,
+      )
 
       return {
         id: crypto.randomUUID(),
@@ -141,12 +159,17 @@ export class AIAgent implements Agent {
         content: typeof decision === 'object' ? JSON.stringify(decision) : String(decision),
         channelId: context.channelId,
         timestamp: Date.now(),
-        metadata: { decision },
+        metadata: {
+          decision,
+          tokenUsage: usage,
+          provider,
+          modelId,
+        },
       }
     }
 
     // Standard text generation path
-    const content = await this.generateFn(systemPrompt, chatMessages, context.instruction)
+    const { content, usage } = await this.generateFn(systemPrompt, chatMessages, context.instruction)
 
     return {
       id: crypto.randomUUID(),
@@ -156,6 +179,11 @@ export class AIAgent implements Agent {
       content,
       channelId: context.channelId,
       timestamp: Date.now(),
+      metadata: {
+        tokenUsage: usage,
+        provider,
+        modelId,
+      },
     }
   }
 
