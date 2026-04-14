@@ -1,6 +1,11 @@
 # Phase 3 — Handoff Document
 
-> **Target audience**: Next Claude session starting fresh after compact
+> **Status**: ✅ SHIPPED 2026-04-14 (commits 748d9c4, 90e2ad6, 526618d, b268897)
+>
+> See `docs/implementation-plan.md` Phase 3 section for the completion checklist with file paths.
+> This document is preserved as a historical planning artifact. Content below is what was written *before* implementation and may not match the final shape exactly (e.g. callback-based token capture became return-type-based; AgentMemoryInspector / DecisionTree / NightOverlay were deferred).
+>
+> **Target audience (original)**: Next Claude session starting fresh after compact
 > **Date written**: 2026-04-13
 > **Previous session accomplishments**: Phase 1 (debate), Phase 2a (werewolf core), Phase 2b (advanced rules)
 
