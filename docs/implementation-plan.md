@@ -8,14 +8,18 @@
 
 ## Phase Overview
 
-| Phase | Name | Core Unlocks | New Modes | Target |
-|-------|------|-------------|-----------|--------|
-| **1** | Roundtable MVP | Agent, Room, FreeForm Flow, LLM, basic UI | Roundtable Debate | 1 week |
-| **2** | Werewolf | Channel (info isolation), StateMachine Flow, Structured Output | Werewolf | 2 weeks |
-| **3** | UX Polish | Room View visualization, Persona Editor, Human Players, Spectator | — (enhance existing) | 1-2 weeks |
-| **4** | Script Kill | Long-term Memory, Clue/Evidence system, Branching Narrative | Script Kill | 2-3 weeks |
-| **5** | TRPG | GM Agent, Dice system, Narrative generation, Character growth | TRPG | 3 weeks |
-| **6** | Platform | Custom Mode SDK, Agent Marketplace, Replay, Hierarchical Flow | Custom | 2 weeks |
+| Phase | Name | Status | Core Unlocks | New Modes |
+|-------|------|--------|-------------|-----------|
+| **1** | Roundtable MVP | ✅ **DONE** | Agent, Room, RoundRobin Flow, LLM multi-provider, basic UI | Roundtable Debate |
+| **2a** | Werewolf Core | ✅ **DONE** | Channel isolation, StateMachine Flow, Structured Output | Werewolf (5 roles) |
+| **2b** | Werewolf Advanced | ✅ **DONE** | Togglable advanced rules | Werewolf (7 roles: +Guard, +Idiot) |
+| **3** | Frontend + Observability | ⏳ **NEXT** | Mode-specific UI, Token/cost tracking, Observability events, Timeline | — (enhance existing) |
+| **4** | Script Kill | ⏸ Later | Long-term Memory, Clue/Evidence system, Branching Narrative | Script Kill |
+| **5** | TRPG | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
+| **6** | Platform | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay, Hierarchical Flow | Custom |
+
+**Current session date**: 2026-04-13
+**Handoff doc for Phase 3**: `docs/design/phase-3-handoff.md`
 
 ---
 
@@ -142,39 +146,102 @@
 
 ---
 
-## Phase 3: UX Polish — Make People Want to Share
+## Phase 3: Frontend + Observability + Token Tracking
 
-**Goal**: Elevate the visual experience to Accio-Work-level polish. Make sessions screenshot-worthy.
+**Goal**: Make the platform visually accessible. Build generic agent-collab UI that composes mode-specific views. Track token usage + costs. Add observability (timeline, memory inspector) for debugging and demos.
 
-### Step 3.1: Room View Visualization
-- [ ] 2D room scene with agent avatars positioned around a table/circle
-- [ ] Speech bubbles that appear and fade (borrowed from evotraders RoomView)
-- [ ] Agent avatars with model logos and status indicators
-- [ ] Smooth animations (Framer Motion) for speaking, voting, elimination
+**Handoff doc**: `docs/design/phase-3-handoff.md` (detailed file-level plan)
 
-### Step 3.2: Persona Editor
-- [ ] Rich persona creation form: name, avatar, personality description, background
-- [ ] AI auto-enrich: user writes 2-3 sentences, AI expands into full character
-- [ ] Persona preview: see how the agent would respond to a sample prompt
-- [ ] Persona library: save and reuse personas across rooms
+### Step 3.1: Token Usage + Cost Tracking
 
-### Step 3.3: Human Player Support
-- [ ] `HumanAgent` implementation in packages/core
-- [ ] When it's a human's turn, show input UI instead of auto-generating
-- [ ] Human can vote, discuss, use special abilities (if game mode)
-- [ ] Mixed rooms: some agents AI, some human
+Foundation for observability. No UI dependency.
 
-### Step 3.4: Spectator Mode
-- [ ] Join any public room as spectator (no participation, just watch)
-- [ ] God mode toggle: see all channels including private ones
-- [ ] Live viewer count
-- [ ] Shareable room URL
+- [ ] `packages/llm/src/pricing.ts` — fetch LiteLLM pricing JSON, cache in memory, calculate cost
+- [ ] `packages/shared/src/types.ts` — add `TokenUsage` type, extend `PlatformEvent` with `token:recorded`
+- [ ] `packages/llm/src/generate.ts` — capture `result.usage` from AI SDK, emit via injected callback
+- [ ] `packages/core/src/token-accountant.ts` — aggregate usage per room/agent/model
+- [ ] `packages/core/src/agent.ts` — accept `onTokenUsage` callback
+- [ ] `packages/core/src/room.ts` — wire accountant to agents, emit events
+- [ ] Capture input / cache-input / output tokens separately (Claude supports cache, Gemini doesn't)
+- [ ] `scripts/token-report.ts` — print cost summary for a game
+
+**Pricing source**: `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/model_prices_and_context_window_backup.json`
+
+### Step 3.2: Generic Frontend Components
+
+Reusable across any mode.
+
+- [ ] `apps/web/app/room/[id]/components/MessageList.tsx`
+- [ ] `apps/web/app/room/[id]/components/AgentList.tsx`
+- [ ] `apps/web/app/room/[id]/components/ChannelTabs.tsx`
+- [ ] `apps/web/app/room/[id]/components/PhaseIndicator.tsx`
+- [ ] `apps/web/app/room/[id]/components/TokenCostPanel.tsx`
+- [ ] `apps/web/app/room/[id]/page.tsx` — dispatch to mode component based on `room.modeId`
+- [ ] `apps/web/app/api/rooms/[id]/state/route.ts` — current phase + channels + roles (spectator-aware)
+- [ ] `apps/web/app/api/rooms/[id]/token-usage/route.ts` — aggregated usage
+
+### Step 3.3: Roundtable Refactor
+
+Existing debate UI uses inline styles — refactor to use new components.
+
+- [ ] `apps/web/app/room/[id]/modes/roundtable/RoundtableView.tsx` — wraps generic components
+- [ ] Apply consistent design system (Tailwind or CSS vars)
+- [ ] Token cost displayed in-room
+
+### Step 3.4: Werewolf Frontend
+
+Mode-specific overlays + setup page.
+
+- [ ] `apps/web/app/create-werewolf/page.tsx` — game setup (player count, model per slot, advanced rules toggles)
+- [ ] `apps/web/app/api/rooms/werewolf/route.ts` — werewolf-specific room creation
+- [ ] `apps/web/app/room/[id]/modes/werewolf/WerewolfView.tsx` — main game view
+- [ ] `apps/web/app/room/[id]/modes/werewolf/RoleCard.tsx` — private role display
+- [ ] `apps/web/app/room/[id]/modes/werewolf/NightOverlay.tsx` — dim screen during night
+- [ ] `apps/web/app/room/[id]/modes/werewolf/PhaseBanner.tsx` — phase transitions
+- [ ] `apps/web/app/room/[id]/modes/werewolf/VoteSummary.tsx` — post-vote tally animation
+- [ ] Spectator mode: see all roles + all channels
+- [ ] Player perspective switcher in spectator view
+
+### Step 3.5: Observability
+
+Timeline view, agent memory inspector, decision tree.
+
+- [ ] `packages/shared/src/types.ts` — add `decision:made`, `memory:snapshot`, `channel:published` events
+- [ ] `packages/core/src/room.ts` — emit new events at appropriate points
+- [ ] `apps/web/app/room/[id]/observability/page.tsx` — dedicated observability view
+- [ ] `apps/web/app/room/[id]/components/Timeline.tsx` — filterable event timeline
+- [ ] `apps/web/app/room/[id]/components/AgentMemoryInspector.tsx` — per-agent history view
+- [ ] `apps/web/app/room/[id]/components/DecisionTree.tsx` — structured output viewer
+- [ ] `apps/web/app/api/rooms/[id]/events/route.ts` — event stream endpoint
+
+### Step 3.6 (Optional): Testing Infrastructure
+
+- [ ] `pnpm add -D vitest @vitest/ui`
+- [ ] `packages/core/src/channel.test.ts`
+- [ ] `packages/core/src/state-machine.test.ts`
+- [ ] `packages/modes/src/werewolf/phases.test.ts` — win conditions, vote tallying
+- [ ] `packages/llm/src/pricing.test.ts`
 
 **Acceptance Criteria (Phase 3):**
-- [ ] Room View looks polished enough that users screenshot and share it
-- [ ] Human can play alongside AI agents in werewolf
-- [ ] Personas created in one room can be reused in another
-- [ ] Spectators can watch live games without affecting them
+- [ ] Werewolf game is fully playable through the UI (no need to run scripts)
+- [ ] Live token cost visible during any game
+- [ ] Observability page shows timeline + per-agent memory
+- [ ] Spectator mode lets viewers switch player perspectives
+- [ ] Mode-specific views (roundtable, werewolf) share common components
+- [ ] Deploy to Vercel; public demo URL
+
+---
+
+## Deferred from Phase 3 (originally "UX Polish")
+
+These deferred to Phase 3.5 or later — good post-Phase-3 work once the core UI is solid:
+
+- [ ] 2D room visualization with agent avatars positioned around a table
+- [ ] Framer Motion animations for speaking/voting/elimination
+- [ ] Persona editor with AI auto-enrich
+- [ ] Persona library (save/reuse across rooms)
+- [ ] Human player support (`HumanAgent` in packages/core)
+- [ ] Mixed rooms (AI + human)
 
 ---
 

@@ -2202,3 +2202,197 @@ User -> Next.js API -> Room.start()
   -> Mode.hooks.onComplete() -> results
   -> Room status = 'completed'
 ```
+
+---
+
+## 11. Token Tracking & Cost Accounting (Phase 3)
+
+> Captures real token usage from the AI SDK and computes cost per LLM call, per agent, per room.
+
+### 11.1 TokenUsage Type
+
+```typescript
+interface TokenUsage {
+  readonly inputTokens: number
+  readonly cachedInputTokens: number  // Claude prompt caching (free on cache hits)
+  readonly outputTokens: number
+  readonly totalTokens: number
+  readonly model: string
+  readonly provider: LLMProvider
+  readonly timestamp: number
+}
+```
+
+### 11.2 Capture Flow
+
+```
+AI SDK generateText/generateObject
+  -> result.usage (input/output tokens)
+  -> result.providerMetadata.anthropic.cacheCreationInputTokens (if Claude)
+  -> createGenerateFn wrapper → onTokenUsage callback
+  -> AIAgent → forwards to Room
+  -> Room.tokenAccountant.record(usage)
+  -> EventBus.emit('token:recorded', { ..., cost })
+  -> Message.metadata.tokenUsage (per-turn persistence)
+```
+
+### 11.3 Pricing Source (LiteLLM)
+
+Pricing data fetched from LiteLLM's public JSON:
+`https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/model_prices_and_context_window_backup.json`
+
+Structure per model:
+```json
+{
+  "claude-opus-4-6": {
+    "input_cost_per_token": 0.000015,
+    "cache_read_input_token_cost": 0.0000015,
+    "output_cost_per_token": 0.000075
+  }
+}
+```
+
+Cached at startup, refreshed periodically (or on demand).
+
+### 11.4 TokenAccountant API
+
+```typescript
+class TokenAccountant {
+  record(usage: TokenUsage): number  // returns cost for this call
+  getAgentTotals(agentId: Id): { usage: TokenUsage; cost: number }
+  getRoomTotal(): { usage: TokenUsage; cost: number }
+  getModelBreakdown(): Map<string, { usage: TokenUsage; cost: number }>
+}
+```
+
+Attached to Room at construction. Agents call `onTokenUsage` after each LLM call.
+
+---
+
+## 12. Observability Layer (Phase 3)
+
+> Captures granular events for debugging, replay, and demos. Extends EventBus with structured events.
+
+### 12.1 Observability Events (extension of PlatformEvent)
+
+```typescript
+type PlatformEvent =
+  // ... existing events ...
+  | { type: 'token:recorded'; roomId: Id; agentId: Id; messageId: Id; usage: TokenUsage; cost: number }
+  | { type: 'decision:made'; roomId: Id; agentId: Id; phase: string; decision: unknown; schema: string }
+  | { type: 'memory:snapshot'; roomId: Id; agentId: Id; messageCount: number; visibleChannels: readonly Id[] }
+  | { type: 'channel:published'; roomId: Id; channelId: Id; messageId: Id; receivers: readonly Id[] }
+```
+
+### 12.2 Event Log
+
+Events are accumulated in a per-room event log (in-memory for Phase 3, Postgres in Phase 4):
+
+```typescript
+interface EventLog {
+  readonly events: readonly StampedEvent[]
+  append(event: PlatformEvent): void
+  filter(predicate: (e: StampedEvent) => boolean): readonly StampedEvent[]
+  slice(fromTimestamp: number, toTimestamp: number): readonly StampedEvent[]
+}
+```
+
+### 12.3 Timeline View
+
+UI subscribes to the event stream and renders a chronological timeline. Filters:
+- By event type (message, decision, token, phase, channel)
+- By agent
+- By phase
+- By channel
+
+### 12.4 Agent Memory Inspector
+
+Reconstructs an agent's view at any point in time:
+1. Filter events to `message:created` and `memory:snapshot` up to time T
+2. Apply `ChannelManager.filterMessagesForAgent` using the agent's subscriptions at time T
+3. Render as a per-agent message feed
+
+**Critical for werewolf debugging**: easily verify wolves don't see villager-private channels.
+
+---
+
+## 13. Frontend Architecture (Phase 3)
+
+> Generic + mode-specific pattern. Base components work for any mode; mode components compose them with mode-specific logic and styling.
+
+### 13.1 Mode Dispatch
+
+```typescript
+// apps/web/app/room/[id]/page.tsx
+export default function RoomPage({ params }) {
+  const { room } = useRoom(params.id)
+  switch (room.modeId) {
+    case 'roundtable': return <RoundtableView room={room} />
+    case 'werewolf': return <WerewolfView room={room} />
+    default: return <GenericRoomView room={room} />
+  }
+}
+```
+
+### 13.2 Shared Components
+
+| Component | Responsibility |
+|-----------|---------------|
+| `MessageList` | Scrollable message feed, renders announcements + decisions differently |
+| `AgentList` | Avatars, names, roles (if revealed), model, status |
+| `ChannelTabs` | Tab selector for multi-channel rooms, filtered by viewer permissions |
+| `PhaseIndicator` | Current phase + progress within phase (turn N of M) |
+| `TokenCostPanel` | Live cost, breakdown per agent/model |
+| `Timeline` | Event timeline (observability) |
+| `AgentMemoryInspector` | Per-agent message history |
+
+### 13.3 Mode-Specific Components
+
+**Roundtable:**
+- `RoundtableView` — wraps shared components with debate-specific styling
+- `RoundIndicator` — Round N of M
+
+**Werewolf:**
+- `WerewolfView` — main game view, switches layout based on phase (night/day)
+- `RoleCard` — private role display with strategy hints
+- `NightOverlay` — dim screen during night phases (for spectators)
+- `PhaseBanner` — dramatic phase transition (Night 1, Dawn, Day 1 Vote, etc.)
+- `VoteSummary` — post-vote tally animation with weighted sheriff visualization
+
+### 13.4 Spectator Mode
+
+A `?spectator=true` query param reveals all channels and all roles. Includes a **player perspective switcher**:
+
+```typescript
+// Switch to viewing as if you were Agent X
+const [perspectiveAgentId, setPerspective] = useState<Id | null>(null)
+const visibleMessages = perspectiveAgentId
+  ? filterMessagesForAgent(allMessages, perspectiveAgentId)
+  : allMessages  // god mode
+```
+
+Critical for werewolf: spectators can experience the game from any player's perspective (seer's view, wolf's view, villager's view).
+
+### 13.5 State Management
+
+Phase 3 keeps polling-based updates (1-2s interval). SSE/WebSocket upgrade deferred to Phase 4.
+
+```typescript
+function useRoom(id: Id) {
+  const [state, setState] = useState(...)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const res = await fetch(`/api/rooms/${id}/state`)
+      setState(await res.json())
+    }, 1500)
+    return () => clearInterval(interval)
+  }, [id])
+  return state
+}
+```
+
+API endpoints:
+- `GET /api/rooms/:id/state` — current phase, channels, agent roles (respects spectator/role filters)
+- `GET /api/rooms/:id/messages?after=T&channel=X` — filtered messages
+- `GET /api/rooms/:id/events?after=T&type=X` — observability event stream
+- `GET /api/rooms/:id/token-usage` — aggregated usage + cost
