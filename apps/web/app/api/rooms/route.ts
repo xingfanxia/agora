@@ -3,8 +3,8 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { AIAgent, Room, RoundRobinFlow, EventBus } from '@agora/core'
-import { createGenerateFn } from '@agora/llm'
+import { AIAgent, Room, RoundRobinFlow, EventBus, TokenAccountant } from '@agora/core'
+import { createGenerateFn, buildPricingMap, createCostCalculator } from '@agora/llm'
 import type { LLMProvider, ModelConfig, PersonaConfig } from '@agora/shared'
 import {
   setRoomState,
@@ -12,6 +12,8 @@ import {
   updateRoomStatus,
   setThinkingAgent,
   setCurrentRound,
+  setCurrentPhase,
+  setAccountant,
   addEvent,
 } from '../../lib/room-store'
 import type { RoomState, AgentInfo } from '../../lib/room-store'
@@ -126,14 +128,24 @@ export async function POST(request: Request) {
       id: roomId,
       topic: body.topic,
       rounds: body.rounds,
+      modeId: 'roundtable',
       agents: agentInfos,
       messages: [],
       events: [],
       status: 'running',
       currentRound: 1,
       thinkingAgentId: null,
+      currentPhase: null,
     }
     setRoomState(roomId, roomState)
+
+    // Wire token accountant (pricing resolved from LiteLLM once per process)
+    const pricingMap = await buildPricingMap(
+      aiAgents.map((a) => ({ provider: a.config.model.provider, modelId: a.config.model.modelId })),
+    )
+    const calculateCost = createCostCalculator(pricingMap)
+    const accountant = new TokenAccountant(eventBus, calculateCost)
+    setAccountant(roomId, accountant)
 
     // Wire up event bus to update room store
     eventBus.on('message:created', (event) => {
@@ -153,6 +165,11 @@ export async function POST(request: Request) {
 
     eventBus.on('round:changed', (event) => {
       setCurrentRound(roomId, event.round)
+      addEvent(roomId, event)
+    })
+
+    eventBus.on('phase:changed', (event) => {
+      setCurrentPhase(roomId, event.phase)
       addEvent(roomId, event)
     })
 

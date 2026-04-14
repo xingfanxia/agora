@@ -4,6 +4,7 @@
 // ============================================================
 
 import type { Message, PlatformEvent } from '@agora/shared'
+import type { TokenAccountant } from '@agora/core'
 
 export type RoomStatus = 'running' | 'completed' | 'error'
 
@@ -18,12 +19,15 @@ export interface RoomState {
   readonly id: string
   readonly topic: string
   readonly rounds: number
+  readonly modeId: string
   readonly agents: readonly AgentInfo[]
   readonly messages: Message[]
   readonly events: PlatformEvent[]
   status: RoomStatus
   currentRound: number
   thinkingAgentId: string | null
+  currentPhase: string | null
+  accountant?: TokenAccountant
   error?: string
 }
 
@@ -78,5 +82,19 @@ export function setCurrentRound(roomId: string, round: number): void {
   const room = getRooms().get(roomId)
   if (room) {
     room.currentRound = round
+  }
+}
+
+export function setCurrentPhase(roomId: string, phase: string | null): void {
+  const room = getRooms().get(roomId)
+  if (room) {
+    room.currentPhase = phase
+  }
+}
+
+export function setAccountant(roomId: string, accountant: TokenAccountant): void {
+  const room = getRooms().get(roomId)
+  if (room) {
+    room.accountant = accountant
   }
 }
