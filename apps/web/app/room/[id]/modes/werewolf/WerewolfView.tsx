@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { MessageList } from '../../components/MessageList'
 import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
@@ -60,6 +61,8 @@ function isNightPhase(phase: string | null): boolean {
 // ── View ─────────────────────────────────────────────────────
 
 export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
+  const params = useParams()
+  const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
   const [activeChannel, setActiveChannel] = useState('main')
 
@@ -161,6 +164,12 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
                 .join(' · ') || 'base game'}
             </span>
           )}
+          <Link
+            href={`/room/${roomId}/observability`}
+            style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
+          >
+            Timeline →
+          </Link>
         </div>
 
         <TokenCostPanel summary={tokenSummary} agents={agents} />

@@ -125,6 +125,11 @@ export async function POST(request: Request) {
     const accountant = new TokenAccountant(result.eventBus, calculateCost)
     setAccountant(roomId, accountant)
 
+    // Persist token:recorded events in the room event log for observability
+    result.eventBus.on('token:recorded', (event) => {
+      addEvent(roomId, event)
+    })
+
     // Wire event bus → room store
     result.eventBus.on('message:created', (event) => {
       addMessage(roomId, event.message)

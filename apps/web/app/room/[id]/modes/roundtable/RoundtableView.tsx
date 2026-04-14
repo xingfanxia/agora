@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { MessageList } from '../../components/MessageList'
 import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
@@ -14,6 +15,8 @@ interface RoundtableViewProps {
 }
 
 export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
+  const params = useParams()
+  const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
@@ -89,6 +92,12 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           </span>
           <StatusPill status={status} />
           <span style={{ marginLeft: 'auto' }}>{agents.length} agents</span>
+          <Link
+            href={`/room/${roomId}/observability`}
+            style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
+          >
+            Timeline →
+          </Link>
         </div>
 
         <div style={{ marginTop: '0.75rem' }}>
