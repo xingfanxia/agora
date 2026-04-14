@@ -24,6 +24,7 @@ import {
   flushRuntimePending,
   wireEventPersistence,
 } from '../../lib/persist-runtime'
+import { buildLanguageDirective, resolveAgentLanguage } from '../../lib/language'
 
 interface AgentInput {
   name: string
@@ -36,6 +37,7 @@ interface CreateRoomBody {
   topic: string
   rounds: number
   agents: AgentInput[]
+  language?: 'en' | 'zh'
 }
 
 function resolveProvider(modelId: string): LLMProvider {
@@ -65,6 +67,9 @@ export async function POST(request: Request) {
     const roomId = crypto.randomUUID()
     const eventBus = new EventBus()
 
+    const language = await resolveAgentLanguage(body.language)
+    const languageDirective = buildLanguageDirective(language)
+
     const agentInfos: AgentInfo[] = []
     const aiAgents: AIAgent[] = []
 
@@ -91,6 +96,8 @@ export async function POST(request: Request) {
             'Keep your responses focused and concise (2-4 paragraphs).',
             'Engage with what other participants have said. Build on, challenge, or nuance their points.',
             'Be substantive and specific. Avoid generic platitudes.',
+            '',
+            languageDirective,
           ].join('\n'),
         },
         createGenerateFn(modelConfig),

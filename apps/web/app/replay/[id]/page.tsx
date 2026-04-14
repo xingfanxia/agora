@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { RoundtableView } from '../../room/[id]/modes/roundtable/RoundtableView'
 import { WerewolfView } from '../../room/[id]/modes/werewolf/WerewolfView'
 import type {
@@ -44,6 +45,7 @@ interface InitialSnapshot {
 }
 
 export default function ReplayPage() {
+  const t = useTranslations('replay')
   const params = useParams()
   const roomId = params.id as string
 
@@ -61,7 +63,7 @@ export default function ReplayPage() {
           fetch(`/api/rooms/${roomId}/events`),
         ])
         if (!snapRes.ok) {
-          setError('Room not found')
+          setError(t('notFound'))
           setLoading(false)
           return
         }
@@ -117,7 +119,7 @@ export default function ReplayPage() {
           color: 'var(--muted)',
         }}
       >
-        Loading replay...
+        {t('loading')}
       </div>
     )
   }
@@ -134,7 +136,7 @@ export default function ReplayPage() {
           gap: '1rem',
         }}
       >
-        <p style={{ color: 'var(--danger)' }}>{error ?? 'Replay unavailable'}</p>
+        <p style={{ color: 'var(--danger)' }}>{error ?? t('unavailable')}</p>
         <Link
           href="/replays"
           style={{
@@ -144,7 +146,7 @@ export default function ReplayPage() {
             fontSize: '0.85rem',
           }}
         >
-          Back to replays
+          {t('backToReplays')}
         </Link>
       </div>
     )

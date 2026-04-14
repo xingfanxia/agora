@@ -10,6 +10,7 @@ export function buildRoleSystemPrompt(
   role: WerewolfRole,
   allPlayerNames: string[],
   wolfNames: string[],
+  languageInstruction?: string,
 ): string {
   const baseRules = [
     `You are playing a game of Werewolf (狼人杀). Your name is "${agentName}".`,
@@ -135,7 +136,9 @@ export function buildRoleSystemPrompt(
     ],
   }
 
-  return [...baseRules, ...rolePrompts[role]].join('\n')
+  const parts = [...baseRules, ...rolePrompts[role]]
+  if (languageInstruction) parts.push('', languageInstruction)
+  return parts.join('\n')
 }
 
 /**

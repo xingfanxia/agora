@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useLocale, useTranslations } from 'next-intl'
+import { LocaleSwitcher } from '../components/LocaleSwitcher'
 
 interface AgentFormData {
   id: string
@@ -41,6 +43,9 @@ const DEFAULT_AGENTS: AgentFormData[] = [
 
 export default function CreateRoom() {
   const router = useRouter()
+  const t = useTranslations('create')
+  const tCommon = useTranslations('common')
+  const locale = useLocale()
   const [topic, setTopic] = useState('')
   const [rounds, setRounds] = useState(3)
   const [agents, setAgents] = useState<AgentFormData[]>(DEFAULT_AGENTS)
@@ -74,13 +79,13 @@ export default function CreateRoom() {
     setError(null)
 
     if (!topic.trim()) {
-      setError('Please enter a debate topic.')
+      setError(t('errors.topicRequired'))
       return
     }
 
     for (const agent of agents) {
       if (!agent.name.trim() || !agent.persona.trim()) {
-        setError('All agents must have a name and persona description.')
+        setError(t('errors.agentsIncomplete'))
         return
       }
     }
@@ -94,6 +99,7 @@ export default function CreateRoom() {
         body: JSON.stringify({
           topic: topic.trim(),
           rounds,
+          language: locale,
           agents: agents.map((a) => {
             const modelOption = MODEL_OPTIONS.find((m) => m.value === a.model)
             return {
@@ -108,13 +114,13 @@ export default function CreateRoom() {
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Failed to create room')
+        throw new Error(data.error || t('errors.generic'))
       }
 
       const data = await response.json()
       router.push(`/room/${data.roomId}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : t('errors.generic'))
       setIsSubmitting(false)
     }
   }
@@ -125,7 +131,11 @@ export default function CreateRoom() {
       padding: '2rem',
       maxWidth: '720px',
       margin: '0 auto',
+      position: 'relative',
     }}>
+      <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+        <LocaleSwitcher />
+      </div>
       {/* Header */}
       <div style={{
         display: 'flex',
@@ -139,10 +149,10 @@ export default function CreateRoom() {
           fontSize: '0.875rem',
           transition: 'color 0.15s',
         }}>
-          Agora
+          {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Create Debate</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('breadcrumb')}</span>
       </div>
 
       <h1 style={{
@@ -151,7 +161,7 @@ export default function CreateRoom() {
         letterSpacing: '-0.03em',
         marginBottom: '2rem',
       }}>
-        Set up your debate
+        {t('title')}
       </h1>
 
       <form onSubmit={handleSubmit}>
@@ -169,14 +179,14 @@ export default function CreateRoom() {
               marginBottom: '0.5rem',
             }}
           >
-            Topic
+            {t('topicLabel')}
           </label>
           <input
             id="topic"
             type="text"
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g., Should AI be open-sourced?"
+            placeholder={t('topicPlaceholder')}
             style={{
               width: '100%',
               padding: '0.75rem 1rem',
@@ -205,7 +215,7 @@ export default function CreateRoom() {
               marginBottom: '0.5rem',
             }}
           >
-            Rounds
+            {t('roundsLabel')}
           </label>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {[1, 2, 3, 4, 5].map((n) => (
@@ -250,7 +260,7 @@ export default function CreateRoom() {
               letterSpacing: '0.05em',
               color: 'var(--muted)',
             }}>
-              Agents ({agents.length})
+              {t('agentsLabel', { count: agents.length })}
             </label>
             {agents.length < 8 && (
               <button
@@ -267,7 +277,7 @@ export default function CreateRoom() {
                   transition: 'all 0.15s',
                 }}
               >
-                + Add Agent
+                {t('addAgent')}
               </button>
             )}
           </div>
@@ -296,7 +306,7 @@ export default function CreateRoom() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
                   }}>
-                    Agent {index + 1}
+                    {t('agentNumber', { index: index + 1 })}
                   </span>
                   {agents.length > 2 && (
                     <button
@@ -312,7 +322,7 @@ export default function CreateRoom() {
                         transition: 'all 0.15s',
                       }}
                     >
-                      Remove
+                      {t('removeAgent')}
                     </button>
                   )}
                 </div>
@@ -322,7 +332,7 @@ export default function CreateRoom() {
                     type="text"
                     value={agent.name}
                     onChange={(e) => updateAgent(agent.id, 'name', e.target.value)}
-                    placeholder="Agent name"
+                    placeholder={t('agentNamePlaceholder')}
                     style={{
                       flex: 1,
                       padding: '0.625rem 0.75rem',
@@ -359,7 +369,7 @@ export default function CreateRoom() {
                 <textarea
                   value={agent.persona}
                   onChange={(e) => updateAgent(agent.id, 'persona', e.target.value)}
-                  placeholder="Describe this agent's personality, perspective, and debate style..."
+                  placeholder={t('personaPlaceholder')}
                   rows={3}
                   style={{
                     width: '100%',
@@ -410,7 +420,7 @@ export default function CreateRoom() {
             opacity: isSubmitting ? 0.7 : 1,
           }}
         >
-          {isSubmitting ? 'Starting...' : 'Start Debate'}
+          {isSubmitting ? t('submitStarting') : t('submit')}
         </button>
       </form>
     </div>

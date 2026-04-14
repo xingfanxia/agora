@@ -32,6 +32,7 @@ import {
   wireEventPersistence,
   wireGameStateSnapshots,
 } from '../../../lib/persist-runtime'
+import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
 
 // The LLM package types the schema as ZodSchema; core types it as unknown.
 const _createGenFn: (model: ModelConfig) => GenerateFn = createGenerateFn
@@ -47,6 +48,7 @@ interface PlayerInput {
 interface CreateWerewolfBody {
   players: PlayerInput[]
   advancedRules?: WerewolfAdvancedRules
+  language?: 'en' | 'zh'
 }
 
 function resolveProvider(modelId: string): LLMProvider {
@@ -69,6 +71,8 @@ export async function POST(request: Request) {
     }
 
     const advancedRules = body.advancedRules ?? {}
+    const language = await resolveAgentLanguage(body.language)
+    const languageDirective = buildLanguageDirective(language)
 
     const agentConfigs = body.players.map((p) => ({
       name: p.name,
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
 
     // Build the werewolf game
     const result = createWerewolf(
-      { agents: agentConfigs, advancedRules },
+      { agents: agentConfigs, advancedRules, languageInstruction: languageDirective },
       _createGenFn,
       _createObjFn,
     )

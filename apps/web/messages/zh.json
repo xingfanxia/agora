@@ -1,0 +1,218 @@
+{
+  "common": {
+    "loading": "加载中…",
+    "cancel": "取消",
+    "close": "关闭",
+    "back": "返回",
+    "preparing": "准备中…",
+    "appName": "Agora",
+    "isThinking": "思考中",
+    "finished": "已完成",
+    "decision": "决策",
+    "locale": {
+      "label": "语言",
+      "english": "English",
+      "chinese": "中文"
+    }
+  },
+  "landing": {
+    "tagline": "AI 思维汇聚之地,辩论、推理、游玩。多智能体协作平台。",
+    "modes": {
+      "roundtable": {
+        "title": "圆桌辩论",
+        "description": "多回合结构化论战 —— 2-8 位有鲜明人设的智能体。"
+      },
+      "werewolf": {
+        "title": "狼人杀 Werewolf",
+        "description": "带隐藏身份的社交推理 —— 6-12 位玩家,中式标准规则。"
+      }
+    },
+    "browseReplays": "浏览回放 →",
+    "howItWorks": "使用方式",
+    "steps": {
+      "one": {
+        "title": "选择模式",
+        "description": "辩论或狼人杀"
+      },
+      "two": {
+        "title": "配置智能体",
+        "description": "每个席位的模型与人设"
+      },
+      "three": {
+        "title": "观看对局",
+        "description": "实时 token 成本与阶段跟踪"
+      }
+    }
+  },
+  "create": {
+    "breadcrumb": "创建辩论",
+    "title": "配置你的辩论",
+    "topicLabel": "议题",
+    "topicPlaceholder": "例如:AI 应该开源吗?",
+    "roundsLabel": "回合数",
+    "agentsLabel": "智能体 ({count})",
+    "addAgent": "+ 添加智能体",
+    "agentNumber": "智能体 {index}",
+    "removeAgent": "移除",
+    "agentNamePlaceholder": "智能体名称",
+    "personaPlaceholder": "描述这个智能体的性格、立场和辩论风格……",
+    "errors": {
+      "topicRequired": "请输入辩论议题。",
+      "agentsIncomplete": "所有智能体都必须有名称和人设描述。",
+      "generic": "出错了"
+    },
+    "submitStarting": "启动中…",
+    "submit": "开始辩论"
+  },
+  "werewolf": {
+    "breadcrumb": "狼人杀",
+    "title": "配置一局狼人杀",
+    "description": "6-12 名玩家,中式狼人杀规则。可按需开启进阶角色。",
+    "playerCountLabel": "玩家人数 ({count})",
+    "advancedRulesLabel": "进阶规则",
+    "rules": {
+      "guard": "守卫",
+      "idiot": "白痴",
+      "sheriff": "警长",
+      "lastWords": "遗言"
+    },
+    "playersLabel": "玩家",
+    "playerPlaceholder": "玩家 {index}",
+    "errors": {
+      "namesRequired": "所有玩家都需要有名字。",
+      "generic": "出错了"
+    },
+    "submitStarting": "启动中…",
+    "submit": "开始游戏",
+    "baseGame": "基础局",
+    "dead": "出局",
+    "phases": {
+      "sheriffElection": "警长竞选",
+      "sheriffElected": "警长公布",
+      "guardProtect": "守卫行动",
+      "wolfDiscuss": "狼人商议",
+      "wolfVote": "狼人投票",
+      "witchAction": "女巫行动",
+      "seerCheck": "预言家查验",
+      "dawn": "天亮",
+      "dayDiscuss": "白天讨论",
+      "dayVote": "白天投票",
+      "lastWords": "遗言",
+      "gameOver": "游戏结束"
+    },
+    "channels": {
+      "main": "白天(公开)",
+      "werewolf": "🐺 狼人",
+      "seerResult": "🔮 预言家",
+      "witchAction": "🧪 女巫",
+      "wolfVote": "🗳️ 狼人投票",
+      "dayVote": "🗳️ 白天投票",
+      "guardAction": "🛡️ 守卫"
+    },
+    "winners": {
+      "village": "🎉 好人胜利",
+      "wolves": "🐺 狼人胜利",
+      "none": "游戏结束,没有明确的胜者。"
+    },
+    "roles": {
+      "werewolf": "狼人",
+      "villager": "村民",
+      "seer": "预言家",
+      "witch": "女巫",
+      "hunter": "猎人",
+      "guard": "守卫",
+      "idiot": "白痴"
+    }
+  },
+  "room": {
+    "debateMode": "辩论",
+    "werewolfMode": "狼人杀",
+    "roundOf": "第 {current} / {total} 回合",
+    "agentCount": "{count} 位智能体",
+    "status": {
+      "live": "进行中",
+      "completed": "已完成",
+      "error": "出错",
+      "running": "运行中"
+    },
+    "timeline": "事件时间线 →",
+    "backToCreate": "返回创建",
+    "debateComplete": "辩论结束",
+    "messagesAcrossRounds": "共 {messages} 条消息,{rounds} 回合",
+    "debateError": "辩论出错",
+    "unexpectedError": "辩论过程中发生了意外错误。",
+    "startNewDebate": "开启新辩论",
+    "tryAgain": "重试",
+    "loading": "加载中…",
+    "tokenPanel": {
+      "noCalls": "暂无 LLM 调用",
+      "byModel": "按模型",
+      "byAgent": "按智能体",
+      "total": "合计",
+      "input": "输入",
+      "output": "输出",
+      "cached": "缓存",
+      "cost": "花费",
+      "calls": "次调用",
+      "tokens": "tokens"
+    }
+  },
+  "replays": {
+    "title": "回放",
+    "description": "所有已完成的对局与辩论,均可按完整事件流重播。",
+    "filters": {
+      "all": "全部",
+      "debate": "辩论",
+      "werewolf": "狼人杀"
+    },
+    "loading": "加载中…",
+    "empty": "还没有回放。",
+    "startNewGame": "开启一局新游戏",
+    "untitled": "未命名",
+    "agents": "{count} 位智能体",
+    "messages": "{count} 条消息",
+    "calls": "{count} 次调用",
+    "tokens": "{count} tokens",
+    "cost": "{cost}",
+    "duration": "{seconds} 秒",
+    "badges": {
+      "village": "🎉 好人",
+      "wolves": "🐺 狼人"
+    }
+  },
+  "replay": {
+    "notFound": "房间不存在",
+    "loading": "回放加载中…",
+    "unavailable": "回放暂不可用",
+    "backToReplays": "返回回放列表",
+    "controls": {
+      "scrubberLabel": "播放进度",
+      "play": "▶ 播放",
+      "pause": "⏸ 暂停",
+      "replay": "↺ 重播",
+      "restart": "⏮",
+      "speed": "{value}x",
+      "speedMax": "最大"
+    }
+  },
+  "observability": {
+    "title": "可观测性",
+    "eventTimeline": "事件时间线",
+    "eventsStatus": "{count} 条事件 · {status}",
+    "backToRoom": "← 返回房间视图",
+    "room": "房间",
+    "filters": {
+      "all": "全部",
+      "messages": "消息",
+      "phases": "阶段",
+      "tokens": "Token",
+      "thinking": "思考",
+      "allAgents": "全部智能体"
+    },
+    "empty": "没有符合筛选条件的事件。",
+    "events": {
+      "roomStarted": "房间已启动",
+      "roomEnded": "房间已结束"
+    }
+  }
+}

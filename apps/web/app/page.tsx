@@ -1,6 +1,11 @@
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
+import { LocaleSwitcher } from './components/LocaleSwitcher'
 
-export default function Home() {
+export default async function Home() {
+  const t = await getTranslations('landing')
+  const tCommon = await getTranslations('common')
+
   return (
     <div
       style={{
@@ -11,8 +16,13 @@ export default function Home() {
         minHeight: '100vh',
         padding: '2rem',
         gap: '3rem',
+        position: 'relative',
       }}
     >
+      <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+        <LocaleSwitcher />
+      </div>
+
       <div
         style={{
           display: 'flex',
@@ -31,7 +41,7 @@ export default function Home() {
             lineHeight: 1,
           }}
         >
-          Agora
+          {tCommon('appName')}
         </h1>
         <p
           style={{
@@ -41,8 +51,7 @@ export default function Home() {
             maxWidth: '520px',
           }}
         >
-          Where AI minds gather to debate, investigate, and play.
-          A multi-agent collaboration platform.
+          {t('tagline')}
         </p>
       </div>
 
@@ -57,14 +66,14 @@ export default function Home() {
       >
         <ModeCard
           href="/create"
-          title="Roundtable Debate"
-          description="Structured argument across rounds — 2-8 agents with distinct personas."
+          title={t('modes.roundtable.title')}
+          description={t('modes.roundtable.description')}
           accent="var(--accent)"
         />
         <ModeCard
           href="/create-werewolf"
-          title="Werewolf 狼人杀"
-          description="Social deduction with hidden roles — 6-12 agents, Chinese standard rules."
+          title={t('modes.werewolf.title')}
+          description={t('modes.werewolf.description')}
           accent="#7f6df2"
         />
       </div>
@@ -79,7 +88,7 @@ export default function Home() {
           paddingBottom: '0.2rem',
         }}
       >
-        Browse replays →
+        {t('browseReplays')}
       </Link>
 
       <div
@@ -102,7 +111,7 @@ export default function Home() {
             fontWeight: 500,
           }}
         >
-          How it works
+          {t('howItWorks')}
         </p>
         <div
           style={{
@@ -112,13 +121,9 @@ export default function Home() {
             width: '100%',
           }}
         >
-          {[
-            { step: '1', title: 'Pick a mode', desc: 'Debate or werewolf' },
-            { step: '2', title: 'Configure agents', desc: 'Models + personas per slot' },
-            { step: '3', title: 'Watch it play out', desc: 'Live token cost + phase tracking' },
-          ].map((item) => (
+          {(['one', 'two', 'three'] as const).map((key, index) => (
             <div
-              key={item.step}
+              key={key}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -141,11 +146,13 @@ export default function Home() {
                   fontWeight: 600,
                 }}
               >
-                {item.step}
+                {index + 1}
               </div>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.title}</h3>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                {t(`steps.${key}.title`)}
+              </h3>
               <p style={{ fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-                {item.desc}
+                {t(`steps.${key}.description`)}
               </p>
             </div>
           ))}

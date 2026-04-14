@@ -3,6 +3,7 @@
 import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { MessageList } from '../../components/MessageList'
 import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
@@ -18,6 +19,8 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
   const params = useParams()
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
+  const t = useTranslations('room')
+  const tCommon = useTranslations('common')
 
   useEffect(() => {
     setIsDark(prefersDark())
@@ -60,10 +63,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
           <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-            Agora
+            {tCommon('appName')}
           </Link>
           <span style={{ color: 'var(--border)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Debate</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{t('debateMode')}</span>
         </div>
 
         <h1
@@ -88,15 +91,15 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           }}
         >
           <span>
-            Round {currentRound} of {totalRounds}
+            {t('roundOf', { current: currentRound, total: totalRounds })}
           </span>
           <StatusPill status={status} />
-          <span style={{ marginLeft: 'auto' }}>{agents.length} agents</span>
+          <span style={{ marginLeft: 'auto' }}>{t('agentCount', { count: agents.length })}</span>
           <Link
             href={`/room/${roomId}/observability`}
             style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
           >
-            Timeline →
+            {t('timeline')}
           </Link>
         </div>
 
@@ -135,9 +138,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
 }
 
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
+  const t = useTranslations('room.status')
   const dotColor =
     status === 'running' ? '#22c55e' : status === 'completed' ? 'var(--muted)' : 'var(--danger)'
-  const label = status === 'running' ? 'Live' : status === 'completed' ? 'Completed' : 'Error'
+  const label = status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
@@ -157,6 +161,7 @@ function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
 }
 
 function CompletedFooter({ messageCount, rounds }: { messageCount: number; rounds: number }) {
+  const t = useTranslations('room')
   return (
     <div
       style={{
@@ -168,9 +173,9 @@ function CompletedFooter({ messageCount, rounds }: { messageCount: number; round
         margin: '1rem 0',
       }}
     >
-      <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>Debate Complete</p>
+      <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>{t('debateComplete')}</p>
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-        {messageCount} messages across {rounds} rounds
+        {t('messagesAcrossRounds', { messages: messageCount, rounds })}
       </p>
       <Link
         href="/create"
@@ -186,13 +191,14 @@ function CompletedFooter({ messageCount, rounds }: { messageCount: number; round
           textDecoration: 'none',
         }}
       >
-        Start New Debate
+        {t('startNewDebate')}
       </Link>
     </div>
   )
 }
 
 function ErrorFooter({ error }: { error?: string }) {
+  const t = useTranslations('room')
   return (
     <div
       style={{
@@ -205,10 +211,10 @@ function ErrorFooter({ error }: { error?: string }) {
       }}
     >
       <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.5rem' }}>
-        Debate Error
+        {t('debateError')}
       </p>
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-        {error ?? 'An unexpected error occurred during the debate.'}
+        {error ?? t('unexpectedError')}
       </p>
       <Link
         href="/create"
@@ -223,7 +229,7 @@ function ErrorFooter({ error }: { error?: string }) {
           textDecoration: 'none',
         }}
       >
-        Try Again
+        {t('tryAgain')}
       </Link>
     </div>
   )

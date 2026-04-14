@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import type { AgentData, AgentColor, MessageData } from './theme'
 import { modelLabel } from './theme'
 
@@ -30,6 +31,7 @@ export function MessageList({
   channelId,
   renderSystem,
 }: MessageListProps) {
+  const t = useTranslations('common')
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -120,7 +122,7 @@ export function MessageList({
             fontSize: '0.9rem',
           }}
         >
-          Preparing...
+          {t('preparing')}
         </div>
       )}
 
@@ -242,6 +244,7 @@ function SystemMessage({ message }: { message: MessageData }) {
 }
 
 function ThinkingIndicator({ name, colors }: { name: string; colors: AgentColor }) {
+  const t = useTranslations('common')
   return (
     <div
       style={{
@@ -262,7 +265,7 @@ function ThinkingIndicator({ name, colors }: { name: string; colors: AgentColor 
         }}
       >
         <span style={{ fontWeight: 600 }}>{name}</span>
-        <span style={{ fontSize: '0.8rem' }}>is thinking</span>
+        <span style={{ fontSize: '0.8rem' }}>{t('isThinking')}</span>
         <span
           style={{
             animation: 'dots 1.5s steps(4, end) infinite',

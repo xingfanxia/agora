@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { fmtTokens, fmtUSD, modelLabel } from '../room/[id]/components/theme'
+import { LocaleSwitcher } from '../components/LocaleSwitcher'
 
 interface AgentInfo {
   id: string
@@ -27,15 +29,22 @@ interface ReplayListItem {
   endedAt: string | null
 }
 
-const MODE_BADGES: Record<string, { label: string; accent: string }> = {
-  roundtable: { label: 'Debate', accent: 'var(--accent)' },
-  werewolf: { label: 'Werewolf', accent: '#7f6df2' },
+const MODE_BADGE_ACCENTS: Record<string, string> = {
+  roundtable: 'var(--accent)',
+  werewolf: '#7f6df2',
 }
 
 export default function ReplaysPage() {
+  const t = useTranslations('replays')
+  const tCommon = useTranslations('common')
   const [rooms, setRooms] = useState<ReplayListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('all')
+
+  const modeLabels: Record<string, string> = {
+    roundtable: t('filters.debate'),
+    werewolf: t('filters.werewolf'),
+  }
 
   useEffect(() => {
     fetch('/api/rooms')
@@ -50,13 +59,16 @@ export default function ReplaysPage() {
   const filtered = filter === 'all' ? rooms : rooms.filter((r) => r.modeId === filter)
 
   return (
-    <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '960px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '960px', margin: '0 auto', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+        <LocaleSwitcher />
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>
-          Agora
+          {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Replays</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('title')}</span>
       </div>
 
       <h1
@@ -67,10 +79,10 @@ export default function ReplaysPage() {
           marginBottom: '0.5rem',
         }}
       >
-        Replays
+        {t('title')}
       </h1>
       <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
-        Every completed game and debate, replayable with full event timeline.
+        {t('description')}
       </p>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
@@ -90,12 +102,12 @@ export default function ReplaysPage() {
               cursor: 'pointer',
             }}
           >
-            {m === 'all' ? 'All' : MODE_BADGES[m]?.label ?? m}
+            {m === 'all' ? t('filters.all') : modeLabels[m] ?? m}
           </button>
         ))}
       </div>
 
-      {loading && <p style={{ color: 'var(--muted)' }}>Loading...</p>}
+      {loading && <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>}
 
       {!loading && filtered.length === 0 && (
         <div
@@ -107,7 +119,7 @@ export default function ReplaysPage() {
             color: 'var(--muted)',
           }}
         >
-          <p style={{ fontSize: '0.95rem', marginBottom: '1rem' }}>No replays yet.</p>
+          <p style={{ fontSize: '0.95rem', marginBottom: '1rem' }}>{t('empty')}</p>
           <Link
             href="/"
             style={{
@@ -120,14 +132,15 @@ export default function ReplaysPage() {
               textDecoration: 'none',
             }}
           >
-            Start a new game
+            {t('startNewGame')}
           </Link>
         </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {filtered.map((room) => {
-          const badge = MODE_BADGES[room.modeId] ?? { label: room.modeId, accent: 'var(--muted)' }
+          const badgeLabel = modeLabels[room.modeId] ?? room.modeId
+          const badgeAccent = MODE_BADGE_ACCENTS[room.modeId] ?? 'var(--muted)'
           const winResult = (room.gameState as { winResult?: string } | null)?.winResult
           const started = room.startedAt ? new Date(room.startedAt) : null
           const ended = room.endedAt ? new Date(room.endedAt) : null
@@ -156,7 +169,7 @@ export default function ReplaysPage() {
                   style={{
                     padding: '0.2rem 0.625rem',
                     borderRadius: '999px',
-                    background: badge.accent,
+                    background: badgeAccent,
                     color: '#fff',
                     fontSize: '0.7rem',
                     fontWeight: 600,
@@ -165,7 +178,7 @@ export default function ReplaysPage() {
                     flexShrink: 0,
                   }}
                 >
-                  {badge.label}
+                  {badgeLabel}
                 </span>
                 <h3
                   style={{
@@ -179,7 +192,7 @@ export default function ReplaysPage() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {room.topic ?? 'Untitled'}
+                  {room.topic ?? t('untitled')}
                 </h3>
                 {winResult && (
                   <span
@@ -195,7 +208,7 @@ export default function ReplaysPage() {
                       fontWeight: 600,
                     }}
                   >
-                    {winResult === 'village_wins' ? '🎉 Village' : '🐺 Wolves'}
+                    {winResult === 'village_wins' ? t('badges.village') : t('badges.wolves')}
                   </span>
                 )}
               </div>
@@ -209,16 +222,16 @@ export default function ReplaysPage() {
                   color: 'var(--muted)',
                 }}
               >
-                <span>{room.agents.length} agents</span>
-                <span>{room.messageCount} messages</span>
-                <span>{room.callCount} calls</span>
-                <span>{fmtTokens(room.totalTokens)} tokens</span>
+                <span>{t('agents', { count: room.agents.length })}</span>
+                <span>{t('messages', { count: room.messageCount })}</span>
+                <span>{t('calls', { count: room.callCount })}</span>
+                <span>{t('tokens', { count: fmtTokens(room.totalTokens) })}</span>
                 <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
                   {fmtUSD(room.totalCost)}
                 </span>
-                {durationSec != null && <span>{durationSec}s</span>}
+                {durationSec != null && <span>{t('duration', { seconds: durationSec })}</span>}
                 <span style={{ marginLeft: 'auto' }}>
-                  {ended ? ended.toLocaleString() : 'Unknown'}
+                  {ended ? ended.toLocaleString() : ''}
                 </span>
               </div>
 

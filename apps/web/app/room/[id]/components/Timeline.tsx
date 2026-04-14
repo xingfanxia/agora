@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import type { AgentData, AgentColor } from './theme'
 import { fmtTokens, fmtUSD, modelLabel } from './theme'
 
@@ -23,6 +24,7 @@ interface TimelineProps {
 type FilterType = 'all' | 'messages' | 'phases' | 'tokens' | 'thinking'
 
 export function Timeline({ entries, agents, colorFor }: TimelineProps) {
+  const tObs = useTranslations('observability')
   const [filter, setFilter] = useState<FilterType>('all')
   const [agentFilter, setAgentFilter] = useState<string>('all')
 
@@ -60,7 +62,7 @@ export function Timeline({ entries, agents, colorFor }: TimelineProps) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
         {filtered.length === 0 && (
           <div style={{ padding: '1rem', color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center' }}>
-            No events match the current filter.
+            {tObs('empty')}
           </div>
         )}
         {filtered.map((entry) => (
@@ -91,12 +93,13 @@ function FilterBar({
   setAgentFilter: (a: string) => void
   agents: readonly AgentData[]
 }) {
+  const t = useTranslations('observability')
   const filters: { key: FilterType; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'messages', label: 'Messages' },
-    { key: 'phases', label: 'Phases' },
-    { key: 'tokens', label: 'Tokens' },
-    { key: 'thinking', label: 'Thinking' },
+    { key: 'all', label: t('filters.all') },
+    { key: 'messages', label: t('filters.messages') },
+    { key: 'phases', label: t('filters.phases') },
+    { key: 'tokens', label: t('filters.tokens') },
+    { key: 'thinking', label: t('filters.thinking') },
   ]
 
   return (
@@ -144,7 +147,7 @@ function FilterBar({
           color: 'var(--foreground)',
         }}
       >
-        <option value="all">All agents</option>
+        <option value="all">{t('filters.allAgents')}</option>
         {agents.map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
@@ -217,6 +220,8 @@ function EventBody({
   colorFor: (agentId: string) => AgentColor
   agentNameById: Map<string, string>
 }) {
+  const tCommon = useTranslations('common')
+  const tObs = useTranslations('observability')
   switch (event.type) {
     case 'message:created': {
       const msg = (event as { message?: Record<string, unknown> }).message ?? {}
@@ -299,7 +304,7 @@ function EventBody({
           label={
             <>
               <span style={{ color: colors.name, fontWeight: 600 }}>{name}</span>
-              <span style={{ color: 'var(--muted)' }}> is thinking</span>
+              <span style={{ color: 'var(--muted)' }}> {tCommon('isThinking')}</span>
             </>
           }
         />
@@ -314,7 +319,7 @@ function EventBody({
           label={
             <>
               <span style={{ fontWeight: 600 }}>{name}</span>
-              <span style={{ color: 'var(--muted)' }}> finished</span>
+              <span style={{ color: 'var(--muted)' }}> {tCommon('finished')}</span>
             </>
           }
         />
@@ -344,9 +349,9 @@ function EventBody({
       )
     }
     case 'room:started':
-      return <EventLabel type="lifecycle" label="Room started" />
+      return <EventLabel type="lifecycle" label={tObs('events.roomStarted')} />
     case 'room:ended':
-      return <EventLabel type="lifecycle" label="Room ended" />
+      return <EventLabel type="lifecycle" label={tObs('events.roomEnded')} />
     default:
       return <EventLabel type="other" label={event.type} />
   }
@@ -390,6 +395,7 @@ function EventLabel({
 }
 
 function TagDecision() {
+  const t = useTranslations('common')
   return (
     <span
       style={{
@@ -403,7 +409,7 @@ function TagDecision() {
         letterSpacing: '0.04em',
       }}
     >
-      decision
+      {t('decision')}
     </span>
   )
 }

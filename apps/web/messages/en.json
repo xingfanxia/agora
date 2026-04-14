@@ -1,0 +1,218 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "preparing": "Preparing...",
+    "appName": "Agora",
+    "isThinking": "is thinking",
+    "finished": "finished",
+    "decision": "decision",
+    "locale": {
+      "label": "Language",
+      "english": "English",
+      "chinese": "中文"
+    }
+  },
+  "landing": {
+    "tagline": "Where AI minds gather to debate, investigate, and play. A multi-agent collaboration platform.",
+    "modes": {
+      "roundtable": {
+        "title": "Roundtable Debate",
+        "description": "Structured argument across rounds — 2-8 agents with distinct personas."
+      },
+      "werewolf": {
+        "title": "Werewolf 狼人杀",
+        "description": "Social deduction with hidden roles — 6-12 agents, Chinese standard rules."
+      }
+    },
+    "browseReplays": "Browse replays →",
+    "howItWorks": "How it works",
+    "steps": {
+      "one": {
+        "title": "Pick a mode",
+        "description": "Debate or werewolf"
+      },
+      "two": {
+        "title": "Configure agents",
+        "description": "Models + personas per slot"
+      },
+      "three": {
+        "title": "Watch it play out",
+        "description": "Live token cost + phase tracking"
+      }
+    }
+  },
+  "create": {
+    "breadcrumb": "Create Debate",
+    "title": "Set up your debate",
+    "topicLabel": "Topic",
+    "topicPlaceholder": "e.g., Should AI be open-sourced?",
+    "roundsLabel": "Rounds",
+    "agentsLabel": "Agents ({count})",
+    "addAgent": "+ Add Agent",
+    "agentNumber": "Agent {index}",
+    "removeAgent": "Remove",
+    "agentNamePlaceholder": "Agent name",
+    "personaPlaceholder": "Describe this agent's personality, perspective, and debate style...",
+    "errors": {
+      "topicRequired": "Please enter a debate topic.",
+      "agentsIncomplete": "All agents must have a name and persona description.",
+      "generic": "Something went wrong"
+    },
+    "submitStarting": "Starting...",
+    "submit": "Start Debate"
+  },
+  "werewolf": {
+    "breadcrumb": "Werewolf",
+    "title": "Set up a werewolf game",
+    "description": "6-12 players, Chinese 狼人杀 rules. Toggle advanced roles to taste.",
+    "playerCountLabel": "Player count ({count})",
+    "advancedRulesLabel": "Advanced rules",
+    "rules": {
+      "guard": "Guard (守卫)",
+      "idiot": "Idiot (白痴)",
+      "sheriff": "Sheriff (警长)",
+      "lastWords": "Last Words (遗言)"
+    },
+    "playersLabel": "Players",
+    "playerPlaceholder": "Player {index}",
+    "errors": {
+      "namesRequired": "All players need a name.",
+      "generic": "Something went wrong"
+    },
+    "submitStarting": "Starting...",
+    "submit": "Start Werewolf Game",
+    "baseGame": "base game",
+    "dead": "dead",
+    "phases": {
+      "sheriffElection": "Sheriff Election",
+      "sheriffElected": "Sheriff Announced",
+      "guardProtect": "Guard Protecting",
+      "wolfDiscuss": "Wolves Conspire",
+      "wolfVote": "Wolves Vote",
+      "witchAction": "Witch Acts",
+      "seerCheck": "Seer Investigates",
+      "dawn": "Dawn",
+      "dayDiscuss": "Day Discussion",
+      "dayVote": "Day Vote",
+      "lastWords": "Last Words",
+      "gameOver": "Game Over"
+    },
+    "channels": {
+      "main": "Day (public)",
+      "werewolf": "🐺 Wolves",
+      "seerResult": "🔮 Seer",
+      "witchAction": "🧪 Witch",
+      "wolfVote": "🗳️ Wolf Vote",
+      "dayVote": "🗳️ Day Vote",
+      "guardAction": "🛡️ Guard"
+    },
+    "winners": {
+      "village": "🎉 Village Wins",
+      "wolves": "🐺 Werewolves Win",
+      "none": "Game ended without a clear winner."
+    },
+    "roles": {
+      "werewolf": "Werewolf",
+      "villager": "Villager",
+      "seer": "Seer",
+      "witch": "Witch",
+      "hunter": "Hunter",
+      "guard": "Guard",
+      "idiot": "Idiot"
+    }
+  },
+  "room": {
+    "debateMode": "Debate",
+    "werewolfMode": "Werewolf",
+    "roundOf": "Round {current} of {total}",
+    "agentCount": "{count} agents",
+    "status": {
+      "live": "Live",
+      "completed": "Completed",
+      "error": "Error",
+      "running": "Running"
+    },
+    "timeline": "Timeline →",
+    "backToCreate": "Back to Create",
+    "debateComplete": "Debate Complete",
+    "messagesAcrossRounds": "{messages} messages across {rounds} rounds",
+    "debateError": "Debate Error",
+    "unexpectedError": "An unexpected error occurred during the debate.",
+    "startNewDebate": "Start New Debate",
+    "tryAgain": "Try Again",
+    "loading": "Loading...",
+    "tokenPanel": {
+      "noCalls": "No LLM calls yet",
+      "byModel": "By Model",
+      "byAgent": "By Agent",
+      "total": "Total",
+      "input": "Input",
+      "output": "Output",
+      "cached": "Cached",
+      "cost": "Cost",
+      "calls": "calls",
+      "tokens": "tokens"
+    }
+  },
+  "replays": {
+    "title": "Replays",
+    "description": "Every completed game and debate, replayable with full event timeline.",
+    "filters": {
+      "all": "All",
+      "debate": "Debate",
+      "werewolf": "Werewolf"
+    },
+    "loading": "Loading...",
+    "empty": "No replays yet.",
+    "startNewGame": "Start a new game",
+    "untitled": "Untitled",
+    "agents": "{count} agents",
+    "messages": "{count} messages",
+    "calls": "{count} calls",
+    "tokens": "{count} tokens",
+    "cost": "{cost}",
+    "duration": "{seconds}s",
+    "badges": {
+      "village": "🎉 Village",
+      "wolves": "🐺 Wolves"
+    }
+  },
+  "replay": {
+    "notFound": "Room not found",
+    "loading": "Loading replay...",
+    "unavailable": "Replay unavailable",
+    "backToReplays": "Back to replays",
+    "controls": {
+      "scrubberLabel": "Playback position",
+      "play": "▶ Play",
+      "pause": "⏸ Pause",
+      "replay": "↺ Replay",
+      "restart": "⏮",
+      "speed": "{value}x",
+      "speedMax": "max"
+    }
+  },
+  "observability": {
+    "title": "Observability",
+    "eventTimeline": "Event Timeline",
+    "eventsStatus": "{count} events · {status}",
+    "backToRoom": "← Back to room view",
+    "room": "Room",
+    "filters": {
+      "all": "All",
+      "messages": "Messages",
+      "phases": "Phases",
+      "tokens": "Tokens",
+      "thinking": "Thinking",
+      "allAgents": "All agents"
+    },
+    "empty": "No events match the current filter.",
+    "events": {
+      "roomStarted": "Room started",
+      "roomEnded": "Room ended"
+    }
+  }
+}

@@ -11,14 +11,15 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@agora/shared": "workspace:*",
     "@agora/core": "workspace:*",
+    "@agora/db": "workspace:*",
     "@agora/llm": "workspace:*",
     "@agora/modes": "workspace:*",
-    "@agora/db": "workspace:*",
+    "@agora/shared": "workspace:*",
     "@vercel/functions": "^2.2.0",
     "drizzle-orm": "^0.38.0",
     "next": "16.2.0",
+    "next-intl": "^4.9.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

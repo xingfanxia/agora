@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import type {
   PlaybackControls as Controls,
   PlaybackSpeed,
@@ -14,6 +15,7 @@ interface Props {
 const SPEEDS: PlaybackSpeed[] = [0.5, 1, 2, 5, 10, 'instant']
 
 export function PlaybackControls({ state, controls }: Props) {
+  const t = useTranslations('replay.controls')
   const onScrub = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const fraction = (e.clientX - rect.left) / rect.width
@@ -35,7 +37,7 @@ export function PlaybackControls({ state, controls }: Props) {
       {/* Scrubber */}
       <div
         role="slider"
-        aria-label="Playback position"
+        aria-label={t('scrubberLabel')}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(state.progress * 100)}
@@ -105,7 +107,7 @@ export function PlaybackControls({ state, controls }: Props) {
             minWidth: '90px',
           }}
         >
-          {state.playing ? '⏸ Pause' : state.progress >= 1 ? '↺ Replay' : '▶ Play'}
+          {state.playing ? t('pause') : state.progress >= 1 ? t('replay') : t('play')}
         </button>
 
         <button
@@ -121,7 +123,7 @@ export function PlaybackControls({ state, controls }: Props) {
             cursor: 'pointer',
           }}
         >
-          ⏮
+          {t('restart')}
         </button>
 
         <div style={{ display: 'flex', gap: '0.25rem' }}>
@@ -141,7 +143,7 @@ export function PlaybackControls({ state, controls }: Props) {
                 cursor: 'pointer',
               }}
             >
-              {s === 'instant' ? 'max' : `${s}x`}
+              {s === 'instant' ? t('speedMax') : t('speed', { value: s })}
             </button>
           ))}
         </div>

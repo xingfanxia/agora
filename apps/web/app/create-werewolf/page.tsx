@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useLocale, useTranslations } from 'next-intl'
+import { LocaleSwitcher } from '../components/LocaleSwitcher'
 
 const DEFAULT_NAMES = [
   'Elena',
@@ -40,6 +42,9 @@ interface PlayerFormData {
 
 export default function CreateWerewolf() {
   const router = useRouter()
+  const t = useTranslations('werewolf')
+  const tCommon = useTranslations('common')
+  const locale = useLocale()
   const [playerCount, setPlayerCount] = useState(9)
   const [players, setPlayers] = useState<PlayerFormData[]>(() =>
     DEFAULT_NAMES.slice(0, 9).map((name, i) => ({
@@ -87,7 +92,7 @@ export default function CreateWerewolf() {
 
     for (const p of players) {
       if (!p.name.trim()) {
-        setError('All players need a name.')
+        setError(t('errors.namesRequired'))
         return
       }
     }
@@ -107,30 +112,34 @@ export default function CreateWerewolf() {
             }
           }),
           advancedRules,
+          language: locale,
         }),
       })
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || 'Failed to create game')
+        throw new Error(data.error || t('errors.generic'))
       }
 
       const data = await response.json()
       router.push(`/room/${data.roomId}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setError(err instanceof Error ? err.message : t('errors.generic'))
       setIsSubmitting(false)
     }
   }
 
   return (
-    <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '820px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '820px', margin: '0 auto', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+        <LocaleSwitcher />
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem', paddingTop: '1rem' }}>
         <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>
-          Agora
+          {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>Werewolf</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('breadcrumb')}</span>
       </div>
 
       <h1
@@ -141,15 +150,15 @@ export default function CreateWerewolf() {
           marginBottom: '0.5rem',
         }}
       >
-        Set up a werewolf game
+        {t('title')}
       </h1>
       <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginBottom: '2.5rem' }}>
-        6-12 players, Chinese 狼人杀 rules. Toggle advanced roles to taste.
+        {t('description')}
       </p>
 
       <form onSubmit={handleSubmit}>
         {/* Player count slider */}
-        <FieldLabel>Player count ({playerCount})</FieldLabel>
+        <FieldLabel>{t('playerCountLabel', { count: playerCount })}</FieldLabel>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
           {[6, 7, 8, 9, 10, 11, 12].map((n) => (
             <button
@@ -179,16 +188,9 @@ export default function CreateWerewolf() {
         </div>
 
         {/* Advanced rules */}
-        <FieldLabel>Advanced rules</FieldLabel>
+        <FieldLabel>{t('advancedRulesLabel')}</FieldLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '2rem' }}>
-          {(
-            [
-              ['guard', 'Guard (守卫)'],
-              ['idiot', 'Idiot (白痴)'],
-              ['sheriff', 'Sheriff (警长)'],
-              ['lastWords', 'Last Words (遗言)'],
-            ] as const
-          ).map(([key, label]) => {
+          {(['guard', 'idiot', 'sheriff', 'lastWords'] as const).map((key) => {
             const active = advancedRules[key]
             return (
               <button
@@ -207,14 +209,14 @@ export default function CreateWerewolf() {
                   transition: 'all 0.15s',
                 }}
               >
-                {label}
+                {t(`rules.${key}`)}
               </button>
             )
           })}
         </div>
 
         {/* Players */}
-        <FieldLabel>Players</FieldLabel>
+        <FieldLabel>{t('playersLabel')}</FieldLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem', marginBottom: '2rem' }}>
           {players.map((p, i) => (
             <div
@@ -237,7 +239,7 @@ export default function CreateWerewolf() {
                 type="text"
                 value={p.name}
                 onChange={(e) => updatePlayer(p.id, 'name', e.target.value)}
-                placeholder={`Player ${i + 1}`}
+                placeholder={t('playerPlaceholder', { index: i + 1 })}
                 style={{
                   padding: '0.5rem 0.625rem',
                   fontSize: '0.875rem',
@@ -303,7 +305,7 @@ export default function CreateWerewolf() {
             opacity: isSubmitting ? 0.7 : 1,
           }}
         >
-          {isSubmitting ? 'Starting...' : 'Start Werewolf Game'}
+          {isSubmitting ? t('submitStarting') : t('submit')}
         </button>
       </form>
     </div>

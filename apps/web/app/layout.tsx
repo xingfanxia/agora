@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import localFont from 'next/font/local'
+import { NextIntlClientProvider } from 'next-intl'
+import { getLocale, getMessages } from 'next-intl/server'
 import './globals.css'
 
 const geistSans = localFont({
@@ -13,18 +15,22 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: 'Agora',
-  description: 'Multi-agent debate platform where AI minds meet to discuss, challenge, and illuminate.',
+  description: 'Multi-agent collaboration platform where AI minds gather to debate, investigate, and play.',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const locale = await getLocale()
+  const messages = await getMessages()
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        {children}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   )

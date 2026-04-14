@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import type { AgentData, TokenSummary } from './theme'
 import { fmtUSD, fmtTokens, modelLabel } from './theme'
 
@@ -16,6 +17,7 @@ interface TokenCostPanelProps {
  * expandable breakdown by model and agent.
  */
 export function TokenCostPanel({ summary, agents, defaultExpanded = false }: TokenCostPanelProps) {
+  const t = useTranslations('room.tokenPanel')
   const [expanded, setExpanded] = useState(defaultExpanded)
 
   if (!summary || summary.callCount === 0) {
@@ -30,7 +32,7 @@ export function TokenCostPanel({ summary, agents, defaultExpanded = false }: Tok
           background: 'var(--surface)',
         }}
       >
-        No LLM calls yet
+        {t('noCalls')}
       </div>
     )
   }
@@ -83,19 +85,19 @@ export function TokenCostPanel({ summary, agents, defaultExpanded = false }: Tok
 
       {expanded && (
         <div style={{ padding: '0.75rem 0.875rem 1rem', borderTop: '1px solid var(--border)' }}>
-          <SectionTitle>By Model</SectionTitle>
+          <SectionTitle>{t('byModel')}</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', marginBottom: '1rem' }}>
             {summary.byModel.map((m) => (
               <RowEntry
                 key={`${m.provider}:${m.modelId}`}
                 label={modelLabel(m.modelId)}
-                sublabel={`${m.callCount} calls · in ${fmtTokens(m.inputTokens)} / out ${fmtTokens(m.outputTokens)}`}
+                sublabel={`${m.callCount} ${t('calls')} · in ${fmtTokens(m.inputTokens)} / out ${fmtTokens(m.outputTokens)}`}
                 value={fmtUSD(m.cost)}
               />
             ))}
           </div>
 
-          <SectionTitle>By Agent</SectionTitle>
+          <SectionTitle>{t('byAgent')}</SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
             {[...summary.byAgent]
               .sort((a, b) => b.cost - a.cost)
@@ -103,7 +105,7 @@ export function TokenCostPanel({ summary, agents, defaultExpanded = false }: Tok
                 <RowEntry
                   key={a.agentId}
                   label={nameFor(a.agentId)}
-                  sublabel={`${a.callCount} calls · ${fmtTokens(a.totalTokens)} tokens`}
+                  sublabel={`${a.callCount} ${t('calls')} · ${fmtTokens(a.totalTokens)} ${t('tokens')}`}
                   value={fmtUSD(a.cost)}
                 />
               ))}

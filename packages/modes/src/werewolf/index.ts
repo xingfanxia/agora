@@ -28,6 +28,8 @@ export interface WerewolfConfig {
   readonly advancedRules?: WerewolfAdvancedRules
   /** Override role assignment (agent name → role) */
   readonly roleOverrides?: Record<string, WerewolfRole>
+  /** Directive appended to every agent's system prompt (e.g. "respond in Chinese"). */
+  readonly languageInstruction?: string
 }
 
 export interface WerewolfResult {
@@ -129,7 +131,13 @@ export function createWerewolf(
   for (const agentId of agentIds) {
     const role = roleMap.get(agentId)!
     const name = agentNames[agentId]!
-    const systemPrompt = buildRoleSystemPrompt(name, role, allPlayerNames, wolfNames)
+    const systemPrompt = buildRoleSystemPrompt(
+      name,
+      role,
+      allPlayerNames,
+      wolfNames,
+      config.languageInstruction,
+    )
     const agentConfig = config.agents.find((a) => a.name === name)!
 
     room.removeAgent(agentId)

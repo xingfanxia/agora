@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { MessageList } from '../../components/MessageList'
 import { AgentList } from '../../components/AgentList'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
@@ -18,21 +19,6 @@ interface WerewolfViewProps {
 
 // ── Label maps ───────────────────────────────────────────────
 
-const PHASE_LABELS: Record<string, string> = {
-  sheriffElection: 'Sheriff Election',
-  sheriffElected: 'Sheriff Announced',
-  guardProtect: 'Guard Protecting',
-  wolfDiscuss: 'Wolves Conspire',
-  wolfVote: 'Wolves Vote',
-  witchAction: 'Witch Acts',
-  seerCheck: 'Seer Investigates',
-  dawn: 'Dawn',
-  dayDiscuss: 'Day Discussion',
-  dayVote: 'Day Vote',
-  lastWords: 'Last Words',
-  gameOver: 'Game Over',
-}
-
 const ROLE_EMOJI: Record<string, string> = {
   werewolf: '🐺',
   seer: '🔮',
@@ -41,16 +27,6 @@ const ROLE_EMOJI: Record<string, string> = {
   guard: '🛡️',
   idiot: '🃏',
   villager: '👤',
-}
-
-const CHANNEL_LABELS: Record<string, string> = {
-  main: 'Day (public)',
-  werewolf: '🐺 Wolves',
-  'seer-result': '🔮 Seer',
-  'witch-action': '🧪 Witch',
-  'wolf-vote': '🗳️ Wolf Vote',
-  'day-vote': '🗳️ Day Vote',
-  'guard-action': '🛡️ Guard',
 }
 
 function isNightPhase(phase: string | null): boolean {
@@ -65,6 +41,34 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
   const [activeChannel, setActiveChannel] = useState('main')
+  const t = useTranslations('werewolf')
+  const tCommon = useTranslations('common')
+  const tRoom = useTranslations('room')
+
+  const phaseLabels = useMemo(() => ({
+    sheriffElection: t('phases.sheriffElection'),
+    sheriffElected: t('phases.sheriffElected'),
+    guardProtect: t('phases.guardProtect'),
+    wolfDiscuss: t('phases.wolfDiscuss'),
+    wolfVote: t('phases.wolfVote'),
+    witchAction: t('phases.witchAction'),
+    seerCheck: t('phases.seerCheck'),
+    dawn: t('phases.dawn'),
+    dayDiscuss: t('phases.dayDiscuss'),
+    dayVote: t('phases.dayVote'),
+    lastWords: t('phases.lastWords'),
+    gameOver: t('phases.gameOver'),
+  }), [t])
+
+  const channelLabels: Record<string, string> = useMemo(() => ({
+    main: t('channels.main'),
+    werewolf: t('channels.werewolf'),
+    'seer-result': t('channels.seerResult'),
+    'witch-action': t('channels.witchAction'),
+    'wolf-vote': t('channels.wolfVote'),
+    'day-vote': t('channels.dayVote'),
+    'guard-action': t('channels.guardAction'),
+  }), [t])
 
   useEffect(() => {
     setIsDark(prefersDark())
@@ -132,10 +136,10 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
           <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-            Agora
+            {tCommon('appName')}
           </Link>
           <span style={{ color: 'var(--border)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Werewolf</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{tRoom('werewolfMode')}</span>
         </div>
 
         <div
@@ -148,11 +152,11 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           }}
         >
           <h1 style={{ fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
-            Werewolf
+            {tRoom('werewolfMode')}
           </h1>
           <PhaseIndicator
             phase={currentPhase}
-            labelMap={PHASE_LABELS}
+            labelMap={phaseLabels}
             accent={isNight ? '#4a4282' : undefined}
           />
           <StatusPill status={status} />
@@ -161,14 +165,14 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
               {Object.entries(advancedRules)
                 .filter(([, v]) => v)
                 .map(([k]) => k)
-                .join(' · ') || 'base game'}
+                .join(' · ') || t('baseGame')}
             </span>
           )}
           <Link
             href={`/room/${roomId}/observability`}
             style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
           >
-            Timeline →
+            {tRoom('timeline')}
           </Link>
         </div>
 
@@ -191,7 +195,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
             fontSize: '1rem',
           }}
         >
-          {winResult === 'village_wins' ? '🎉 Village Wins' : '🐺 Werewolves Win'}
+          {winResult === 'village_wins' ? t('winners.village') : t('winners.wolves')}
         </div>
       )}
 
@@ -208,7 +212,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
       <ChannelTabs
         channels={discoveredChannels.map((id) => ({
           id,
-          label: CHANNEL_LABELS[id] ?? `#${id}`,
+          label: channelLabels[id] ?? `#${id}`,
         }))}
         activeChannelId={activeChannel}
         onChange={setActiveChannel}
@@ -225,7 +229,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
       />
 
       {status === 'completed' && !winResult && (
-        <EndMessage text="Game ended without a clear winner." />
+        <EndMessage text={t('winners.none')} />
       )}
 
       <style>{`
@@ -259,6 +263,7 @@ function WerewolfAgentList({
   roleAssignments: Record<string, string> | null
   eliminatedIds: Set<string>
 }) {
+  const t = useTranslations('werewolf')
   return (
     <AgentList
       agents={agents.map((a) => ({
@@ -297,7 +302,7 @@ function WerewolfAgentList({
                   fontWeight: 600,
                 }}
               >
-                dead
+                {t('dead')}
               </span>
             )}
           </>
@@ -308,9 +313,10 @@ function WerewolfAgentList({
 }
 
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
+  const t = useTranslations('room.status')
   const dotColor =
     status === 'running' ? '#22c55e' : status === 'completed' ? 'var(--muted)' : 'var(--danger)'
-  const label = status === 'running' ? 'Live' : status === 'completed' ? 'Completed' : 'Error'
+  const label = status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8rem', color: 'var(--muted)' }}>

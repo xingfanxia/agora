@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { useRoomPoll } from './hooks/useRoomPoll'
 import { RoundtableView } from './modes/roundtable/RoundtableView'
 import { WerewolfView } from './modes/werewolf/WerewolfView'
@@ -41,6 +42,7 @@ export default function RoomPage() {
 }
 
 function LoadingScreen() {
+  const t = useTranslations('room')
   return (
     <div
       style={{
@@ -52,12 +54,13 @@ function LoadingScreen() {
         fontSize: '1rem',
       }}
     >
-      Loading...
+      {t('loading')}
     </div>
   )
 }
 
 function ErrorScreen({ error }: { error: string }) {
+  const t = useTranslations('room')
   return (
     <div
       style={{
@@ -79,7 +82,7 @@ function ErrorScreen({ error }: { error: string }) {
           fontSize: '0.875rem',
         }}
       >
-        Back to Create
+        {t('backToCreate')}
       </Link>
     </div>
   )

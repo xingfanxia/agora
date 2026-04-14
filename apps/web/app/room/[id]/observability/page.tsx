@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Timeline } from '../components/Timeline'
 import { TokenCostPanel } from '../components/TokenCostPanel'
 import type { AgentData, PollResponse, TokenSummary } from '../components/theme'
@@ -15,6 +16,8 @@ interface EventEnvelope {
 }
 
 export default function ObservabilityPage() {
+  const t = useTranslations('observability')
+  const tCommon = useTranslations('common')
   const params = useParams()
   const roomId = params.id as string
 
@@ -102,19 +105,19 @@ export default function ObservabilityPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
           <Link href="/" style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-            Agora
+            {tCommon('appName')}
           </Link>
           <span style={{ color: 'var(--border)', fontSize: '0.8rem' }}>/</span>
           <Link href={`/room/${roomId}`} style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
-            Room
+            {t('room')}
           </Link>
           <span style={{ color: 'var(--border)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Observability</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{t('title')}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
-            Event Timeline
+            {t('eventTimeline')}
           </h1>
           <span
             style={{
@@ -126,7 +129,7 @@ export default function ObservabilityPage() {
               borderRadius: '999px',
             }}
           >
-            {events.length} events · {status}
+            {t('eventsStatus', { count: events.length, status })}
           </span>
           <Link
             href={`/room/${roomId}`}
@@ -137,7 +140,7 @@ export default function ObservabilityPage() {
               textDecoration: 'none',
             }}
           >
-            ← Back to room view
+            {t('backToRoom')}
           </Link>
         </div>
 
