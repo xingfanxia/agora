@@ -1,9 +1,11 @@
 # Phase 5 — UI Overhaul: i18n + Round Table + Chat Sidebar
 
 > **Date**: 2026-04-14
-> **Status**: APPROVED — user signed off all three open decisions
+> **Status**: 5.1 ✅ shipped (i18n + agent-language); 5.2-5.6 **blocked on Phase 4.5**
 > **Triggered by**: current message-list UI is "terrible"; user wants Accio Work-style polish, agents around a round table with bubbles, click-to-view agent details, plus en/zh i18n
 > **Pushes**: Script Kill from P5 → P6, TRPG P6 → P7, Platform P7 → P8
+>
+> ⚠️ **Phase 4.5 insertion (2026-04-14 late)**: Durable workflows + human-in-the-loop foundation must ship first (see `docs/design/phase-4.5-plan.md`). The round-table viz will use ViewerContext + HumanAgent affordances introduced in 4.5; retrofitting those onto a spectator-only UI would mean rewriting Phase 5 UI.
 
 ---
 

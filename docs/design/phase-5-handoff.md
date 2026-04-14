@@ -2,7 +2,9 @@
 
 > **Date written**: 2026-04-14
 > **Target**: Next Claude session starting fresh after compact
-> **Phase 4 status**: ✅ shipped, deployed at https://agora-p4jdsp1c7-panpanmao.vercel.app
+> **Phase 4 status**: ✅ shipped, deployed at https://agora-panpanmao.vercel.app
+>
+> ⚠️ **IMPORTANT UPDATE (2026-04-14 late)**: Phase 4.5 was inserted and must ship **before** Phase 5.2-5.6. See `docs/design/phase-4.5-plan.md`. Phase 5.1 (i18n + agent-language) ✅ shipped. Phase 5.2-5.6 (round-table viz) now blocks on 4.5 completing, because the new UI must bake in `ViewerContext` + `HumanAgent` affordances from day 1 rather than retrofitting.
 
 ---
 
