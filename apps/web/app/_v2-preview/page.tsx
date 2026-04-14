@@ -19,6 +19,7 @@ import { RoundTable, type RoundTableAgent } from '../room/[id]/components/v2/Rou
 import { PhaseBadge } from '../room/[id]/components/v2/PhaseBadge'
 import { AgentAvatar } from '../room/[id]/components/v2/AgentAvatar'
 import { Bubble } from '../room/[id]/components/v2/Bubble'
+import { AgentDetailModal } from '../room/[id]/components/v2/AgentDetailModal'
 
 const NAMES = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hugo', 'Ivy', 'Jules', 'Kai', 'Luna']
 const PROVIDERS = ['anthropic', 'openai', 'google', 'deepseek'] as const
@@ -58,6 +59,7 @@ export default function V2Preview() {
   const [isDark, setIsDark] = useState(false)
   const [n, setN] = useState(9)
   const [animate, setAnimate] = useState(true)
+  const [modalAgentId, setModalAgentId] = useState<string | null>(null)
 
   useEffect(() => {
     setIsDark(prefersDark())
@@ -121,10 +123,49 @@ export default function V2Preview() {
           marginBottom: 32,
         }}
       >
-        <RoundTable agents={agents}>
+        <RoundTable agents={agents} onAgentClick={setModalAgentId}>
           <PhaseBadge phase="dayDiscuss" label="Day Discussion" round={2} />
         </RoundTable>
       </section>
+
+      {/* Agent detail modal (Phase 5.3) */}
+      {modalAgentId && (() => {
+        const idx = parseInt(modalAgentId.replace('mock-', ''), 10)
+        const agent = agents[idx]
+        if (!agent) return null
+        const mockMessages = SAMPLE_MESSAGES.map((content, i) => ({
+          id: `hist-${i}`,
+          senderId: agent.agentId,
+          channelId: i % 2 === 0 ? 'main' : 'wolf-chat',
+          content,
+          timestamp: Date.now() - (SAMPLE_MESSAGES.length - i) * 60_000,
+        }))
+        return (
+          <AgentDetailModal
+            open
+            onClose={() => setModalAgentId(null)}
+            agent={{
+              id: agent.agentId,
+              name: agent.name,
+              model: 'claude-haiku-4-5',
+              provider: agent.provider,
+              persona: { description: 'A cautious player who watches carefully before speaking.' },
+              systemPrompt: 'You are playing Werewolf. Stay in character. Keep responses concise.',
+              role: agent.role,
+              channels: ['main', 'wolf-chat'].slice(0, agent.role === 'werewolf' ? 2 : 1),
+            }}
+            color={agent.color}
+            totals={{
+              callCount: 12,
+              totalTokens: 4820,
+              inputTokens: 3200,
+              outputTokens: 1620,
+              cost: 0.0234,
+            }}
+            allMessages={mockMessages}
+          />
+        )
+      })()}
 
       {/* Sub-previews */}
       <section style={{ padding: '0 16px', display: 'flex', gap: 32, flexWrap: 'wrap' }}>
