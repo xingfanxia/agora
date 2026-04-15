@@ -255,5 +255,77 @@
       "roomStarted": "房间已启动",
       "roomEnded": "房间已结束"
     }
+  },
+  "agents": {
+    "title": "智能体",
+    "subtitle": "可复用的 AI 角色，组合成团队使用。",
+    "newAgent": "+ 新建智能体",
+    "loading": "加载中…",
+    "loadError": "加载失败：{error}",
+    "countLabel": "{count} 个智能体",
+    "backToList": "返回列表",
+    "templateBadge": "模板",
+    "editAgent": "编辑",
+    "tabs": {
+      "mine": "我的",
+      "templates": "模板"
+    },
+    "empty": {
+      "mine": "还没创建任何智能体。从模板开始，或从零构建一个。",
+      "templates": "暂无模板。"
+    },
+    "detail": {
+      "personaLabel": "人设",
+      "styleLabel": "风格",
+      "promptLabel": "自定义系统提示"
+    },
+    "wizard": {
+      "cancel": "取消",
+      "back": "返回",
+      "next": "下一步：{step}",
+      "save": "保存",
+      "create": "创建智能体",
+      "saving": "保存中…",
+      "stepLabel": "第 {current} 步 / 共 {total} 步",
+      "step1": {
+        "title": "身份",
+        "subtitle": "给 ta 起个名字，写清楚 ta 是谁。",
+        "nameLabel": "姓名",
+        "namePlaceholder": "例如：资深增长分析师",
+        "personaLabel": "人设",
+        "personaPlaceholder": "描述 ta 的角色、专长、说话方式，以及面对用户时怎样介入…",
+        "personaHelp": "{count} / {max} 字。建议 150-300 字，把声音写具体。",
+        "regenAvatar": "↻ 换一个头像"
+      },
+      "step2": {
+        "title": "模型",
+        "subtitle": "选择 LLM 并调整风格参数。",
+        "modelLabel": "模型",
+        "temperatureLabel": "温度",
+        "temperatureHelp": "越低越确定、越高越发散。",
+        "maxTokensLabel": "单轮最多输出 tokens",
+        "maxTokensHelp": "留够空间，不被截断。",
+        "languageLabel": "回复语言"
+      },
+      "step3": {
+        "title": "系统提示",
+        "subtitle": "让 Agora 自动拼装，或自己写。",
+        "autoCompose": "自动拼装",
+        "custom": "自定义",
+        "customLabel": "系统提示",
+        "customPlaceholder": "你是……\n\n你的角色是……\n\n规则：\n- ……",
+        "customHelp": "{count} / {max} 字。纯文本，无模板语法。",
+        "previewLabel": "预览（自动拼装）",
+        "previewHelp": "房间创建时，Agora 会基于身份 + 模型配置生成这段。"
+      },
+      "step4": {
+        "title": "确认",
+        "subtitle": "保存前再看一眼。",
+        "personaLabel": "人设",
+        "styleLabel": "风格",
+        "promptLabel": "系统提示",
+        "promptAuto": "房间创建时自动拼装"
+      }
+    }
   }
 }

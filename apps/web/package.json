@@ -16,6 +16,8 @@
     "@agora/llm": "workspace:*",
     "@agora/modes": "workspace:*",
     "@agora/shared": "workspace:*",
+    "@dicebear/core": "^9.4.2",
+    "@dicebear/pixel-art": "^9.4.2",
     "@vercel/functions": "^2.2.0",
     "drizzle-orm": "^0.38.0",
     "next": "16.2.0",

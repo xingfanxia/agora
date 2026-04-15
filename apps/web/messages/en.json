@@ -255,5 +255,77 @@
       "roomStarted": "Room started",
       "roomEnded": "Room ended"
     }
+  },
+  "agents": {
+    "title": "Agents",
+    "subtitle": "Reusable AI personas. Compose them into teams.",
+    "newAgent": "+ New agent",
+    "loading": "Loading agents…",
+    "loadError": "Failed to load: {error}",
+    "countLabel": "{count} agents",
+    "backToList": "Back to agents",
+    "templateBadge": "Template",
+    "editAgent": "Edit",
+    "tabs": {
+      "mine": "Mine",
+      "templates": "Templates"
+    },
+    "empty": {
+      "mine": "You haven't created any agents yet. Start with a template or build one from scratch.",
+      "templates": "No templates shipped yet."
+    },
+    "detail": {
+      "personaLabel": "Persona",
+      "styleLabel": "Style",
+      "promptLabel": "Custom system prompt"
+    },
+    "wizard": {
+      "cancel": "Cancel",
+      "back": "Back",
+      "next": "Next: {step}",
+      "save": "Save",
+      "create": "Create agent",
+      "saving": "Saving…",
+      "stepLabel": "Step {current} of {total}",
+      "step1": {
+        "title": "Identity",
+        "subtitle": "Give your agent a name and describe who they are.",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g., Senior Growth Analyst",
+        "personaLabel": "Persona",
+        "personaPlaceholder": "Describe the agent's role, expertise, voice, and how they engage…",
+        "personaHelp": "{count} / {max} characters. Aim for 150-300 words for substantial voice.",
+        "regenAvatar": "↻ Regenerate avatar"
+      },
+      "step2": {
+        "title": "Model",
+        "subtitle": "Pick the LLM and tune its style.",
+        "modelLabel": "Model",
+        "temperatureLabel": "Temperature",
+        "temperatureHelp": "Lower = more deterministic. Higher = more creative.",
+        "maxTokensLabel": "Max tokens per reply",
+        "maxTokensHelp": "Room for the agent to say their piece without getting cut off.",
+        "languageLabel": "Speak in"
+      },
+      "step3": {
+        "title": "Prompt",
+        "subtitle": "Let Agora compose the system prompt, or write your own.",
+        "autoCompose": "Auto-compose",
+        "custom": "Custom",
+        "customLabel": "System prompt",
+        "customPlaceholder": "You are…\n\nYour role is…\n\nRules:\n- …",
+        "customHelp": "{count} / {max} characters. Plain text, no templating.",
+        "previewLabel": "Preview (auto-composed)",
+        "previewHelp": "Agora will build this at room creation from your identity + model settings."
+      },
+      "step4": {
+        "title": "Review",
+        "subtitle": "One last look before we save.",
+        "personaLabel": "Persona",
+        "styleLabel": "Style",
+        "promptLabel": "System prompt",
+        "promptAuto": "Auto-composed at room creation"
+      }
+    }
   }
 }
