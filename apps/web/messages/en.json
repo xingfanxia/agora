@@ -424,5 +424,23 @@
         "lastWords": "Last words 遗言"
       }
     }
+  },
+  "sidebar": {
+    "newRoom": "New room",
+    "agents": {
+      "label": "Agents",
+      "all": "Browse",
+      "new": "New agent"
+    },
+    "teams": {
+      "label": "Teams",
+      "all": "Browse",
+      "new": "New team"
+    },
+    "history": {
+      "label": "History",
+      "replays": "Replays"
+    },
+    "tagline": "Assemble · Compose · Run"
   }
 }

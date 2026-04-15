@@ -424,5 +424,23 @@
         "lastWords": "遗言"
       }
     }
+  },
+  "sidebar": {
+    "newRoom": "新对话",
+    "agents": {
+      "label": "智能体",
+      "all": "浏览",
+      "new": "新建智能体"
+    },
+    "teams": {
+      "label": "团队",
+      "all": "浏览",
+      "new": "新建团队"
+    },
+    "history": {
+      "label": "历史",
+      "replays": "回放"
+    },
+    "tagline": "组合 · 团队 · 跑起来"
   }
 }
