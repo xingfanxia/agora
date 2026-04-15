@@ -204,3 +204,52 @@ select {
   font-weight: 600;
 }
 
+/* ============================================================
+ * Phase 6m — mobile + a11y
+ * ============================================================ */
+
+/* Tighten large text sizing on narrow screens */
+@media (max-width: 640px) {
+  h1 {
+    font-size: 1.75rem !important;
+  }
+  .agora-hero h1 {
+    font-size: 2rem !important;
+  }
+  .agora-chat-message {
+    padding: 10px 12px !important;
+  }
+}
+
+/* Visible focus for keyboard users */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* When the card is the focused element itself, don't double-ring */
+a[tabindex='-1']:focus-visible,
+button[tabindex='-1']:focus-visible {
+  outline: none;
+}
+
+/* Ensure sticky-bottom wizard footer doesn't obscure last input on mobile */
+@media (max-width: 640px) {
+  body {
+    scroll-padding-bottom: 96px;
+  }
+}
+
+/* Slight padding shrink for content containers on mobile */
+@media (max-width: 640px) {
+  main > div[style*='padding: 32px 24px'] {
+    padding: 20px 16px !important;
+  }
+}
+
