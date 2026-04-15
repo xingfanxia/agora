@@ -34,7 +34,13 @@ import {
   buildPricingMap,
   createCostCalculator,
 } from '@agora/llm'
-import { createWerewolf, type WerewolfAgentConfig, type WerewolfAdvancedRules } from '@agora/modes'
+import {
+  createOpenChat,
+  createWerewolf,
+  type OpenChatAgentConfig,
+  type WerewolfAgentConfig,
+  type WerewolfAdvancedRules,
+} from '@agora/modes'
 import type { LLMProvider, Message, ModelConfig } from '@agora/shared'
 import {
   disposeRuntime,
@@ -49,6 +55,8 @@ import {
   getEventsSince,
   getEventCount,
   getRoom,
+  setCurrentPhase,
+  setCurrentRound,
   setGameState,
   updateRoomStatus,
   type AgentInfo,
@@ -98,16 +106,190 @@ export async function advanceRoom(roomId: string): Promise<AdvanceResult> {
     return { kind: 'error', message: roomRow.errorMessage ?? 'Room in error state' }
   }
 
-  if (roomRow.modeId !== 'werewolf') {
-    // Roundtable durable advance + other modes are follow-up work; today
-    // the only mode that actually hits the 5-min wall is werewolf.
-    return {
-      kind: 'error',
-      message: `advance not yet implemented for mode: ${roomRow.modeId}`,
+  if (roomRow.modeId === 'werewolf') return advanceWerewolfRoom(roomRow)
+  if (roomRow.modeId === 'open-chat') return advanceOpenChatRoom(roomRow)
+
+  // Roundtable durable advance is legacy `waitUntil(start)`; not yet tickable.
+  return {
+    kind: 'error',
+    message: `advance not yet implemented for mode: ${roomRow.modeId}`,
+  }
+}
+
+// ── Open-chat advance ──────────────────────────────────────
+
+interface OpenChatRoomModeConfig {
+  topic?: string
+  rounds?: number
+  leaderAgentId?: string | null
+  language?: 'en' | 'zh'
+}
+
+async function advanceOpenChatRoom(
+  roomRow: NonNullable<Awaited<ReturnType<typeof getRoom>>>,
+): Promise<AdvanceResult> {
+  const roomId = roomRow.id
+  const modeConfig = (roomRow.modeConfig as OpenChatRoomModeConfig | null) ?? {}
+  const agentInfos = (roomRow.agents as unknown as AgentInfo[]) ?? []
+  if (agentInfos.length === 0) {
+    return { kind: 'error', message: 'open-chat room has no agents' }
+  }
+
+  const topic = roomRow.topic ?? modeConfig.topic ?? ''
+  const rounds = modeConfig.rounds ?? 3
+  const leaderAgentId = modeConfig.leaderAgentId ?? null
+  const languageInstruction = modeConfig.language
+    ? buildLanguageDirective(modeConfig.language)
+    : undefined
+  const totalTurns = agentInfos.length * rounds
+
+  const pastEvents = await getEventsSince(roomId, -1)
+  const messagesSoFar = pastEvents.filter(
+    (e) => e.event.type === 'message:created',
+  ).length
+  const eventCount = pastEvents.length
+
+  // Already done — recover idempotently.
+  if (messagesSoFar >= totalTurns) {
+    await updateRoomStatus(roomId, 'completed')
+    return { kind: 'complete', result: null }
+  }
+
+  const openChatAgents: OpenChatAgentConfig[] = agentInfos.map((info) =>
+    toOpenChatAgentConfig(info, topic, languageInstruction),
+  )
+
+  const result = createOpenChat(
+    {
+      agents: openChatAgents,
+      topic,
+      rounds,
+      leaderAgentId,
+      roomId,
+    },
+    _createGenFn,
+  )
+
+  // Fast-forward the flow state so the NEXT tick() picks up where we left off.
+  result.flow.initialize([...result.orderedAgentIds])
+  for (let i = 0; i < messagesSoFar; i++) {
+    result.flow.tick()
+  }
+
+  const isFirstTick = eventCount === 0
+
+  if (!isFirstTick) {
+    for (const entry of pastEvents) {
+      if (entry.event.type === 'message:created') {
+        result.room.replayMessage(entry.event.message as Message)
+      }
     }
   }
 
-  return advanceWerewolfRoom(roomRow)
+  const pricingMap = await buildPricingMap(openChatAgents.map((a) => a.model))
+  const accountant = new TokenAccountant(result.eventBus, createCostCalculator(pricingMap))
+  const runtime = registerRuntime(roomId, {
+    eventBus: result.eventBus,
+    room: result.room,
+    flow: result.flow,
+    accountant,
+  })
+  runtime.seq = eventCount
+  wireEventPersistence(roomId, result.eventBus, runtime)
+
+  if (isFirstTick) {
+    result.eventBus.emit({ type: 'room:started', roomId })
+  }
+
+  let turnResult: Awaited<ReturnType<typeof result.room.runOneTurn>>
+  try {
+    turnResult = await result.room.runOneTurn(result.flow, {
+      startingPhase: isFirstTick ? null : (roomRow.currentPhase ?? 'discussion'),
+      startingRound: isFirstTick ? 0 : roomRow.currentRound,
+    })
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`[advanceOpenChat] ${roomId} failed:`, error)
+    await flushRuntimePending(runtime)
+    await updateRoomStatus(roomId, 'error', msg)
+    disposeRuntime(roomId)
+    return { kind: 'error', message: msg }
+  }
+
+  // Checkpoint progress so /admin and /replay see it mid-run.
+  await setCurrentPhase(roomId, turnResult.phase || 'discussion')
+  await setCurrentRound(roomId, turnResult.round)
+  const turnsCompleted = messagesSoFar + 1
+  await setGameState(roomId, {
+    topic,
+    turnsCompleted,
+    totalTurns,
+    leaderAgentId: leaderAgentId ?? null,
+  })
+
+  const wasLastTurn = result.flow.isComplete()
+  if (wasLastTurn) {
+    result.eventBus.emit({ type: 'room:ended', roomId })
+    await flushRuntimePending(runtime)
+    await updateRoomStatus(roomId, 'completed')
+    disposeRuntime(roomId)
+    return { kind: 'complete', result: null }
+  }
+
+  await flushRuntimePending(runtime)
+  disposeRuntime(roomId)
+  return { kind: 'continue' }
+}
+
+function toOpenChatAgentConfig(
+  info: AgentInfo,
+  topic: string,
+  languageInstruction: string | undefined,
+): OpenChatAgentConfig {
+  const style = info.style ?? {}
+  const temperature = typeof style['temperature'] === 'number' ? (style['temperature'] as number) : 0.7
+  const maxTokens = typeof style['maxTokens'] === 'number' ? (style['maxTokens'] as number) : 1024
+
+  // Use snapshot's systemPrompt as-is if present; else compose a sensible
+  // default from the minimal fields the werewolf-fast-path rooms persist.
+  const systemPrompt =
+    info.systemPrompt ??
+    composeOpenChatDefaultPrompt(info.name, info.persona, topic, languageInstruction)
+
+  return {
+    id: info.id,
+    name: info.name,
+    persona: info.persona ?? `A participant named ${info.name}`,
+    systemPrompt,
+    model: {
+      provider: info.provider as LLMProvider,
+      modelId: info.model,
+      temperature,
+      maxTokens,
+    },
+  }
+}
+
+function composeOpenChatDefaultPrompt(
+  name: string,
+  persona: string | undefined,
+  topic: string,
+  languageInstruction: string | undefined,
+): string {
+  const parts: string[] = []
+  parts.push(`你是 ${name}，正在与其他参与者围绕以下话题进行对话：`)
+  parts.push(`「${topic}」`)
+  if (persona) {
+    parts.push('')
+    parts.push(`你的身份设定：${persona}`)
+  }
+  parts.push('')
+  parts.push('保持简洁有力（2-4 段），围绕话题提出你的观点、回应其他人的发言，推动讨论前进。')
+  if (languageInstruction) {
+    parts.push('')
+    parts.push(languageInstruction)
+  }
+  return parts.join('\n')
 }
 
 // ── Werewolf advance ───────────────────────────────────────

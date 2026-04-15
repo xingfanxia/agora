@@ -35,3 +35,13 @@ export type {
   WerewolfGameState,
   WerewolfAdvancedRules,
 } from './werewolf/index.js'
+
+// Open-chat
+export { createOpenChat } from './open-chat/index.js'
+
+export type {
+  OpenChatConfig,
+  OpenChatAgentConfig,
+  OpenChatResult,
+  OpenChatGameStateSnapshot,
+} from './open-chat/index.js'

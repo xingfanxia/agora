@@ -148,6 +148,31 @@ export class Room {
   }
 
   /**
+   * Run exactly one flow iteration — one agent speaks. Returns the
+   * updated (phase, round) and whether the flow completed. Used by
+   * durable modes (open-chat) whose "phase" never changes so
+   * `runUntilPhaseBoundary` would loop forever.
+   *
+   * Does NOT emit `room:started` / `room:ended`; caller controls
+   * lifecycle events (same contract as `runUntilPhaseBoundary`).
+   */
+  async runOneTurn(
+    flow: FlowController,
+    options: { startingPhase?: string | null; startingRound?: number } = {},
+  ): Promise<{ completed: boolean; phase: string; round: number }> {
+    const result = await this.runOneIteration(
+      flow,
+      options.startingRound ?? 0,
+      options.startingPhase ?? null,
+    )
+    return {
+      completed: result.isComplete,
+      phase: result.lastPhase ?? '',
+      round: result.lastRound,
+    }
+  }
+
+  /**
    * One iteration of the while-loop body — extracted so start() and
    * runUntilPhaseBoundary() share the exact same tick semantics.
    */

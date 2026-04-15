@@ -38,6 +38,13 @@ export interface AgentInfo {
   name: string
   model: string
   provider: string
+  // Phase 6 — optional snapshot fields for richer modes (open-chat).
+  // Absent for older rooms (werewolf fast-path) which compose their own
+  // system prompts at runtime from roleMap.
+  persona?: string
+  systemPrompt?: string
+  style?: Record<string, unknown>
+  avatarSeed?: string
 }
 
 // ── Create ──────────────────────────────────────────────────
