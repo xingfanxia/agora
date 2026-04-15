@@ -1,32 +1,47 @@
+/*
+ * Palette inspired by Accio Work — dark near-black canvas + mint
+ * green accent, clear typographic hierarchy (primary/muted/tertiary).
+ * Light mode preserved for daytime reads but we treat dark as the
+ * primary visual target.
+ */
 :root {
   --background: #fafafa;
   --foreground: #111111;
-  --muted: #666666;
+  --muted: #6b6f76;
+  --muted-strong: #3a3d44;
   --border: #e5e5e5;
-  --accent: #0066ff;
-  --accent-hover: #0052cc;
+  --accent: #22c493;
+  --accent-hover: #2ed49a;
   --surface: #ffffff;
   --surface-hover: #f5f5f5;
+  --surface-elevated: #ffffff;
   --danger: #dc3545;
+  --warn: #e0a64a;
   --radius: 12px;
   --radius-sm: 8px;
+  --radius-lg: 16px;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --muted: #999999;
-    --border: #2a2a2a;
-    --accent: #4d94ff;
-    --accent-hover: #6ba6ff;
-    --surface: #141414;
-    --surface-hover: #1a1a1a;
-    --danger: #ff4d5a;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --background: #0f1012;
+    --foreground: #e8e9ec;
+    --muted: #8a8b92;
+    --muted-strong: #55565c;
+    --border: #25272c;
+    --accent: #22c493;
+    --accent-hover: #2ed49a;
+    --surface: #17181c;
+    --surface-hover: #1e2025;
+    --surface-elevated: #1a1b1f;
+    --danger: #ff6371;
+    --warn: #e0a64a;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
   }
 }
 
