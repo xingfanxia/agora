@@ -23,6 +23,10 @@ import type { LLMProvider, ModelConfig } from '@agora/shared'
 import type { WerewolfAdvancedRules } from '@agora/modes'
 import { createRoom, setGameState, type AgentInfo } from '../../../lib/room-store'
 import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
+import { getTeam } from '../../../lib/team-store'
+import { getMembers } from '../../../lib/team-store'
+import { getUserIdFromRequest } from '../../../lib/user-id'
+import type { NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +41,8 @@ interface PlayerInput {
 }
 
 interface CreateWerewolfBody {
-  players: PlayerInput[]
+  players?: PlayerInput[]
+  teamId?: string
   advancedRules?: WerewolfAdvancedRules
   language?: 'en' | 'zh'
 }
@@ -50,22 +55,45 @@ function resolveProvider(modelId: string): LLMProvider {
   throw new Error(`Unknown model: ${modelId}`)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as CreateWerewolfBody
 
-    if (!body.players || body.players.length < 6 || body.players.length > 12) {
-      return NextResponse.json(
-        { error: 'Werewolf requires 6-12 players' },
-        { status: 400 },
-      )
+    // Phase 6 — resolve `players` list either from explicit body or a team.
+    let players: PlayerInput[]
+    let teamId: string | null = null
+    if (body.teamId) {
+      const team = await getTeam(body.teamId)
+      if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+      const members = await getMembers(body.teamId)
+      if (members.length < 6 || members.length > 12) {
+        return NextResponse.json(
+          { error: `Team has ${members.length} members; werewolf requires 6-12` },
+          { status: 400 },
+        )
+      }
+      teamId = team.id
+      players = members.map((m) => ({
+        name: m.agent.name,
+        model: m.agent.modelId,
+        provider: m.agent.modelProvider as LLMProvider,
+      }))
+    } else {
+      if (!body.players || body.players.length < 6 || body.players.length > 12) {
+        return NextResponse.json(
+          { error: 'Werewolf requires 6-12 players' },
+          { status: 400 },
+        )
+      }
+      players = body.players
     }
 
     const advancedRules = body.advancedRules ?? {}
     const language = await resolveAgentLanguage(body.language)
     const languageDirective = buildLanguageDirective(language)
+    const createdBy = getUserIdFromRequest(request)
 
-    const agentConfigs = body.players.map((p) => ({
+    const agentConfigs = players.map((p) => ({
       name: p.name,
       model: {
         provider: p.provider ?? resolveProvider(p.model),
@@ -116,10 +144,13 @@ export async function POST(request: Request) {
       id: roomId,
       modeId: 'werewolf',
       topic: 'Werewolf',
-      config: { players: body.players, advancedRules, language },
+      config: { players, advancedRules, language },
+      modeConfig: { advancedRules, language, playerCount: players.length },
       agents: agentInfos,
       roleAssignments,
       advancedRules: advancedRules as Record<string, boolean>,
+      teamId,
+      createdBy,
     })
 
     // Snapshot the initial WerewolfGameState so rehydration has a

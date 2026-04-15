@@ -381,5 +381,48 @@
       "save": "保存修改",
       "saving": "保存中…"
     }
+  },
+  "newRoom": {
+    "title": "开始对话",
+    "subtitle": "选模式、填配置，让团队开始跑。",
+    "backToTeam": "返回团队",
+    "pickMode": "模式",
+    "configTitle": "配置",
+    "cancel": "取消",
+    "start": "开始 →",
+    "starting": "正在开始…",
+    "pickTeamTitle": "先选一个团队",
+    "pickTeamSubtitle": "房间都是从团队出发的，先去选一个。",
+    "browseTeams": "浏览团队",
+    "modes": {
+      "openChat": {
+        "title": "开放对话",
+        "description": "自由轮流对话，适合头脑风暴、专家会诊。"
+      },
+      "roundtable": {
+        "title": "轮桌辩论",
+        "description": "结构化 N 轮辩论，每人每轮说一次。"
+      },
+      "werewolf": {
+        "title": "狼人杀",
+        "description": "社交推理，游戏开局随机分配角色，6-12 人。"
+      },
+      "incompatible": "本模式需要 {min}-{max} 位成员。"
+    },
+    "config": {
+      "topicLabel": "议题 / 问题",
+      "topicPlaceholderOpenChat": "例如：朕欲征南诏，诸卿以为如何？",
+      "topicPlaceholderRoundtable": "例如：Q4 之前是否要发布？",
+      "roundsLabel": "轮数：{rounds}",
+      "languageLabel": "语言",
+      "werewolfIntro": "{playerCount} 人局。游戏开始时随机分配角色。",
+      "advancedRules": "高级规则",
+      "rules": {
+        "guard": "守卫",
+        "idiot": "白痴",
+        "sheriff": "警长",
+        "lastWords": "遗言"
+      }
+    }
   }
 }

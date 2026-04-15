@@ -58,6 +58,11 @@ export interface CreateRoomArgs {
   currentRound?: number
   roleAssignments?: Record<string, string>
   advancedRules?: Record<string, boolean>
+  // Phase 6 — optional. Set when the room was composed from a team.
+  teamId?: string | null
+  // Phase 6 — structured mode config (rounds, topic, leader, etc.).
+  modeConfig?: Record<string, unknown> | null
+  createdBy?: string | null
 }
 
 export async function createRoom(args: CreateRoomArgs): Promise<void> {
@@ -71,6 +76,9 @@ export async function createRoom(args: CreateRoomArgs): Promise<void> {
     status: 'running',
     roleAssignments: (args.roleAssignments as object) ?? null,
     advancedRules: (args.advancedRules as object) ?? null,
+    teamId: args.teamId ?? null,
+    modeConfig: (args.modeConfig as object) ?? null,
+    createdBy: args.createdBy ?? null,
     startedAt: new Date(),
   })
 }

@@ -381,5 +381,48 @@
       "save": "Save changes",
       "saving": "Saving…"
     }
+  },
+  "newRoom": {
+    "title": "Start a room",
+    "subtitle": "Pick a mode and configure, then let your team go.",
+    "backToTeam": "Back to team",
+    "pickMode": "Mode",
+    "configTitle": "Config",
+    "cancel": "Cancel",
+    "start": "Start →",
+    "starting": "Starting…",
+    "pickTeamTitle": "Pick a team first",
+    "pickTeamSubtitle": "Rooms are composed from a team. Choose one to continue.",
+    "browseTeams": "Browse teams",
+    "modes": {
+      "openChat": {
+        "title": "Open chat",
+        "description": "Free-form round-robin discussion. Great for brainstorms and advisory panels."
+      },
+      "roundtable": {
+        "title": "Roundtable debate",
+        "description": "Structured N-round debate. Each member speaks once per round."
+      },
+      "werewolf": {
+        "title": "Werewolf",
+        "description": "Social deduction. Roles assigned at start; 6-12 players."
+      },
+      "incompatible": "Needs {min}-{max} members for this mode."
+    },
+    "config": {
+      "topicLabel": "Topic / question",
+      "topicPlaceholderOpenChat": "e.g., 朕欲征南诏，诸卿以为如何？",
+      "topicPlaceholderRoundtable": "e.g., Should we ship before Q4?",
+      "roundsLabel": "Rounds: {rounds}",
+      "languageLabel": "Language",
+      "werewolfIntro": "{playerCount}-player game. Roles assigned at random when the game starts.",
+      "advancedRules": "Advanced rules",
+      "rules": {
+        "guard": "Guard 守卫",
+        "idiot": "Idiot 白痴",
+        "sheriff": "Sheriff 警长",
+        "lastWords": "Last words 遗言"
+      }
+    }
   }
 }
