@@ -1,16 +1,32 @@
 # Agora
 
-Multi-agent collaboration platform where AI agents (and humans) gather to debate, play, and create.
+**Assemble agents. Compose teams. Run anything.**
+
+A general-purpose multi-agent team platform. Build reusable AI personas,
+compose them into teams, and run them through any activity — from
+open-ended discussions to structured debates to werewolf.
 
 ## What is Agora?
 
-Agora is an open-source platform for orchestrating multiple AI agents in shared interactive sessions. Create a room, add agents with distinct personas and models, pick a mode, and watch them interact — with live cost tracking and a full event timeline.
+Agora is an open-source platform where agents, teams, rooms, modes, and
+templates are five orthogonal primitives. Create an agent once, drop it
+into multiple teams, start a room in any mode, and watch the team work
+— with live cost tracking and a full event timeline.
+
+**Live on prod**: [agora-panpanmao.vercel.app](https://agora-panpanmao.vercel.app)
+
+**Ship-with templates** (2026-04-15):
+- **投资团队** — CFO (leader) + Quant + Risk + Contrarian + Macro + Analyst; dispatcher-led open chat.
+- **当皇帝** — Nine Tang-dynasty ministers from the 三省六部制. You play emperor; they debate.
+- **辩论赛** — 乐观派 / 质疑者 / 务实派; three-way roundtable debate.
+- **狼人杀** — 9-player standard game with authored playstyle personas.
 
 **Modes shipped**:
-- **Roundtable Debate** — 2–8 AI agents debate a topic across N rounds
-- **Werewolf (狼人杀)** — 6–12 agents, Chinese standard rules, togglable Guard / Idiot / Sheriff / Last Words
+- **Open chat** — free-form round-robin discussion, optional leader
+- **Roundtable** — structured N-round debate, 2-8 agents
+- **Werewolf (狼人杀)** — 6-12 agents, Chinese rules, togglable Guard / Idiot / Sheriff / Last Words
 
-**Modes on the roadmap**: Script Kill (剧本杀), TRPG (跑团), custom user-defined flows.
+**On the roadmap**: Script Kill (剧本杀), TRPG (跑团), human-in-the-loop play (Phase 4.5b-d).
 
 ## Architecture
 
@@ -47,19 +63,36 @@ npx tsx scripts/token-report.ts                              # LiteLLM pricing s
 
 | Route | What it does |
 |-------|--------------|
-| `/` | Landing — pick a mode or browse replays |
-| `/create` | Set up a roundtable debate (2-8 agents, 1-5 rounds, model + persona per agent) |
-| `/create-werewolf` | Set up a werewolf game (6-12 players, model per slot, advanced rule pills) |
-| `/room/[id]` | Live game / debate view, dispatched by mode — token cost panel, channel tabs (werewolf), role badges (werewolf) |
-| `/room/[id]/observability` | Filterable event timeline + per-call cost stream |
-| `/replays` | List of completed games, filterable by mode |
-| `/replay/[id]` | Animated playback with scrubber, play/pause, speed control (0.5×–10×, max) |
+| `/` | Landing — hero + template gallery + your teams/agents |
+| `/agents` | Your reusable agent personas (Mine / Templates tabs) |
+| `/agents/new` | 4-step wizard: Identity → Model → Prompt → Review |
+| `/agents/[id]` | Agent detail (persona, style, prompt) + edit CTA |
+| `/teams` | Team list (Mine / Templates tabs) |
+| `/teams/new` | Team composer — Available ↔ Selected split, leader toggle |
+| `/teams/[id]` | Team detail — roster, `+ 开始对话` CTA |
+| `/rooms/new?teamId=X` | Mode picker + config → start a room |
+| `/create` | Legacy roundtable debate creator (kept as fast-path) |
+| `/create-werewolf` | Legacy werewolf game creator (kept as fast-path) |
+| `/room/[id]` | Live room — chat-default view, round-table toggle, token panel |
+| `/replays` | List of completed rooms, filterable by mode |
+| `/replay/[id]` | Animated playback with scrubber and speed control |
 
 ## Status
 
-Phases 1, 2a, 2b, 3, and **4 (Persistence + Replay)** shipped. Every room now persists to Supabase Postgres (via Drizzle); games survive server restarts; replay pages reconstruct the full UI from the event log. Phase 5 (Script Kill) is up next.
+**Phase 6 (Team Platform) shipped** on 2026-04-15 — five primitives
+(agents · teams · rooms · modes · templates), four ship-with templates,
+open-chat mode, durable runtime (Phase 4.5a), Accio-inspired UI.
 
-See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md), and [docs/implementation-plan.md](docs/implementation-plan.md).
+**Earlier phases**: 1 (Roundtable) · 2 (Werewolf core + advanced rules) ·
+3 (Frontend + observability + token tracking) · 4 (Persistence + replay) ·
+4.5a (AI-only durable runtime) · 5 (UI + i18n + chat-default).
+
+**Next on deck**: Phase 4.5b-d (human-in-the-loop play), Phase 7 (TRPG),
+Phase 8 (Script Kill).
+
+See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md),
+[docs/implementation-plan.md](docs/implementation-plan.md), and
+[docs/design/workflow-architecture.md](docs/design/workflow-architecture.md).
 
 ## Credits
 

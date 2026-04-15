@@ -1,5 +1,9 @@
 # Phase 6 — Team Platform: Handoff for next session
 
+> **✅ SHIPPED 2026-04-15** (commit `f5d71c5`). All sub-phases 6b-6m
+> merged and pushed to prod. This doc is kept for historical context.
+> Future sessions should start from `memory/project_agora.md` §Next step.
+
 > **Date**: 2026-04-15
 > **Audience**: Fresh Claude session picking up after compact
 > **Prerequisite reading** (in order, ~15 min):

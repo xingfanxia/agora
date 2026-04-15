@@ -1,5 +1,9 @@
 # Phase 6 — Team Platform (the real Agora)
 
+> **✅ SHIPPED 2026-04-15** (commit `f5d71c5`). All 8 locked design
+> answers executed. Plan kept for historical reference; for current
+> state see `memory/project_agora.md` and `docs/design/workflow-architecture.md`.
+
 > **Date**: 2026-04-15
 > **Trigger**: User feedback — "our roundtable and 狼人杀 basically is
 > two modes for a team room, and I like having customized agent setup

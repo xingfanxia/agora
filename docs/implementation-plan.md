@@ -16,18 +16,19 @@
 | **3** | Frontend + Observability | ✅ **DONE** | Mode-specific UI, Token/cost tracking (LiteLLM), Observability timeline | — (enhance existing) |
 | **4** | Persistence + Replay | ✅ **DONE** | Postgres (Supabase) event store, DB-backed reads, /replays + /replay/[id] with animated playback, Vercel-ready runtime | — (enhance existing) |
 | **4.5a** | Durable Runtime (AI-only) | ✅ **DONE** | Bespoke advanceRoom + chained tick dispatcher, deterministic agent IDs, waiting state, /admin observability, replay determinism | — (foundation; AI-only games complete reliably) |
-| **5** | UI Overhaul (i18n + Round Table) | ⏳ **NEXT** | next-intl (en/zh) ✅ 5.1 shipped; round-table viz + click-to-view + chat sidebar pending | — (visual polish; spectator-first) |
-| **4.5b** | Human-Play UX Design | ⏸ After 5 | Design-only: wireframes + copy for every human turn type, timeout + fallback UX | — (doc deliverable only) |
+| **5** | UI Overhaul (i18n + Round Table) | ✅ **DONE** | next-intl (en/zh), round-table viz, click-to-view modal, WeChat chat sidebar, Accio palette, chat-default view | — (visual polish) |
+| **6** | Team Platform (the real Agora) | ✅ **DONE 2026-04-15** | Five primitives (agents · teams · rooms · modes · templates), 4 ship-with templates, open-chat mode, DiceBear avatars, AppShell + Sidebar, team-snapshot room creation, leader directive via prompt-append | Open-chat |
+| **4.5b** | Human-Play UX Design | ⏳ **NEXT** (option A) | Design-only: wireframes + copy for every human turn type, timeout + fallback UX | — (doc deliverable only) |
 | **4.5c** | Seat Tokens + Human Play | ⏸ After 4.5b | HumanAgent, JWT seat tokens, human-input route, Supabase Realtime, ViewerContext, MyInputPanel, per-mode timeouts | 1-human-8-AI games |
-| **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth (magic-link + OAuth), room_memberships + RLS, presence, fan-in, disconnection grace | N-human rooms |
-| **6** | Script Kill (was P4 → P5) | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
-| **7** | TRPG (was P5 → P6) | ⏸ Later | GM Agent, Dice system, Narrative generation, Character growth | TRPG |
-| **8** | Platform (was P6 → P7) | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Auth, Hierarchical Flow | Custom |
+| **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth, room_memberships + RLS, presence, fan-in, disconnection grace. **Triggers workflow-primitive re-eval** per `docs/design/workflow-architecture.md` | N-human rooms |
+| **7** | TRPG | ⏳ **NEXT** (option B) | GM Agent, Dice system, Narrative generation, Character growth. Likely **triggers WDK migration** for durable long pauses | TRPG |
+| **8** | Script Kill | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
+| **9** | Platform / Custom Mode SDK | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Hierarchical Flow | Custom |
 
-**Plan**: `docs/design/phase-5-plan.md` · **Handoff**: `docs/design/phase-5-handoff.md`
+**Plan**: `docs/design/phase-6-team-platform.md` · **Handoff**: `docs/design/phase-6-handoff.md` · **Workflow**: `docs/design/workflow-architecture.md`
 
-**Current session date**: 2026-04-13
-**Handoff doc for Phase 3**: `docs/design/phase-3-handoff.md`
+**Current session date**: 2026-04-15
+**Phase 6 shipped in commit**: `f5d71c5` → `https://agora-panpanmao.vercel.app`
 
 ---
 
