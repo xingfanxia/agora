@@ -713,3 +713,176 @@ With that, I write 6b code and go.
 
 **End of plan.** This doc is the checkpoint. No code until you sign
 off on the model + templates + execution order.
+
+---
+
+## 16. Locked answers (2026-04-15 sign-off)
+
+| # | Question | Locked answer |
+|---|---|---|
+| 1 | Positioning line | **"Assemble agents. Compose teams. Run anything."** |
+| 2 | Wizard step count | **4 steps** (Accio-match): Identity → Model → Prompt override (optional) → Review |
+| 3 | V1 templates | **4 ship with V1**: 投资团队 · 当皇帝 · 辩论赛 · 狼人杀. **Reserved for V2** after script-kill + TRPG modes land: 剧本杀 · TRPG |
+| 4 | Avatar source | **DiceBear pixel-art** via `@dicebear/core` + `@dicebear/pixel-art` npm packages, generated client-side from `avatarSeed = agentId`. Rendered via `toDataUri()` → `<img src={dataUri}>` (avoids `dangerouslySetInnerHTML`). Memoized per-seed. No CDN, no server storage. Matches Accio's pixel-character aesthetic. |
+| 5 | Leader agent runtime role | **V1: display-only chip** (badge on team card + seat + roster). No code path changes based on leader status. Behavioural variants (司礼监 dispatch discipline, summary on final round) deferred to V1.5 — see §17.3 below for the prompt-append pattern that lets us add this later without runtime changes. |
+| 6 | Legacy `/create*` routes | **Keep as fast-path shortcuts**. Internal: they call `/api/rooms` with `team_id=null`. New `/rooms/new` flow calls same endpoint with `team_id=X`. Shared `ModePicker` / config components so code doesn't fork. |
+| 7 | Agent edit mid-room | **Snapshot at room creation; edits never propagate.** Replays stay consistent. |
+| 8 | V1 scope | **Full plan (6b → 6m, ~11 days).** Sequential commits, deployed checkpoints per §13. |
+
+---
+
+## 17. Research findings — `wanikua/danghuangshang` study
+
+Research agent ran 2026-04-15 against the source repo. Key findings
+that shape our V1 implementation below.
+
+### 17.1 What danghuangshang actually is
+
+- **70% metaphor + UX theater, 25% prompt discipline, 5% glue code.**
+  The "framework" is entirely [OpenClaw](https://github.com/openclaw/openclaw);
+  danghuangshang is a packaged OpenClaw config + ~19 persona `.md`
+  files.
+- **Three regimes**:
+  - **明朝内阁制**: 19 agents (司礼监 → 内阁 → 六部 → 都察院 +
+    翰林院 sub-crew + auxiliary four: 国子监/太医院/内务府/御膳房).
+  - **唐朝三省制**: 14 agents (中书 drafts → 门下 audits → 尚书
+    dispatches → 六部 execute → 御史台 monitors).
+  - **现代企业制**: README claims 14; repo has **9** (CEO → COO
+    audits → CTO/CFO/CMO/CIO/CHRO etc. → QA reviews). README lies.
+- **"60+ skills"** is marketing. In-repo `skills/` has ~10; the rest
+  come from OpenClaw's shared ecosystem (not vendored here).
+- **No routing engine.** "Dispatch" is emergent from LLM compliance
+  with persona rules. Agents `@mention` each other in Discord
+  channel text; OpenClaw's `sessions_send` is a thin RPC for
+  hidden handoffs.
+
+### 17.2 The real gems — patterns to steal
+
+| Pattern | Source | Our use |
+|---|---|---|
+| **Dispatch discipline** — orchestrator persona has explicit FORBIDDEN action list ("禁止: 写代码/查资料/分析数据. KPI 是任务派发率") | silijian persona (Ming) | Apply to Agora "leader" agents in V1.5 as a persona suffix. Stops LLMs from "helpful = do it myself" default. |
+| **Two-step pipeline**: cheap dispatcher + slow planner | 司礼监 → 内阁 → 六部 | For large teams: leader routes, plan-generator agent optimizes, specialists execute. Much better than leader→specialists direct. |
+| **Status tokens** in agent output: `【诏令草案】 【审核意见】通过/需要补充/返回修改` | menxiasheng persona (Tang) | Users parse stage instantly without reading prose. Poor-man's typed output. Use for any multi-stage flow. |
+| **Three-cycle escalation** on rejection | menxia audit rules | Bounded retry loop for open-chat when an agent disagrees. |
+| **Nested sub-crew** for specialized workflow | 翰林院 5-agent writing team inside the larger court | Future: Script-Kill 主持人 has a private sub-crew for evidence, while the public stage stays simple. |
+| **Multi-avatar distinctness** — each agent feels like a separate person | Discord native bots | Agora round-table already does this via distinct avatars + colors. Don't underrate it. |
+| **Per-agent SQLite memory + workspace dir** | OpenClaw per-agent `workspace: "$HOME/clawd-<id>"` | Future: Agora agents should accumulate memory per-agent over time, not just per-room. Post-Phase 6 feature. |
+
+### 17.3 Leader prompt-append pattern (the V1.5 path)
+
+Because danghuangshang's dispatch discipline is 100% prompt-driven,
+Agora can enable it with **zero runtime changes** — just append a
+"leader rules" block to the leader agent's system prompt at room
+creation time:
+
+```
+You are the leader of this team. Your KPI is successful delegation,
+not direct execution.
+
+FORBIDDEN:
+- Writing code, analysing data, producing deliverables yourself
+- Giving long answers to domain questions that a specialist should cover
+
+REQUIRED:
+- For each user request, identify which team member(s) should respond
+- @mention them by name with a clear task brief
+- Do not reply in-depth yourself until you've collected their outputs
+- Summarise at the end, crediting each contributor
+
+If nothing in the team matches the request, say so and ask the user
+to refine or add members.
+```
+
+This ships in V1.5 (or V2), NOT V1. V1 is display-only per §16. The
+data model already supports this — the leaderAgentId field exists
+and we can look up the agent's persona to append the block when
+building the room runtime. No schema change needed later.
+
+### 17.4 Anti-patterns to avoid
+
+| Anti-pattern | Where in danghuangshang | What Agora should do |
+|---|---|---|
+| 1-line persona for specialists | 六部 persona files are literally "你是户部尚书, 专精财务分析. 回答用中文, 数据驱动" | Min **200 words per agent**: voice specimen, 3 example utterances, forbidden-topics list, handoff vocabulary. |
+| Bolted-on infra agents don't actually use | `task-store.js` + `message-bus.js` are unused scripts | Ship only code paths that have test coverage. |
+| Discord-specific routing in prompts | `@兵部 ...`, `allowBots: mentions`, `sessions_send` | Platform-agnostic: when we add a handoff primitive, make it a tool call (`handoff(agentId, message)`), not `@mention` text. |
+| README claims > repo reality | "60+ skills" / "18+ agents" / "14 CEOs" | Keep Agora numbers honest. |
+| No prompt versioning / evals | Zero tests on persona compliance | Agora V1.5: eval suite against 当皇帝 template verifying leader delegates. |
+| Skill auto-trigger shared across all agents | OpenClaw keyword-triggered skill loading — 户部 gets `github` skill if any message mentions "github" | When Agora adds skills (V2), scope per-agent explicitly. |
+
+### 17.5 当皇帝 template — V1 specification
+
+**Locked roster** (9 agents, 唐朝三省制 trimmed):
+
+| # | Agent | Role | Domain |
+|---|---|---|---|
+| 1 | 中书令 | Drafts decrees / proposals | Policy drafting |
+| 2 | 门下侍中 | Audits drafts (✅ 通过 / ⚠️ 需补充 / ❌ 驳回) | Review / veto gate |
+| 3 | 尚书令 | Dispatches to 六部 | Routing / coordination |
+| 4 | 吏部尚书 | Personnel / organization / HR-equivalent | People |
+| 5 | 户部尚书 | Finance / taxation / economy | Money |
+| 6 | 礼部尚书 | Rites / diplomacy / education / culture | Protocol / culture |
+| 7 | 兵部尚书 | Military / border / crisis response | Defense |
+| 8 | 刑部尚书 | Law / judicial / compliance | Law |
+| 9 | 工部尚书 | Public works / infrastructure / engineering | Build |
+
+**Default mode**: open-chat (no leader assigned — the **user is the
+emperor**; the team advises).
+
+**Default opening prompt template** (editable by user before room start):
+```
+朕今日要与诸卿议 __________ 事。请各就其位，从各自立场发言，
+中书令起草方案，门下审核，尚书派发如有执行事宜。
+```
+
+**V1 persona depth** — each agent gets:
+- **Identity** (~80 words): role, historical context, current
+  domain, relation to user
+- **Voice specimen** (~50 words): sentence opener, closing
+  phrase, vocabulary tics
+- **3 example utterances** showing tone
+- **Forbidden topics** (~30 words): what they refuse to opine on
+  because it's outside their brief
+- **Handoff vocabulary** (~20 words): how they address other team
+  members when recommending a handoff
+
+Total ~180-200 words × 9 = ~1,800 words of authored prompts. Real
+writing work, done by hand with Claude's help, edited down.
+
+**Attribution** (per §16.4 locked decision and research §17.1):
+- Template description field in DB includes:
+  `"三省六部制结构灵感来自 danghuangshang (wanikua/danghuangshang, MIT)."`
+- `docs/credits.md` enumerates borrowed concepts
+- No persona text copy-pasted; all rewritten in our voice
+
+### 17.6 Gaps we're filling ourselves
+
+Research called out 10 gaps where danghuangshang doesn't give us what
+we need:
+
+1. **Persona depth** — we write ~2,000 words from scratch (covered above)
+2. **Platform-agnostic handoff** — tool-based `handoff(agentId, msg)` not Discord `@mention` text
+3. **Concurrent vs sequential dispatch** — 尚书令 派发 六部: we default to **parallel** (all 六部 receive simultaneously, reply independently)
+4. **Activity phase state machine** — open-chat V1 is flat round-robin; the 当皇帝 flow's "draft → audit → dispatch → execute → summarize" is handled by the LLMs reading the persona, not by runtime phases. V2 could add a `hierarchical` mode variant with fixed phases.
+5. **Turn budgeting** — open-chat V1 caps at N total rounds (configurable 1-5); 当皇帝 default 3.
+6. **门下 user-clarification UX** — when 门下侍中 returns `⚠️ 需要补充`, V1 just posts it as a regular message. V2 could add an inline "reply to clarify" affordance. V1 user clicks into the chat and answers.
+7. **Per-agent tool scoping** — V1 has no tools; all agents are prompt-only. V2 adds skills catalog.
+8. **Voice variation between 六部** — each persona gets its own opening stem + pet phrase (covered in persona depth)
+9. **Seed demo conversation** — V1 ships a 5-message canonical example shown as a preview under the template card
+10. **Veto authority over user** — 门下 can reject; V1 = returns advice rather than blocking. V2 could add a hard-stop affordance.
+
+### 17.7 Changes to the plan docs
+
+None substantive. §3 data model stands. §5 page inventory stands.
+§13 execution order stands. Research mostly validates the plan and
+gives us concrete content for 6c (template seed) and 6e (wizard
+guidance text).
+
+One refinement: **6c (template seed) budget expands from 0.5d to
+1d** to account for the authored personas (~2k words × 4 templates
+with similar depth = ~8k words of curated prompt content). This is
+real writing work, not just SQL. Plan ship cost: +0.5d on the
+critical path. Still within the ~11 day window.
+
+---
+
+**End of plan (with research).** Locked — proceeding to 6b code.
