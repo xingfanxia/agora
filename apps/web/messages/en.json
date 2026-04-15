@@ -327,5 +327,59 @@
         "promptAuto": "Auto-composed at room creation"
       }
     }
+  },
+  "teams": {
+    "title": "Teams",
+    "subtitle": "Compose agents into teams. Run them through any mode.",
+    "newTeam": "+ New team",
+    "loading": "Loading teams…",
+    "loadError": "Failed to load: {error}",
+    "countLabel": "{count} teams",
+    "backToList": "Back to teams",
+    "templateBadge": "Template",
+    "editTeam": "Edit",
+    "startRoom": "+ Start conversation",
+    "tabs": {
+      "mine": "Mine",
+      "templates": "Templates"
+    },
+    "empty": {
+      "mine": "You haven't created any teams yet. Start from a template or compose your own.",
+      "templates": "No templates shipped yet."
+    },
+    "new": {
+      "title": "New team",
+      "subtitle": "Pick members, set a leader, pick a default mode."
+    },
+    "edit": {
+      "title": "Edit team",
+      "subtitle": "Rename, rearrange members, or change the leader."
+    },
+    "detail": {
+      "description": "About",
+      "members": "Members",
+      "leader": "Leader"
+    },
+    "composer": {
+      "availableTitle": "Available agents",
+      "selectedTitle": "Selected",
+      "searchPlaceholder": "Search agents…",
+      "loading": "Loading…",
+      "noMatches": "No agents match.",
+      "noneSelected": "Add agents from the left.",
+      "leaderToggle": "Toggle leader",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove",
+      "nameLabel": "Team name",
+      "namePlaceholder": "e.g., Growth Advisors",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What does this team do? Who is it for?",
+      "modeLabel": "Default mode",
+      "cancel": "Cancel",
+      "create": "Create team",
+      "save": "Save changes",
+      "saving": "Saving…"
+    }
   }
 }

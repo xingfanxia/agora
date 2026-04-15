@@ -327,5 +327,59 @@
         "promptAuto": "房间创建时自动拼装"
       }
     }
+  },
+  "teams": {
+    "title": "团队",
+    "subtitle": "把智能体组合成团队，再用任意模式跑起来。",
+    "newTeam": "+ 新建团队",
+    "loading": "加载中…",
+    "loadError": "加载失败：{error}",
+    "countLabel": "{count} 个团队",
+    "backToList": "返回列表",
+    "templateBadge": "模板",
+    "editTeam": "编辑",
+    "startRoom": "+ 开始对话",
+    "tabs": {
+      "mine": "我的",
+      "templates": "模板"
+    },
+    "empty": {
+      "mine": "还没创建团队。从模板开始，或自己组合一个。",
+      "templates": "暂无模板。"
+    },
+    "new": {
+      "title": "新建团队",
+      "subtitle": "选择成员、指定队长、选默认模式。"
+    },
+    "edit": {
+      "title": "编辑团队",
+      "subtitle": "改名、调整成员顺序、切换队长。"
+    },
+    "detail": {
+      "description": "简介",
+      "members": "成员",
+      "leader": "队长"
+    },
+    "composer": {
+      "availableTitle": "可用智能体",
+      "selectedTitle": "已选成员",
+      "searchPlaceholder": "搜索智能体…",
+      "loading": "加载中…",
+      "noMatches": "没有匹配的。",
+      "noneSelected": "从左侧添加成员。",
+      "leaderToggle": "设为/取消队长",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "remove": "移除",
+      "nameLabel": "团队名",
+      "namePlaceholder": "例如：增长顾问团",
+      "descriptionLabel": "描述",
+      "descriptionPlaceholder": "这个团队做什么？面向谁？",
+      "modeLabel": "默认模式",
+      "cancel": "取消",
+      "create": "创建团队",
+      "save": "保存修改",
+      "saving": "保存中…"
+    }
   }
 }
