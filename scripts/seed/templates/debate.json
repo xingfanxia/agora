@@ -36,8 +36,8 @@
       "slug": "pragmatist",
       "name": "务实派",
       "avatarSeed": "debate-pragmatist",
-      "modelProvider": "deepseek",
-      "modelId": "deepseek-reasoner",
+      "modelProvider": "anthropic",
+      "modelId": "claude-sonnet-4-6",
       "style": {
         "temperature": 0.7,
         "maxTokens": 1024,
