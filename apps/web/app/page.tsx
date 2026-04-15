@@ -1,205 +1,340 @@
-import Link from 'next/link'
-import { getTranslations } from 'next-intl/server'
-import { SettingsMenu } from './components/SettingsMenu'
+'use client'
 
-export default async function Home() {
-  const t = await getTranslations('landing')
-  const tCommon = await getTranslations('common')
+// ============================================================
+// Landing — hero + template gallery + my teams + my agents
+// ============================================================
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useTranslations } from 'next-intl'
+import { SettingsMenu } from './components/SettingsMenu'
+import { TeamCard, type TeamCardTeam, type TeamCardMember } from './components/TeamCard'
+import { AgentCard, type AgentCardAgent } from './components/AgentCard'
+import { getOrCreateUserId } from './lib/user-id'
+
+interface TeamRow extends TeamCardTeam {
+  createdBy: string | null
+}
+interface AgentRow extends AgentCardAgent {
+  createdBy: string | null
+}
+
+export default function Home() {
+  const t = useTranslations('landing')
+  const tCommon = useTranslations('common')
+  const [templates, setTemplates] = useState<TeamRow[]>([])
+  const [templatesMembers, setTemplatesMembers] = useState<Record<string, TeamCardMember[]>>({})
+  const [myTeams, setMyTeams] = useState<TeamRow[]>([])
+  const [myAgents, setMyAgents] = useState<AgentRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getOrCreateUserId()
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const [tplRes, mineTeamRes, mineAgentRes] = await Promise.all([
+          fetch('/api/teams?scope=templates'),
+          fetch('/api/teams?scope=mine'),
+          fetch('/api/agents?scope=mine'),
+        ])
+        const tpl = (await tplRes.json()) as { teams: TeamRow[] }
+        const mineTeam = (await mineTeamRes.json()) as { teams: TeamRow[] }
+        const mineAgent = (await mineAgentRes.json()) as { agents: AgentRow[] }
+        if (cancelled) return
+        setTemplates(tpl.teams ?? [])
+        setMyTeams((mineTeam.teams ?? []).slice(0, 6))
+        setMyAgents((mineAgent.agents ?? []).slice(0, 6))
+
+        // Fetch members for the 4 templates (small, fine to serial-fanout)
+        const memberResults = await Promise.all(
+          (tpl.teams ?? []).map((row) =>
+            fetch(`/api/teams/${row.id}/members`)
+              .then((r) => (r.ok ? r.json() : { members: [] }))
+              .then((d: { members: Array<{ agentId: string; agent: { avatarSeed: string; name: string } }> }) => ({
+                teamId: row.id,
+                members: d.members.map((m) => ({
+                  agentId: m.agentId,
+                  avatarSeed: m.agent.avatarSeed,
+                  name: m.agent.name,
+                })),
+              }))
+              .catch(() => ({ teamId: row.id, members: [] as TeamCardMember[] })),
+          ),
+        )
+        if (cancelled) return
+        const next: Record<string, TeamCardMember[]> = {}
+        for (const r of memberResults) next[r.teamId] = r.members
+        setTemplatesMembers(next)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        padding: '2rem',
-        gap: '3rem',
-        position: 'relative',
-      }}
-    >
-      <div style={{ position: 'absolute', top: '1.25rem', right: '1.25rem' }}>
+    <div style={{ maxWidth: 1080, margin: '0 auto', padding: '32px 24px 80px', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 16, right: 24 }}>
         <SettingsMenu />
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '1rem',
-          maxWidth: '600px',
-          textAlign: 'center',
-        }}
-      >
+      {/* Hero */}
+      <section style={{ padding: '48px 0 40px', textAlign: 'center' }}>
         <h1
           style={{
-            fontSize: '4rem',
+            fontSize: 48,
             fontWeight: 700,
-            letterSpacing: '-0.04em',
-            lineHeight: 1,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.1,
+            marginBottom: 16,
+            color: 'var(--foreground)',
           }}
         >
-          {tCommon('appName')}
+          {t('hero.line1')}
         </h1>
         <p
           style={{
-            fontSize: '1.25rem',
+            fontSize: 18,
             color: 'var(--muted)',
-            lineHeight: 1.6,
-            maxWidth: '520px',
+            lineHeight: 1.55,
+            maxWidth: 640,
+            margin: '0 auto',
           }}
         >
-          {t('tagline')}
+          {t('hero.subtitle')}
         </p>
-      </div>
+        <div style={{ marginTop: 24 }}>
+          <Link
+            href="/teams"
+            style={{
+              background: 'var(--accent)',
+              color: 'white',
+              padding: '12px 24px',
+              borderRadius: 999,
+              fontSize: 15,
+              fontWeight: 600,
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}
+          >
+            {t('hero.ctaTemplates')}
+          </Link>
+        </div>
+      </section>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: '1rem',
-          maxWidth: '560px',
-          width: '100%',
-        }}
-      >
-        <ModeCard
-          href="/create"
-          title={t('modes.roundtable.title')}
-          description={t('modes.roundtable.description')}
-          accent="var(--accent)"
+      {/* Templates */}
+      <section style={{ marginBottom: 48 }}>
+        <SectionHeader title={t('sections.templatesTitle')} subtitle={t('sections.templatesSubtitle')} />
+        {loading && <p style={{ color: 'var(--muted)', fontSize: 14 }}>{tCommon('loading')}</p>}
+        {!loading && templates.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 16,
+            }}
+          >
+            {templates.map((team) => (
+              <TeamCard
+                key={team.id}
+                team={team}
+                members={templatesMembers[team.id] ?? []}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* My teams */}
+      <section style={{ marginBottom: 48 }}>
+        <SectionHeader
+          title={t('sections.myTeamsTitle')}
+          subtitle={t('sections.myTeamsSubtitle')}
+          action={
+            <Link
+              href="/teams"
+              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}
+            >
+              {t('sections.seeAll')} →
+            </Link>
+          }
         />
-        <ModeCard
-          href="/create-werewolf"
-          title={t('modes.werewolf.title')}
-          description={t('modes.werewolf.description')}
-          accent="#7f6df2"
-        />
-      </div>
-
-      <Link
-        href="/replays"
-        style={{
-          fontSize: '0.8rem',
-          color: 'var(--muted)',
-          textDecoration: 'none',
-          borderBottom: '1px solid var(--border)',
-          paddingBottom: '0.2rem',
-        }}
-      >
-        {t('browseReplays')}
-      </Link>
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '1.5rem',
-          padding: '2rem',
-          maxWidth: '640px',
-          width: '100%',
-        }}
-      >
-        <p
-          style={{
-            fontSize: '0.8rem',
-            color: 'var(--muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            fontWeight: 500,
-          }}
-        >
-          {t('howItWorks')}
-        </p>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '1.5rem',
-            width: '100%',
-          }}
-        >
-          {(['one', 'two', 'three'] as const).map((key, index) => (
-            <div
-              key={key}
+        {myTeams.length === 0 ? (
+          <EmptyStrip
+            message={t('sections.myTeamsEmpty')}
+            ctaLabel={t('sections.myTeamsEmptyCta')}
+            ctaHref="/teams/new"
+          />
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 16,
+            }}
+          >
+            {myTeams.map((team) => (
+              <TeamCard key={team.id} team={team} />
+            ))}
+            <Link
+              href="/teams/new"
               style={{
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                textAlign: 'center',
-                gap: '0.5rem',
+                justifyContent: 'center',
+                minHeight: 140,
+                borderRadius: 'var(--radius)',
+                border: '1px dashed var(--border)',
+                color: 'var(--muted)',
+                fontSize: 14,
+                textDecoration: 'none',
+                background: 'var(--surface)',
               }}
             >
-              <div
-                style={{
-                  width: '2rem',
-                  height: '2rem',
-                  borderRadius: '50%',
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                }}
-              >
-                {index + 1}
-              </div>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 600 }}>
-                {t(`steps.${key}.title`)}
-              </h3>
-              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-                {t(`steps.${key}.description`)}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
+              + {t('sections.newTeam')}
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {/* My agents */}
+      <section style={{ marginBottom: 48 }}>
+        <SectionHeader
+          title={t('sections.myAgentsTitle')}
+          subtitle={t('sections.myAgentsSubtitle')}
+          action={
+            <Link
+              href="/agents"
+              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}
+            >
+              {t('sections.seeAll')} →
+            </Link>
+          }
+        />
+        {myAgents.length === 0 ? (
+          <EmptyStrip
+            message={t('sections.myAgentsEmpty')}
+            ctaLabel={t('sections.myAgentsEmptyCta')}
+            ctaHref="/agents/new"
+          />
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: 16,
+            }}
+          >
+            {myAgents.map((agent) => (
+              <AgentCard key={agent.id} agent={agent} />
+            ))}
+            <Link
+              href="/agents/new"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 140,
+                borderRadius: 'var(--radius)',
+                border: '1px dashed var(--border)',
+                color: 'var(--muted)',
+                fontSize: 14,
+                textDecoration: 'none',
+                background: 'var(--surface)',
+              }}
+            >
+              + {t('sections.newAgent')}
+            </Link>
+          </div>
+        )}
+      </section>
+
+      {/* Footer */}
+      <footer style={{ textAlign: 'center', padding: '24px 0', borderTop: '1px solid var(--border)' }}>
+        <Link
+          href="/replays"
+          style={{
+            fontSize: 13,
+            color: 'var(--muted)',
+            textDecoration: 'none',
+          }}
+        >
+          {t('browseReplays')} →
+        </Link>
+      </footer>
     </div>
   )
 }
 
-function ModeCard({
-  href,
+function SectionHeader({
   title,
-  description,
-  accent,
+  subtitle,
+  action,
 }: {
-  href: string
   title: string
-  description: string
-  accent: string
+  subtitle?: string
+  action?: React.ReactNode
 }) {
   return (
-    <Link
-      href={href}
+    <div
       style={{
-        display: 'block',
-        padding: '1.25rem',
-        borderRadius: 'var(--radius)',
-        border: '1px solid var(--border)',
-        background: 'var(--surface)',
-        textDecoration: 'none',
-        color: 'var(--foreground)',
-        position: 'relative',
-        overflow: 'hidden',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        marginBottom: 16,
       }}
     >
-      <div
+      <div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: subtitle ? 2 : 0 }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  )
+}
+
+function EmptyStrip({
+  message,
+  ctaLabel,
+  ctaHref,
+}: {
+  message: string
+  ctaLabel: string
+  ctaHref: string
+}) {
+  return (
+    <div
+      style={{
+        padding: '32px 24px',
+        borderRadius: 'var(--radius)',
+        border: '1px dashed var(--border)',
+        background: 'var(--surface)',
+        textAlign: 'center',
+      }}
+    >
+      <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 12 }}>{message}</p>
+      <Link
+        href={ctaHref}
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '3px',
-          background: accent,
+          display: 'inline-block',
+          padding: '8px 18px',
+          borderRadius: 999,
+          background: 'var(--accent)',
+          color: 'white',
+          fontSize: 13,
+          fontWeight: 600,
+          textDecoration: 'none',
         }}
-      />
-      <h2 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.375rem' }}>{title}</h2>
-      <p style={{ fontSize: '0.85rem', color: 'var(--muted)', lineHeight: 1.5 }}>{description}</p>
-    </Link>
+      >
+        {ctaLabel}
+      </Link>
+    </div>
   )
 }

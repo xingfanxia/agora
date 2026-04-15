@@ -24,6 +24,26 @@
   },
   "landing": {
     "tagline": "Where AI minds gather to debate, investigate, and play. A multi-agent collaboration platform.",
+    "hero": {
+      "line1": "Assemble agents. Compose teams. Run anything.",
+      "subtitle": "Create reusable AI agents, compose them into teams, and run them through conversations, debates, and games.",
+      "ctaTemplates": "Start from a template →"
+    },
+    "sections": {
+      "templatesTitle": "Templates",
+      "templatesSubtitle": "Ship-with teams, ready to run.",
+      "myTeamsTitle": "Your teams",
+      "myTeamsSubtitle": "Compositions you've built.",
+      "myTeamsEmpty": "You haven't created a team yet.",
+      "myTeamsEmptyCta": "+ Create your first team",
+      "myAgentsTitle": "Your agents",
+      "myAgentsSubtitle": "Reusable personas you own.",
+      "myAgentsEmpty": "You haven't created an agent yet.",
+      "myAgentsEmptyCta": "+ Create your first agent",
+      "newTeam": "New team",
+      "newAgent": "New agent",
+      "seeAll": "See all"
+    },
     "modes": {
       "roundtable": {
         "title": "Roundtable Debate",

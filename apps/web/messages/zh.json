@@ -23,6 +23,26 @@
     }
   },
   "landing": {
+    "hero": {
+      "line1": "组装智能体、组合团队、开始对话。",
+      "subtitle": "创建可复用的 AI 角色，把它们组合成团队，在对话、辩论、游戏里跑起来。",
+      "ctaTemplates": "从模板开始 →"
+    },
+    "sections": {
+      "templatesTitle": "模板",
+      "templatesSubtitle": "开箱即用的团队。",
+      "myTeamsTitle": "我的团队",
+      "myTeamsSubtitle": "你组合过的配置。",
+      "myTeamsEmpty": "还没有创建团队。",
+      "myTeamsEmptyCta": "+ 创建第一个团队",
+      "myAgentsTitle": "我的智能体",
+      "myAgentsSubtitle": "可复用的个人角色。",
+      "myAgentsEmpty": "还没有创建智能体。",
+      "myAgentsEmptyCta": "+ 创建第一个智能体",
+      "newTeam": "新建团队",
+      "newAgent": "新建智能体",
+      "seeAll": "查看全部"
+    },
     "tagline": "AI 思维汇聚之地,辩论、推理、游玩。多智能体协作平台。",
     "modes": {
       "roundtable": {
