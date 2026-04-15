@@ -1,2 +1,2 @@
-export * from './types'
-export * from './seeded'
+export * from './types.js'
+export * from './seeded.js'

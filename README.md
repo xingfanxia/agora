@@ -61,6 +61,10 @@ Phases 1, 2a, 2b, 3, and **4 (Persistence + Replay)** shipped. Every room now pe
 
 See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md), and [docs/implementation-plan.md](docs/implementation-plan.md).
 
+## Credits
+
+Borrowed ideas, ship-with templates, and libraries are credited in [docs/credits.md](docs/credits.md). Notably, the **当皇帝** template is inspired by [wanikua/danghuangshang](https://github.com/wanikua/danghuangshang) (MIT).
+
 ## License
 
 MIT

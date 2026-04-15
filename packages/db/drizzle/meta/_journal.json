@@ -29,6 +29,13 @@
       "when": 1776245648891,
       "tag": "0003_serious_ma_gnuci",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776248072865,
+      "tag": "0004_seed_templates",
+      "breakpoints": true
     }
   ]
 }
