@@ -1,5 +1,13 @@
-# Phase 5.7 — UI Overhaul V2 (Accio-inspired)
+# Phase 5.7 — UI Overhaul V2 (Accio-inspired) [SUPERSEDED by Phase 6]
 
+> **⚠️ Superseded**: After writing this plan, user feedback pushed
+> the scope much wider: Agora should pivot from "games platform" to
+> "general team platform" where games are one mode category. The
+> polish items here (results cards, replay grid, mobile) carry over
+> but the structural pieces (AppShell, landing) are redefined in
+> `docs/design/phase-6-team-platform.md`. Do not execute from this
+> doc — use Phase 6.
+>
 > **Date**: 2026-04-15
 > **Trigger**: User feedback after Phase 5.5 shipped. Screenshots of
 > current Agora (buggy round-table) + 16 screenshots of Accio Work as
