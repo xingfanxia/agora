@@ -174,6 +174,9 @@
       "running": "运行中"
     },
     "timeline": "事件时间线 →",
+    "viewChat": "聊天",
+    "viewTable": "圆桌",
+    "chatTitle": "对话记录",
     "backToCreate": "返回创建",
     "debateComplete": "辩论结束",
     "messagesAcrossRounds": "共 {messages} 条消息,{rounds} 回合",

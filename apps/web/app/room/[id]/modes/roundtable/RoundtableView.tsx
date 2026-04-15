@@ -9,8 +9,10 @@ import type { AgentData, MessageData, PollResponse } from '../../components/them
 import { createAgentColorMap, prefersDark } from '../../components/theme'
 import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
 import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
+import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
 import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
+import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 
 interface RoundtableViewProps {
   messages: readonly MessageData[]
@@ -22,6 +24,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
   const [modalAgentId, setModalAgentId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('chat')
   const t = useTranslations('room')
   const tCommon = useTranslations('common')
 
@@ -48,7 +51,6 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
     tokenSummary,
   } = snapshot
 
-  // Latest message per agent drives the bubble content.
   const latestByAgent = useMemo(() => {
     const m = new Map<string, MessageData>()
     for (const msg of messages) {
@@ -67,18 +69,15 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           name: a.name,
           provider: a.provider,
           color: colorFor(a.id),
-          latestMessage: latest
-            ? { id: latest.id, content: latest.content }
-            : undefined,
+          latestMessage: latest ? { id: latest.id, content: latest.content } : undefined,
           thinking: thinkingAgentId === a.id,
-          speaking:
-            !!latest && thinkingAgentId !== a.id,
+          speaking: !!latest && thinkingAgentId !== a.id,
         }
       }),
     [agents, latestByAgent, colorFor, thinkingAgentId],
   )
 
-  const chatMessages: ChatSidebarMessage[] = useMemo(
+  const chatMessages: ChatViewMessage[] = useMemo(
     () =>
       messages.map((m) => ({
         id: m.id,
@@ -92,6 +91,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
       })),
     [messages, agents],
   )
+  const sidebarMessages: ChatSidebarMessage[] = chatMessages
 
   const selectedAgent: AgentData | undefined = modalAgentId
     ? agents.find((a) => a.id === modalAgentId)
@@ -103,7 +103,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        maxWidth: '1400px',
+        maxWidth: viewMode === 'chat' ? '100%' : 1400,
         margin: '0 auto',
         padding: '0 1rem',
       }}
@@ -114,6 +114,9 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           padding: '1rem 0',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
+          maxWidth: 1280,
+          margin: '0 auto',
+          width: '100%',
         }}
       >
         <div
@@ -128,19 +131,32 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
             {tCommon('appName')}
           </Link>
           <span style={{ color: 'var(--border)', fontSize: '0.8rem' }}>/</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{t('debateMode')}</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+            {t('debateMode')}
+          </span>
         </div>
 
-        <h1
+        <div
           style={{
-            fontSize: '1.25rem',
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
             marginBottom: '0.75rem',
+            flexWrap: 'wrap',
           }}
         >
-          {topic}
-        </h1>
+          <h1
+            style={{
+              fontSize: '1.25rem',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              marginRight: 'auto',
+            }}
+          >
+            {topic}
+          </h1>
+          <ViewToggle mode={viewMode} onChange={setViewMode} chatLabel={t('viewChat')} tableLabel={t('viewTable')} />
+        </div>
 
         <div
           style={{
@@ -170,39 +186,48 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
         </div>
       </header>
 
-      {/* Main: round table + chat sidebar */}
+      {/* Main — chat (default) or round-table */}
       <main
         style={{
           flex: 1,
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) 340px',
-          gap: 0,
           minHeight: 0,
           position: 'relative',
+          display: viewMode === 'table' ? 'grid' : 'block',
+          gridTemplateColumns: viewMode === 'table' ? 'minmax(0, 1fr) 340px' : undefined,
         }}
       >
-        <section
-          style={{
-            position: 'relative',
-            minHeight: 420,
-            overflow: 'hidden',
-          }}
-        >
-          <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
-            <PhaseBadge
-              phase="debate"
-              label={t('roundOf', { current: currentRound, total: totalRounds })}
-              round={currentRound}
-            />
-          </RoundTable>
-        </section>
-        <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-          <ChatSidebar
+        {viewMode === 'chat' ? (
+          <ChatView
             messages={chatMessages}
             getAgentColor={colorFor}
-            title={tCommon('appName')}
+            onAgentClick={setModalAgentId}
           />
-        </aside>
+        ) : (
+          <>
+            <section
+              style={{
+                position: 'relative',
+                minHeight: 420,
+                overflow: 'hidden',
+              }}
+            >
+              <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
+                <PhaseBadge
+                  phase="debate"
+                  label={t('roundOf', { current: currentRound, total: totalRounds })}
+                  round={currentRound}
+                />
+              </RoundTable>
+            </section>
+            <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+              <ChatSidebar
+                messages={sidebarMessages}
+                getAgentColor={colorFor}
+                title={t('chatTitle')}
+              />
+            </aside>
+          </>
+        )}
       </main>
 
       {status === 'completed' && (
@@ -229,7 +254,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
   )
 }
 
-// ── Sub-components (status pill, footers) kept from v1 ─────
+// ── Sub-components (status pill, footers) ──────────────────
 
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
@@ -274,7 +299,8 @@ function CompletedFooter({
         border: '1px solid var(--border)',
         background: 'var(--surface)',
         textAlign: 'center',
-        margin: '1rem 0',
+        margin: '1rem auto',
+        maxWidth: 640,
       }}
     >
       <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
@@ -313,7 +339,8 @@ function ErrorFooter({ error }: { error?: string }) {
         border: '1px solid var(--danger)',
         background: 'color-mix(in srgb, var(--danger) 10%, transparent)',
         textAlign: 'center',
-        margin: '1rem 0',
+        margin: '1rem auto',
+        maxWidth: 640,
       }}
     >
       <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.5rem' }}>

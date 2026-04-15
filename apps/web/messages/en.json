@@ -174,6 +174,9 @@
       "running": "Running"
     },
     "timeline": "Timeline →",
+    "viewChat": "Chat",
+    "viewTable": "Round Table",
+    "chatTitle": "Transcript",
     "backToCreate": "Back to Create",
     "debateComplete": "Debate Complete",
     "messagesAcrossRounds": "{messages} messages across {rounds} rounds",

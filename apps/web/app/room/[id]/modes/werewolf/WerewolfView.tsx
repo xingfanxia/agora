@@ -9,8 +9,10 @@ import type { AgentData, MessageData, PollResponse } from '../../components/them
 import { createAgentColorMap, prefersDark } from '../../components/theme'
 import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
 import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
+import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
 import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
+import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -28,6 +30,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   const [isDark, setIsDark] = useState(false)
   const [channelFilter, setChannelFilter] = useState<string | null>(null)
   const [modalAgentId, setModalAgentId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('chat')
   const t = useTranslations('werewolf')
   const tCommon = useTranslations('common')
   const tRoom = useTranslations('room')
@@ -88,7 +91,6 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
     gameState,
   } = snapshot
 
-  // Channels that have messages + main by default. Powers ChatSidebar filter.
   const discoveredChannels = useMemo(() => {
     const seen = new Set<string>(['main'])
     for (const m of messages) seen.add(m.channelId)
@@ -103,8 +105,6 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   const winResult = (gameState?.['winResult'] as string | undefined) ?? null
   const isNight = isNightPhase(currentPhase)
 
-  // Latest message per agent — skip system/narrator so the bubble shows
-  // the agent's last utterance, not a phase announcement.
   const latestByAgent = useMemo(() => {
     const m = new Map<string, MessageData>()
     for (const msg of messages) {
@@ -136,7 +136,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
     [agents, latestByAgent, colorFor, thinkingAgentId, roleAssignments, eliminatedIds],
   )
 
-  const chatMessages: ChatSidebarMessage[] = useMemo(
+  const chatMessages: ChatViewMessage[] = useMemo(
     () =>
       messages.map((m) => ({
         id: m.id,
@@ -150,11 +150,11 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
       })),
     [messages, agents],
   )
+  const sidebarMessages: ChatSidebarMessage[] = chatMessages
 
   const selectedAgent: AgentData | undefined = modalAgentId
     ? agents.find((a) => a.id === modalAgentId)
     : undefined
-
   const selectedRole = selectedAgent ? roleAssignments?.[selectedAgent.id] : undefined
 
   return (
@@ -163,7 +163,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
         display: 'flex',
         flexDirection: 'column',
         height: '100vh',
-        maxWidth: '1400px',
+        maxWidth: viewMode === 'chat' ? '100%' : 1400,
         margin: '0 auto',
         padding: '0 1rem',
         background: isNight
@@ -178,6 +178,9 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           padding: '1rem 0',
           borderBottom: '1px solid var(--border)',
           flexShrink: 0,
+          maxWidth: 1280,
+          margin: '0 auto',
+          width: '100%',
         }}
       >
         <div
@@ -209,25 +212,32 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           </h1>
           <StatusPill status={status} />
           {advancedRules && (
-            <span style={{ fontSize: '0.7rem', color: 'var(--muted)', marginLeft: 'auto' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
               {Object.entries(advancedRules)
                 .filter(([, v]) => v)
                 .map(([k]) => k)
                 .join(' · ') || t('baseGame')}
             </span>
           )}
-          <Link
-            href={`/room/${roomId}/observability`}
-            style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
-          >
-            {tRoom('timeline')}
-          </Link>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
+            <ViewToggle
+              mode={viewMode}
+              onChange={setViewMode}
+              chatLabel={tRoom('viewChat')}
+              tableLabel={tRoom('viewTable')}
+            />
+            <Link
+              href={`/room/${roomId}/observability`}
+              style={{ fontSize: '0.75rem', color: 'var(--accent)', textDecoration: 'none' }}
+            >
+              {tRoom('timeline')}
+            </Link>
+          </div>
         </div>
 
         <TokenCostPanel summary={tokenSummary} agents={agents} />
       </header>
 
-      {/* Winner banner */}
       {winResult && (
         <div
           style={{
@@ -241,49 +251,72 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
             border: `1px solid ${winResult === 'village_wins' ? '#22c55e' : 'var(--danger)'}`,
             fontWeight: 700,
             fontSize: '1rem',
+            maxWidth: 1280,
+            margin: '1rem auto 0',
+            width: '100%',
           }}
         >
           {winResult === 'village_wins' ? t('winners.village') : t('winners.wolves')}
         </div>
       )}
 
-      {/* Main: round table + chat sidebar */}
+      {/* Main — chat (default) or round-table */}
       <main
         style={{
           flex: 1,
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) 340px',
-          gap: 0,
           minHeight: 0,
           position: 'relative',
+          display: viewMode === 'table' ? 'grid' : 'block',
+          gridTemplateColumns: viewMode === 'table' ? 'minmax(0, 1fr) 340px' : undefined,
           marginTop: '1rem',
         }}
       >
-        <section style={{ position: 'relative', minHeight: 500, overflow: 'hidden' }}>
-          <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
-            <PhaseBadge
-              phase={currentPhase ?? ''}
-              label={currentPhase ? phaseLabels[currentPhase as keyof typeof phaseLabels] : undefined}
-              round={currentRound}
-              accent={isNight ? '#8b7ed8' : undefined}
-            />
-          </RoundTable>
-        </section>
-        <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-          <ChatSidebar
+        {viewMode === 'chat' ? (
+          <ChatView
             messages={chatMessages}
             getAgentColor={colorFor}
             channels={discoveredChannels}
             channelFilter={channelFilter}
             onChannelFilterChange={setChannelFilter}
-            title={tRoom('timeline')}
+            onAgentClick={setModalAgentId}
+            headerExtra={
+              currentPhase ? (
+                <PhaseBadge
+                  phase={currentPhase}
+                  label={phaseLabels[currentPhase as keyof typeof phaseLabels]}
+                  round={currentRound}
+                  accent={isNight ? '#8b7ed8' : undefined}
+                />
+              ) : null
+            }
           />
-        </aside>
+        ) : (
+          <>
+            <section style={{ position: 'relative', minHeight: 500, overflow: 'hidden' }}>
+              <RoundTable agents={tableAgents} onAgentClick={setModalAgentId}>
+                <PhaseBadge
+                  phase={currentPhase ?? ''}
+                  label={currentPhase ? phaseLabels[currentPhase as keyof typeof phaseLabels] : undefined}
+                  round={currentRound}
+                  accent={isNight ? '#8b7ed8' : undefined}
+                />
+              </RoundTable>
+            </section>
+            <aside style={{ minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+              <ChatSidebar
+                messages={sidebarMessages}
+                getAgentColor={colorFor}
+                channels={discoveredChannels}
+                channelFilter={channelFilter}
+                onChannelFilterChange={setChannelFilter}
+                title={tRoom('chatTitle')}
+              />
+            </aside>
+          </>
+        )}
       </main>
 
-      {status === 'completed' && !winResult && (
-        <EndMessage text={t('winners.none')} />
-      )}
+      {status === 'completed' && !winResult && <EndMessage text={t('winners.none')} />}
 
       {selectedAgent && (
         <AgentDetailModal
@@ -305,7 +338,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
   )
 }
 
-// ── Sub-components ────────────────────────────────────────────
+// ── Sub-components ─────────────────────────────────────────
 
 function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
@@ -347,7 +380,8 @@ function EndMessage({ text }: { text: string }) {
     <div
       style={{
         padding: '1rem 1.25rem',
-        margin: '1rem 0',
+        margin: '1rem auto',
+        maxWidth: 640,
         borderRadius: 'var(--radius)',
         background: 'var(--surface)',
         border: '1px solid var(--border)',

@@ -73,7 +73,9 @@ export function AgentSeat({
       }}
     >
       {/* Bubble stacked ABOVE the avatar. Keyed by message id so a new
-          message remounts the component and fires the bubble-in anim. */}
+          message remounts the component and fires the bubble-in anim.
+          Click forwards to the seat's onClick (opens the detail modal
+          with full message content — never expand in-place). */}
       {bubbleMode !== 'idle' && (
         <div
           key={latestMessage?.id ?? 'thinking'}
@@ -83,6 +85,7 @@ export function AgentSeat({
             mode={bubbleMode}
             text={latestMessage?.content}
             color={color}
+            onClick={onClick ? () => onClick(agentId) : undefined}
           />
         </div>
       )}

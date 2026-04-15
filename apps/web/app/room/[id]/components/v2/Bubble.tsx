@@ -2,19 +2,16 @@
 // Bubble — speech/thinking bubble above an agent on the table
 // ============================================================
 //
-// Phase 5.2 primitive. Three visual states:
-//   - thinking: dashed border, animated dots, no content
-//   - speaking: solid border, content shown (clamped to 4 lines)
-//   - idle: hidden (no bubble rendered)
-//
-// Crossfade between consecutive speaking bubbles is handled by the
-// parent (AgentSeat) by unmounting the old Bubble + mounting the new
-// one via React `key={lastMessageId}`. The globals.css animations
-// `agora-bubble-in` / `agora-bubble-out` provide the visual.
+// Phase 5.2+. Simplified after feedback:
+//   - Long content no longer expands in-place (the old "more" button
+//     produced unreadable wall-of-text). Bubble is always clamped to
+//     4 lines; clicking it triggers the parent's onClick handler
+//     (AgentSeat forwards to AgentDetailModal which has scroll).
+//   - Three modes: thinking (dashed + dots), speaking (solid + text),
+//     idle (hidden).
 
 'use client'
 
-import { useState } from 'react'
 import type { AgentColor } from '../theme'
 
 export type BubbleMode = 'thinking' | 'speaking' | 'idle'
@@ -25,28 +22,30 @@ export interface BubbleProps {
   color: AgentColor
   /** Max width in pixels. Default 260. */
   maxWidth?: number
+  /** Fires when the bubble is clicked. Parent typically opens the
+   * AgentDetailModal so the user can read the full text + history. */
+  onClick?: () => void
 }
 
-export function Bubble({ mode, text, color, maxWidth = 260 }: BubbleProps) {
-  const [expanded, setExpanded] = useState(false)
-
+export function Bubble({ mode, text, color, maxWidth = 260, onClick }: BubbleProps) {
   if (mode === 'idle') return null
 
-  const border =
-    mode === 'thinking'
-      ? `2px dashed ${color.name}`
-      : `2px solid ${color.name}`
-
-  const content =
-    mode === 'thinking' ? (
-      <ThinkingDots color={color.name} />
-    ) : (
-      <BubbleText text={text ?? ''} expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
-    )
+  const border = mode === 'thinking' ? `2px dashed ${color.name}` : `2px solid ${color.name}`
 
   return (
     <div
       className="agora-animated"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? 'Expand message' : undefined}
+      onKeyDown={(e) => {
+        if (!onClick) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       style={{
         position: 'relative',
         maxWidth,
@@ -60,9 +59,16 @@ export function Bubble({ mode, text, color, maxWidth = 260 }: BubbleProps) {
         fontFamily: 'system-ui, -apple-system, sans-serif',
         boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
         animation: 'agora-bubble-in 200ms ease-out',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'transform 150ms',
       }}
     >
-      {content}
+      {mode === 'thinking' ? (
+        <ThinkingDots color={color.name} />
+      ) : (
+        <ClampedText text={text ?? ''} hasClickAffordance={!!onClick} />
+      )}
+
       {/* Tail pointing down */}
       <span
         aria-hidden
@@ -100,14 +106,7 @@ export function Bubble({ mode, text, color, maxWidth = 260 }: BubbleProps) {
 
 function ThinkingDots({ color }: { color: string }) {
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        gap: 4,
-        alignItems: 'center',
-        height: 18,
-      }}
-    >
+    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', height: 18 }}>
       <Dot color={color} delay={0} />
       <Dot color={color} delay={150} />
       <Dot color={color} delay={300} />
@@ -131,78 +130,45 @@ function Dot({ color, delay }: { color: string; delay: number }) {
   )
 }
 
-function BubbleText({
-  text,
-  expanded,
-  onToggle,
-}: {
-  text: string
-  expanded: boolean
-  onToggle: () => void
-}) {
-  // Decision messages are structured JSON — show a short summary instead
-  // of the raw blob to keep the round-table readable.
+function ClampedText({ text, hasClickAffordance }: { text: string; hasClickAffordance: boolean }) {
+  // Structured JSON decisions become a human-readable summary. Full JSON
+  // is available in the modal via the agent's message history.
   const isDecision = text.trim().startsWith('{') && text.trim().endsWith('}')
-  const displayText = isDecision ? summarizeDecision(text) : text
-  const needsClamp = !expanded && (displayText.length > 180 || countLines(displayText) > 4)
+  const display = isDecision ? summarizeDecision(text) : text
+  const maybeTruncated = display.length > 180 || (display.match(/\n/g)?.length ?? 0) > 3
 
   return (
     <>
       <span
         style={{
           display: '-webkit-box',
-          WebkitLineClamp: needsClamp ? 4 : 'unset',
+          WebkitLineClamp: 4,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}
       >
-        {displayText}
+        {display}
       </span>
-      {needsClamp && (
-        <button
-          onClick={onToggle}
+      {maybeTruncated && hasClickAffordance && (
+        <span
+          aria-hidden
           style={{
-            marginTop: 6,
-            background: 'transparent',
-            border: 'none',
-            color: 'inherit',
-            fontSize: 11,
-            opacity: 0.7,
-            cursor: 'pointer',
-            padding: 0,
-            textDecoration: 'underline',
-          }}
-        >
-          more
-        </button>
-      )}
-      {expanded && displayText.length > 180 && (
-        <button
-          onClick={onToggle}
-          style={{
-            marginTop: 6,
-            background: 'transparent',
-            border: 'none',
-            color: 'inherit',
-            fontSize: 11,
-            opacity: 0.7,
-            cursor: 'pointer',
-            padding: 0,
-            textDecoration: 'underline',
             display: 'block',
+            marginTop: 4,
+            fontSize: 10,
+            opacity: 0.55,
+            letterSpacing: 0.5,
+            textTransform: 'uppercase',
+            fontWeight: 600,
           }}
         >
-          less
-        </button>
+          click to read full →
+        </span>
       )}
     </>
   )
-}
-
-function countLines(s: string): number {
-  return s.split('\n').length
 }
 
 /** Strip braces + quotes to produce a human-readable one-liner from a
@@ -210,7 +176,6 @@ function countLines(s: string): number {
 function summarizeDecision(raw: string): string {
   try {
     const obj = JSON.parse(raw) as Record<string, unknown>
-    // Prefer common fields in order of descriptiveness.
     if (typeof obj['target'] === 'string') {
       const reason = typeof obj['reason'] === 'string' ? ` — ${obj['reason']}` : ''
       return `→ ${String(obj['target'])}${reason}`
