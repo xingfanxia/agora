@@ -13,6 +13,7 @@ import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
 import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
+import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -258,6 +259,16 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
         >
           {winResult === 'village_wins' ? t('winners.village') : t('winners.wolves')}
         </div>
+      )}
+
+      {status === 'completed' && roleAssignments && (
+        <WerewolfSummary
+          agents={agents}
+          roleMap={roleAssignments as Record<string, string>}
+          eliminatedIds={[...eliminatedIds]}
+          winResult={winResult as 'village_wins' | 'werewolves_win' | null}
+          colorFor={colorFor}
+        />
       )}
 
       {/* Main — chat (default) or round-table */}

@@ -13,6 +13,7 @@ import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
 import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
+import { DebateSummary } from '../../components/v2/DebateSummary'
 
 interface RoundtableViewProps {
   messages: readonly MessageData[]
@@ -231,7 +232,19 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
       </main>
 
       {status === 'completed' && (
-        <CompletedFooter messageCount={messages.length} rounds={totalRounds} />
+        <>
+          <DebateSummary
+            topic={snapshot.topic}
+            agents={agents}
+            messagesPerAgent={useMessagesPerAgent(messages)}
+            totalMessages={messages.length}
+            totalCost={tokenSummary?.totalCost ?? 0}
+            totalTokens={tokenSummary?.totalTokens ?? 0}
+            durationSec={null}
+            colorFor={colorFor}
+          />
+          <CompletedFooter messageCount={messages.length} rounds={totalRounds} />
+        </>
       )}
       {status === 'error' && <ErrorFooter error={snapshot.error} />}
 
@@ -252,6 +265,16 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
       )}
     </div>
   )
+}
+
+function useMessagesPerAgent(messages: readonly MessageData[]): Record<string, number> {
+  return useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const m of messages) {
+      counts[m.senderId] = (counts[m.senderId] ?? 0) + 1
+    }
+    return counts
+  }, [messages])
 }
 
 // ── Sub-components (status pill, footers) ──────────────────
