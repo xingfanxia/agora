@@ -23,7 +23,6 @@ const db = new Proxy({} as ReturnType<typeof getDb>, {
 // ── Types ──────────────────────────────────────────────────
 
 export interface AgentStyle {
-  temperature?: number
   maxTokens?: number
   language?: 'en' | 'zh'
   [extra: string]: unknown

@@ -28,8 +28,7 @@ const stubObj = () =>
 function makeAgents(n: number): WerewolfAgentConfig[] {
   const models = Array.from({ length: n }, (_, i) => ({
     provider: 'anthropic' as const,
-    modelId: 'claude-sonnet-4-6',
-    temperature: 0.7,
+    modelId: 'claude-opus-4-7',
     maxTokens: 1500,
   }))
   return models.map((m, i) => ({ name: `P${i}`, model: m }))

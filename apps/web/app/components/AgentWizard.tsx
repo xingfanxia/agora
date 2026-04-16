@@ -36,7 +36,6 @@ export interface AgentWizardInitial {
   systemPrompt: string | null
   modelProvider: ModelOption['provider']
   modelId: string
-  temperature: number
   maxTokens: number
   language: 'zh' | 'en'
   avatarSeed: string
@@ -47,8 +46,7 @@ export const EMPTY_INITIAL: AgentWizardInitial = {
   persona: '',
   systemPrompt: null,
   modelProvider: 'anthropic',
-  modelId: 'claude-sonnet-4-6',
-  temperature: 0.7,
+  modelId: 'claude-opus-4-7',
   maxTokens: 1024,
   language: 'zh',
   avatarSeed: `seed-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
@@ -88,8 +86,6 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
     if (step === 2) {
       return (
         form.modelId.trim().length > 0 &&
-        form.temperature >= 0 &&
-        form.temperature <= 1 &&
         form.maxTokens >= 200 &&
         form.maxTokens <= 4000
       )
@@ -109,7 +105,6 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
         modelId: form.modelId,
         avatarSeed: form.avatarSeed,
         style: {
-          temperature: form.temperature,
           maxTokens: form.maxTokens,
           language: form.language,
         },
@@ -415,19 +410,6 @@ function Step2Model({
         </select>
       </div>
       <div>
-        <Label>{t('wizard.step2.temperatureLabel')}: {form.temperature.toFixed(2)}</Label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={form.temperature}
-          onChange={(e) => update({ temperature: parseFloat(e.target.value) })}
-          style={{ width: '100%' }}
-        />
-        <HelpText>{t('wizard.step2.temperatureHelp')}</HelpText>
-      </div>
-      <div>
         <Label>{t('wizard.step2.maxTokensLabel')}: {form.maxTokens}</Label>
         <input
           type="range"
@@ -602,7 +584,7 @@ function Step4Review({
       <ReviewRow label={t('wizard.step4.personaLabel')} value={form.persona} />
       <ReviewRow
         label={t('wizard.step4.styleLabel')}
-        value={`temp ${form.temperature.toFixed(2)} · ${form.maxTokens} tokens · ${form.language === 'zh' ? '中文' : 'English'}`}
+        value={`${form.maxTokens} tokens · ${form.language === 'zh' ? '中文' : 'English'}`}
       />
       <ReviewRow
         label={t('wizard.step4.promptLabel')}

@@ -22,7 +22,7 @@ const MODELS = {
 } satisfies Record<string, Pick<ModelConfig, 'provider' | 'modelId'>>
 
 function makeModel(base: Pick<ModelConfig, 'provider' | 'modelId'>): ModelConfig {
-  return { ...base, temperature: 0.7, maxTokens: 1500 }
+  return { ...base, maxTokens: 1500 }
 }
 
 // ── Agent Setup ────────────────────────────────────────────

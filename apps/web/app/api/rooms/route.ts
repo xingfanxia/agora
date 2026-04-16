@@ -96,7 +96,6 @@ export async function POST(request: NextRequest) {
         const modelConfig: ModelConfig = {
           provider,
           modelId: info.model,
-          temperature: (info.style?.['temperature'] as number) ?? 0.8,
           maxTokens: (info.style?.['maxTokens'] as number) ?? 1024,
         }
         const persona: PersonaConfig = {
@@ -127,7 +126,6 @@ export async function POST(request: NextRequest) {
         const modelConfig: ModelConfig = {
           provider,
           modelId: agentInput.model,
-          temperature: 0.8,
           maxTokens: 1024,
         }
         const persona: PersonaConfig = { name: agentInput.name, description: agentInput.persona }

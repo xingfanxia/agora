@@ -270,7 +270,6 @@ function toOpenChatAgentConfig(
   languageInstruction: string | undefined,
 ): OpenChatAgentConfig {
   const style = info.style ?? {}
-  const temperature = typeof style['temperature'] === 'number' ? (style['temperature'] as number) : 0.7
   const maxTokens = typeof style['maxTokens'] === 'number' ? (style['maxTokens'] as number) : 1024
 
   // Use snapshot's systemPrompt as-is if present; else compose a sensible
@@ -287,7 +286,6 @@ function toOpenChatAgentConfig(
     model: {
       provider: info.provider as LLMProvider,
       modelId: info.model,
-      temperature,
       maxTokens,
     },
     isHuman: info.isHuman ?? false,
@@ -339,7 +337,6 @@ async function advanceWerewolfRoom(
     model: {
       provider: p.provider ?? resolveProvider(p.model),
       modelId: p.model,
-      temperature: 0.7,
       maxTokens: 1500,
     },
     isHuman: humanNames.has(p.name),

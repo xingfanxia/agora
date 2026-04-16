@@ -31,7 +31,7 @@ const sampleAgents = (ids = ['a-1', 'a-2', 'a-3']): OpenChatAgentConfig[] =>
     name: id,
     persona: `persona for ${id}`,
     systemPrompt: `prompt for ${id}`,
-    model: { provider: 'anthropic', modelId: 'claude-sonnet-4-6', temperature: 0.7, maxTokens: 1024 },
+    model: { provider: 'anthropic', modelId: 'claude-opus-4-7', maxTokens: 1024 },
   }))
 
 describe('createOpenChat determinism', () => {

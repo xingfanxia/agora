@@ -85,13 +85,15 @@ function extractUsage(result: {
 export async function generate(
   model: LanguageModel,
   messages: ChatMessage[],
-  options?: { temperature?: number; maxTokens?: number },
+  options?: { maxTokens?: number },
 ): Promise<GenerateResult> {
+  // Temperature intentionally omitted — deprecated on Claude Opus 4.7 and
+  // semantically unreliable on reasoning-first models generally. We let the
+  // provider use its own default.
   try {
     const result = await generateText({
       model,
       messages,
-      temperature: options?.temperature,
       maxTokens: options?.maxTokens,
     })
     return { content: result.text, usage: extractUsage(result) }
@@ -125,7 +127,6 @@ export function createGenerateFn(config: ModelConfig): GenerateFn {
     }
 
     return generate(model, chatMessages, {
-      temperature: config.temperature,
       maxTokens: config.maxTokens,
     })
   }
@@ -168,12 +169,12 @@ export function createGenerateObjectFn(config: ModelConfig): GenerateObjectFn {
     const maxAttempts = 3
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // Temperature omitted — deprecated on newer Claude models and unreliable
+        // elsewhere. Retries rely on the model's native sampling variance.
         const result = await generateObject({
           model,
           messages: chatMessages,
           schema: schema as ZodSchema,
-          temperature:
-            attempt === 1 ? config.temperature : Math.max(0.3, (config.temperature ?? 0.7) - 0.2),
           maxTokens: config.maxTokens ? Math.max(config.maxTokens, 500) : 500,
         })
         return { object: result.object, usage: extractUsage(result) }

@@ -105,7 +105,6 @@ export async function POST(request: NextRequest) {
       model: {
         provider: p.provider ?? resolveProvider(p.model),
         modelId: p.model,
-        temperature: 0.7,
         maxTokens: 1500,
       } satisfies ModelConfig,
       isHuman: humanPlayerName !== null && p.name === humanPlayerName,

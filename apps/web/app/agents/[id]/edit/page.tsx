@@ -24,8 +24,6 @@ interface AgentRow {
 
 function toInitial(agent: AgentRow): AgentWizardInitial {
   const style = agent.style ?? {}
-  const temperature =
-    typeof style['temperature'] === 'number' ? (style['temperature'] as number) : 0.7
   const maxTokens =
     typeof style['maxTokens'] === 'number' ? (style['maxTokens'] as number) : 1024
   const language = (style['language'] === 'en' ? 'en' : 'zh') as 'zh' | 'en'
@@ -36,7 +34,6 @@ function toInitial(agent: AgentRow): AgentWizardInitial {
     systemPrompt: agent.systemPrompt,
     modelProvider: agent.modelProvider as AgentWizardInitial['modelProvider'],
     modelId: agent.modelId,
-    temperature,
     maxTokens,
     language,
     avatarSeed: agent.avatarSeed,

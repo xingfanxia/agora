@@ -13,7 +13,6 @@ export interface ModelConfig {
   readonly provider: LLMProvider
   readonly modelId: string
   readonly apiKey?: string
-  readonly temperature?: number
   readonly maxTokens?: number
 }
 
