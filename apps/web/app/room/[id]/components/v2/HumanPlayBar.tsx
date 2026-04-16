@@ -115,8 +115,8 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     return (
       <div style={barContainerStyle}>
         <div style={{ ...barStyle, padding: '12px 16px' }}>
-          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-            <span style={{ fontWeight: 600 }}>
+          <div style={{ fontSize: 13, lineHeight: 1.5, letterSpacing: '-0.13px' }}>
+            <span style={{ fontWeight: 590 }}>
               {'👋 '}Welcome! You&apos;re playing as {myName}.
             </span>
             <br />
@@ -133,6 +133,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
               border: 'none',
               color: 'var(--muted)',
               fontSize: 12,
+              fontWeight: 510,
               cursor: 'pointer',
               marginTop: 4,
             }}
@@ -178,11 +179,26 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
             animation: 'slideUp 300ms ease-out',
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 590,
+              letterSpacing: '-0.13px',
+              marginBottom: 4,
+            }}
+          >
             {heading}
           </div>
           {myAgent && (
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 510,
+                color: 'var(--muted)',
+                marginBottom: 8,
+                letterSpacing: '0.02em',
+              }}
+            >
               Playing as {myName}
             </div>
           )}
@@ -195,11 +211,11 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
             rows={3}
             style={{
               width: '100%',
-              background: 'var(--background)',
+              background: 'rgba(255, 255, 255, 0.02)',
               color: 'var(--foreground)',
               border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm, 6px)',
-              padding: '8px 12px',
+              borderRadius: 'var(--radius)',
+              padding: '10px 12px',
               fontSize: 14,
               lineHeight: 1.5,
               resize: 'vertical',
@@ -209,21 +225,30 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
             }}
           />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, gap: 8 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 400,
+                color: 'var(--muted-strong)',
+                alignSelf: 'center',
+              }}
+            >
               Enter to send, Shift+Enter for newline
             </span>
             <button
               onClick={() => void submit()}
               disabled={!text.trim() || sending}
               style={{
-                background: text.trim() && !sending ? 'var(--accent)' : 'var(--surface-hover)',
-                color: text.trim() && !sending ? 'white' : 'var(--muted)',
+                background: text.trim() && !sending ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
+                color: text.trim() && !sending ? '#ffffff' : 'var(--muted)',
                 border: 'none',
-                padding: '6px 16px',
-                borderRadius: 999,
+                padding: '7px 16px',
+                borderRadius: 'var(--radius)',
                 fontSize: 13,
-                fontWeight: 600,
+                fontWeight: 590,
+                letterSpacing: '-0.13px',
                 cursor: text.trim() && !sending ? 'pointer' : 'not-allowed',
+                transition: 'background .15s ease',
               }}
             >
               {sending ? '...' : 'Send ↵'}
@@ -273,7 +298,8 @@ const barContainerStyle: React.CSSProperties = {
 const barStyle: React.CSSProperties = {
   background: 'var(--surface)',
   borderTop: '1px solid var(--border)',
-  borderRadius: '8px 8px 0 0',
+  borderRadius: 'var(--radius-card) var(--radius-card) 0 0',
+  boxShadow: 'var(--shadow-md)',
 }
 
 // ── Phase → panel dispatch ─────────────────────────────────

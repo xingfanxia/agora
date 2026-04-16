@@ -76,7 +76,7 @@ export function AgentCard({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '2px solid var(--surface)',
+              border: '2px solid var(--background)',
             }}
           >
             {badge.short}
@@ -85,8 +85,9 @@ export function AgentCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontWeight: 600,
-              fontSize: 15,
+              fontWeight: 510,
+              fontSize: 16,
+              letterSpacing: '-0.165px',
               color: 'var(--foreground)',
               marginBottom: 2,
               overflow: 'hidden',
@@ -98,9 +99,11 @@ export function AgentCard({
           </div>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
+              fontWeight: 400,
               color: 'var(--muted)',
               fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.13px',
             }}
           >
             {agent.modelId}
@@ -112,7 +115,8 @@ export function AgentCard({
         style={{
           fontSize: 13,
           lineHeight: 1.55,
-          color: 'var(--muted-strong, var(--muted))',
+          letterSpacing: '-0.13px',
+          color: 'var(--foreground-secondary)',
           display: '-webkit-box',
           WebkitLineClamp: 3,
           WebkitBoxOrient: 'vertical',
@@ -138,13 +142,14 @@ export function AgentCard({
             }}
             disabled={disabled}
             style={{
-              background: disabled ? 'var(--surface-hover)' : 'var(--accent)',
-              color: disabled ? 'var(--muted)' : 'white',
+              background: disabled ? 'rgba(255,255,255,0.04)' : 'var(--accent)',
+              color: disabled ? 'var(--muted)' : '#ffffff',
               border: 'none',
               padding: '6px 14px',
-              borderRadius: 999,
+              borderRadius: 'var(--radius)',
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 590,
+              letterSpacing: '-0.12px',
               cursor: disabled ? 'not-allowed' : 'pointer',
             }}
           >
@@ -158,11 +163,10 @@ export function AgentCard({
   const cardStyle: React.CSSProperties = {
     display: 'block',
     padding: 16,
-    borderRadius: 'var(--radius)',
-    background: 'var(--surface)',
+    borderRadius: 'var(--radius-card)',
+    background: 'rgba(255, 255, 255, 0.02)',
     border: '1px solid var(--border)',
-    boxShadow: 'var(--shadow-sm)',
-    transition: 'transform .15s ease, box-shadow .15s ease, border-color .15s ease',
+    transition: 'background .15s ease, border-color .15s ease',
     textDecoration: 'none',
     color: 'inherit',
     opacity: disabled ? 0.5 : 1,

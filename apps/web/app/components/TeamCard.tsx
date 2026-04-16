@@ -45,8 +45,9 @@ export function TeamCard({ team, members = [], memberCount, onOpen }: TeamCardPr
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 600,
+              fontSize: 18,
+              fontWeight: 590,
+              letterSpacing: '-0.24px',
               color: 'var(--foreground)',
               marginBottom: 2,
               overflow: 'hidden',
@@ -60,10 +61,10 @@ export function TeamCard({ team, members = [], memberCount, onOpen }: TeamCardPr
                 style={{
                   marginLeft: 8,
                   fontSize: 10,
-                  fontWeight: 500,
-                  color: 'var(--accent)',
+                  fontWeight: 590,
+                  color: 'var(--accent-bright)',
                   textTransform: 'uppercase',
-                  letterSpacing: 0.6,
+                  letterSpacing: '0.08em',
                 }}
               >
                 模板
@@ -72,8 +73,10 @@ export function TeamCard({ team, members = [], memberCount, onOpen }: TeamCardPr
           </div>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 13,
+              fontWeight: 400,
               color: 'var(--muted)',
+              letterSpacing: '-0.13px',
             }}
           >
             {rosterCount} 位成员
@@ -89,9 +92,10 @@ export function TeamCard({ team, members = [], memberCount, onOpen }: TeamCardPr
       {team.description && (
         <p
           style={{
-            fontSize: 13,
+            fontSize: 14,
             lineHeight: 1.55,
-            color: 'var(--muted-strong, var(--muted))',
+            letterSpacing: '-0.13px',
+            color: 'var(--foreground-secondary)',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
@@ -114,14 +118,13 @@ export function TeamCard({ team, members = [], memberCount, onOpen }: TeamCardPr
 
   const cardStyle: React.CSSProperties = {
     display: 'block',
-    padding: 16,
-    borderRadius: 'var(--radius)',
-    background: 'var(--surface)',
+    padding: 20,
+    borderRadius: 'var(--radius-panel)',
+    background: 'rgba(255, 255, 255, 0.02)',
     border: '1px solid var(--border)',
-    boxShadow: 'var(--shadow-sm)',
     textDecoration: 'none',
     color: 'inherit',
-    transition: 'transform .15s ease, box-shadow .15s ease',
+    transition: 'background .15s ease, border-color .15s ease',
     cursor: 'pointer',
   }
 
@@ -160,7 +163,7 @@ function AvatarStack({
           }}
           title={m.name}
         >
-          <AgentAvatarPixel seed={m.avatarSeed} size={28} style={{ border: '2px solid var(--surface)' }} />
+          <AgentAvatarPixel seed={m.avatarSeed} size={28} style={{ border: '2px solid var(--background)' }} />
           {m.agentId === leaderAgentId && (
             <div
               style={{
@@ -185,7 +188,7 @@ function AvatarStack({
             height: 28,
             borderRadius: '50%',
             background: 'var(--surface-hover)',
-            border: '2px solid var(--surface)',
+            border: '2px solid var(--background)',
             color: 'var(--muted)',
             fontSize: 11,
             fontWeight: 600,

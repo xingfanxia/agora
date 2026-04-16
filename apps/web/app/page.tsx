@@ -83,14 +83,14 @@ export default function Home() {
       </div>
 
       {/* Hero */}
-      <section style={{ padding: '48px 0 40px', textAlign: 'center' }}>
+      <section className="agora-hero" style={{ padding: '56px 0 48px', textAlign: 'center' }}>
         <h1
           style={{
             fontSize: 48,
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
-            marginBottom: 16,
+            fontWeight: 510,
+            letterSpacing: '-1.056px',
+            lineHeight: 1.0,
+            marginBottom: 20,
             color: 'var(--foreground)',
           }}
         >
@@ -99,24 +99,27 @@ export default function Home() {
         <p
           style={{
             fontSize: 18,
+            fontWeight: 400,
+            letterSpacing: '-0.165px',
             color: 'var(--muted)',
-            lineHeight: 1.55,
+            lineHeight: 1.6,
             maxWidth: 640,
             margin: '0 auto',
           }}
         >
           {t('hero.subtitle')}
         </p>
-        <div style={{ marginTop: 24 }}>
+        <div style={{ marginTop: 28 }}>
           <Link
             href="/teams"
             style={{
               background: 'var(--accent)',
-              color: 'white',
-              padding: '12px 24px',
-              borderRadius: 999,
+              color: '#ffffff',
+              padding: '10px 20px',
+              borderRadius: 'var(--radius-card)',
               fontSize: 15,
-              fontWeight: 600,
+              fontWeight: 590,
+              letterSpacing: '-0.165px',
               textDecoration: 'none',
               display: 'inline-block',
             }}
@@ -289,8 +292,30 @@ function SectionHeader({
       }}
     >
       <div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: subtitle ? 2 : 0 }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>{subtitle}</p>}
+        <h2
+          style={{
+            fontSize: 20,
+            fontWeight: 590,
+            letterSpacing: '-0.24px',
+            lineHeight: 1.33,
+            marginBottom: subtitle ? 2 : 0,
+          }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <p
+            style={{
+              fontSize: 13,
+              fontWeight: 400,
+              letterSpacing: '-0.13px',
+              color: 'var(--muted)',
+              margin: 0,
+            }}
+          >
+            {subtitle}
+          </p>
+        )}
       </div>
       {action}
     </div>

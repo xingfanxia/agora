@@ -1,5 +1,5 @@
 // ============================================================
-// Sidebar — navigation content
+// Sidebar — navigation content (Linear-spec per DESIGN.md §4)
 // ============================================================
 
 'use client'
@@ -45,13 +45,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             height: 28,
             borderRadius: 'var(--radius-sm)',
             background: 'var(--accent)',
-            color: 'white',
+            color: '#ffffff',
             fontSize: 14,
-            fontWeight: 700,
+            fontWeight: 590,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
+            letterSpacing: '-0.2px',
           }}
         >
           A
@@ -60,14 +61,15 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           className="agora-sidebar-label"
           style={{
             fontSize: 15,
-            fontWeight: 700,
+            fontWeight: 590,
+            letterSpacing: '-0.2px',
           }}
         >
           Agora
         </span>
       </Link>
 
-      {/* + New chat CTA */}
+      {/* + New chat CTA — primary mint button */}
       <Link
         href="/rooms/new"
         onClick={onNavigate}
@@ -75,17 +77,18 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          padding: '10px 12px',
+          padding: '9px 12px',
           marginBottom: 20,
-          borderRadius: 'var(--radius-sm)',
-          background: 'rgba(34, 196, 147, 0.12)',
-          color: 'var(--accent)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--accent)',
+          color: '#ffffff',
           textDecoration: 'none',
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: 590,
+          letterSpacing: '-0.13px',
         }}
       >
-        <span style={{ fontSize: 16 }}>＋</span>
+        <span style={{ fontSize: 16, lineHeight: 1 }}>＋</span>
         <span className="agora-sidebar-label">{t('newRoom')}</span>
       </Link>
 
@@ -142,9 +145,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       <div
         style={{
           fontSize: 11,
-          color: 'var(--muted)',
+          color: 'var(--muted-strong)',
           textAlign: 'center',
           padding: '8px 0',
+          letterSpacing: '0.02em',
         }}
         className="agora-sidebar-label"
       >
@@ -174,21 +178,21 @@ function NavSection({
   children: React.ReactNode
 }) {
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 18 }}>
       <div
         className="agora-sidebar-label"
         style={{
-          fontSize: 10,
-          fontWeight: 600,
+          fontSize: 11,
+          fontWeight: 590,
           textTransform: 'uppercase',
-          letterSpacing: 0.6,
-          color: 'var(--muted)',
-          padding: '4px 12px 6px',
+          letterSpacing: '0.08em',
+          color: 'var(--muted-strong)',
+          padding: '4px 12px 8px',
         }}
       >
         {label}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>{children}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>{children}</div>
     </div>
   )
 }
@@ -216,16 +220,25 @@ function NavLink({
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '8px 12px',
-        borderRadius: 'var(--radius-sm)',
+        padding: '7px 12px',
+        borderLeft: `3px solid ${active ? 'var(--accent)' : 'transparent'}`,
+        marginLeft: -3,
+        paddingLeft: 9,
+        borderRadius: `0 var(--radius) var(--radius) 0`,
         textDecoration: 'none',
-        fontSize: subtle ? 12 : 13,
-        fontWeight: subtle ? 400 : 500,
-        color: active ? 'var(--foreground)' : subtle ? 'var(--muted)' : 'var(--muted-strong, var(--foreground))',
-        background: active ? 'var(--surface-hover)' : 'transparent',
+        fontSize: subtle ? 13 : 14,
+        fontWeight: subtle ? 400 : 510,
+        letterSpacing: '-0.13px',
+        color: active
+          ? 'var(--accent-bright)'
+          : subtle
+          ? 'var(--muted)'
+          : 'var(--foreground-secondary)',
+        background: active ? 'var(--accent-tint)' : 'transparent',
+        transition: 'background 0.1s ease, color 0.1s ease',
       }}
     >
-      <span style={{ width: 18, textAlign: 'center', fontSize: 13 }}>{icon}</span>
+      <span style={{ width: 18, textAlign: 'center', fontSize: 13, flexShrink: 0 }}>{icon}</span>
       <span className="agora-sidebar-label">{label}</span>
     </Link>
   )

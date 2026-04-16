@@ -75,11 +75,12 @@ export function MessageList({
         return (
           <div
             key={message.id}
+            className="agora-chat-message"
             style={{
-              padding: '1rem 1.25rem',
-              borderRadius: 'var(--radius)',
-              border: `1px solid ${colors.border}`,
-              background: colors.bg,
+              padding: '12px 16px',
+              borderRadius: 'var(--radius-panel)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
             }}
           >
             <MessageHeader
@@ -94,9 +95,10 @@ export function MessageList({
             ) : (
               <div
                 style={{
-                  fontSize: '0.9rem',
-                  lineHeight: 1.65,
-                  color: 'var(--foreground)',
+                  fontSize: 16,
+                  fontWeight: 400,
+                  lineHeight: 1.6,
+                  color: 'var(--foreground-secondary)',
                   whiteSpace: 'pre-wrap',
                 }}
               >
@@ -151,21 +153,30 @@ function MessageHeader({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '0.5rem',
-        marginBottom: '0.625rem',
+        gap: 8,
+        marginBottom: 6,
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ fontWeight: 600, fontSize: '0.875rem', color: colors.name }}>{name}</span>
+      <span
+        style={{
+          fontWeight: 590,
+          fontSize: 13,
+          letterSpacing: '-0.13px',
+          color: colors.name,
+        }}
+      >
+        {name}
+      </span>
       {modelId && (
         <span
           style={{
-            fontSize: '0.65rem',
-            padding: '0.125rem 0.5rem',
-            borderRadius: '999px',
-            border: `1px solid ${colors.border}`,
-            color: colors.name,
-            opacity: 0.7,
+            fontSize: 11,
+            fontWeight: 400,
+            padding: '1px 8px',
+            borderRadius: 4,
+            background: 'rgba(255, 255, 255, 0.04)',
+            color: 'var(--muted)',
           }}
         >
           {modelLabel(modelId)}
@@ -174,10 +185,11 @@ function MessageHeader({
       {channelId && (
         <span
           style={{
-            fontSize: '0.65rem',
-            padding: '0.125rem 0.5rem',
-            borderRadius: '999px',
-            background: 'var(--surface)',
+            fontSize: 11,
+            fontWeight: 400,
+            padding: '1px 8px',
+            borderRadius: 4,
+            background: 'rgba(255, 255, 255, 0.04)',
             color: 'var(--muted)',
             fontFamily: 'var(--font-geist-mono), monospace',
           }}
@@ -188,8 +200,10 @@ function MessageHeader({
       <span
         style={{
           marginLeft: 'auto',
-          fontSize: '0.7rem',
-          color: 'var(--muted)',
+          fontSize: 11,
+          fontWeight: 400,
+          color: 'var(--muted-strong)',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {new Date(timestamp).toLocaleTimeString([], {
@@ -248,27 +262,28 @@ function ThinkingIndicator({ name, colors }: { name: string; colors: AgentColor 
   return (
     <div
       style={{
-        padding: '1rem 1.25rem',
-        borderRadius: 'var(--radius)',
-        border: `1px dashed ${colors.border}`,
-        background: colors.bg,
-        opacity: 0.7,
+        padding: '12px 16px',
+        borderRadius: 'var(--radius-panel)',
+        border: '1px dashed var(--border)',
+        background: 'var(--surface)',
+        opacity: 0.8,
       }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
-          color: colors.name,
-          fontSize: '0.875rem',
+          gap: 8,
+          fontSize: 13,
+          letterSpacing: '-0.13px',
         }}
       >
-        <span style={{ fontWeight: 600 }}>{name}</span>
-        <span style={{ fontSize: '0.8rem' }}>{t('isThinking')}</span>
+        <span style={{ fontWeight: 590, color: colors.name }}>{name}</span>
+        <span style={{ color: 'var(--muted)' }}>{t('isThinking')}</span>
         <span
           style={{
-            animation: 'dots 1.5s steps(4, end) infinite',
+            color: 'var(--muted)',
+            animation: 'agora-dot-pulse 1.5s ease-in-out infinite',
             letterSpacing: '2px',
           }}
         >
