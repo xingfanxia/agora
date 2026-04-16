@@ -94,7 +94,7 @@ export async function generate(
     const result = await generateText({
       model,
       messages,
-      maxTokens: options?.maxTokens,
+      maxOutputTokens: options?.maxTokens,
     })
     return { content: result.text, usage: extractUsage(result) }
   } catch (error) {
@@ -175,7 +175,7 @@ export function createGenerateObjectFn(config: ModelConfig): GenerateObjectFn {
           model,
           messages: chatMessages,
           schema: schema as ZodSchema,
-          maxTokens: config.maxTokens ? Math.max(config.maxTokens, 500) : 500,
+          maxOutputTokens: config.maxTokens ? Math.max(config.maxTokens, 500) : 500,
         })
         return { object: result.object, usage: extractUsage(result) }
       } catch (error) {

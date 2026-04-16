@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@agora/shared": "workspace:*",
-    "ai": "^4.3.0",
-    "@ai-sdk/anthropic": "^1.2.0",
-    "@ai-sdk/openai": "^1.2.0",
-    "@ai-sdk/google": "^1.2.0",
+    "ai": "^6.0.167",
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/openai": "^3.0.53",
+    "@ai-sdk/google": "^3.0.64",
     "zod": "^3.24.0"
   },
   "devDependencies": {
