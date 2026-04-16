@@ -1,6 +1,6 @@
 # Phase 4.5b — Human-Play UX Design Spec
 
-> **Status**: V2 (self-critiqued from V1)
+> **Status**: V3 (V2 + /mtc user-journey critique)
 > **Scope**: Design-only — wireframes, copy, interaction flows. No code.
 > **Depends on**: Phase 6 (team platform), Phase 4.5a (durable runtime)
 > **Unblocks**: Phase 4.5c (seat tokens + human play code), Phase 4.5d (multi-human + auth)
@@ -39,38 +39,38 @@ This spec covers both phases. Sections marked **(4.5d only)** can be deferred.
 /teams/[id] → "开始对话" → /rooms/new?teamId=X → ModePicker → ModeConfigForm → Start
 ```
 
-### New flow (with human seats)
+### New flow — MVP (4.5c, single human, V3 simplified)
 
-After ModeConfigForm, add **Step 3: Seat Assignment**.
+**No separate step.** Inline into ModeConfigForm as one additional row:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Seat Assignment                                             │
+│  Configure Room                                              │
+│  配置房间                                                     │
 │                                                              │
-│  Who plays in this room?                                     │
-│  谁来参与这个房间？                                            │
+│  Topic: [朕欲征南诏,诸卿以为如何?____________]                 │
+│  Rounds: [3 ▾]                                               │
 │                                                              │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │ 🤖 中书令 (Leader)          [AI ▾]                    │    │
-│  │ 🤖 门下侍中                 [AI ▾]                    │    │
-│  │ 🤖 尚书令                   [AI ▾]                    │    │
-│  │ 🧑 吏部尚书                 [You ▾]  ← human seat    │    │
-│  │ 🤖 户部尚书                 [AI ▾]                    │    │
-│  │ ...                                                   │    │
-│  └──────────────────────────────────────────────────────┘    │
-│                                                              │
-│  ℹ️ You'll play as 吏部尚书 with their persona and role.     │
-│     你将扮演吏部尚书，使用其人设和角色。                        │
-│                                                              │
-│  (4.5d) [+ Invite another human]                             │
+│  ── Play as (optional) ──────────────────────────────────    │
+│  │  Join as:  [🤖 AI only ▾]                              │  │
+│  │            [🧑 兵部尚书 ▾]  ← pre-suggested             │  │
+│  │            [🧑 吏部尚书  ]                               │  │
+│  │            [🧑 户部尚书  ]                               │  │
+│  │            ...                                          │  │
+│  └─────────────────────────────────────────────────────────  │
 │                                                              │
 │  [← Back]                              [Start Room →]        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Design decisions:**
-- Each seat has a dropdown: `AI` (default) | `You` | `Invite` (4.5d only)
-- MVP (4.5c): only ONE seat can be `You`. Selecting a second auto-reverts the first.
+**Why inline (V3)**: A full Seat Assignment page was over-designed for picking ONE seat. Three setup screens (Mode → Config → Seats → Start) is too much friction for the flagship human-play feature. One dropdown in ModeConfigForm is enough.
+
+### New flow — Multi-human (4.5d, full page)
+
+4.5d restores the full Seat Assignment page because multiple seats need toggles + invite links + QR codes. That page is not needed for 4.5c.
+
+**Design decisions (carry over):**
+- MVP (4.5c): only ONE seat can be human. The dropdown is: `AI only` | `[agent name 1]` | `[agent name 2]` | ...
 - The human inherits the agent's name, avatar, and persona. This preserves game fairness and enables future Turing-test mode.
 - For werewolf: role assignment is random at game start (as today). The human doesn't pick their role.
 - The "You" badge replaces the model provider badge (no `claude`/`gpt` tag on human seats).
@@ -185,7 +185,38 @@ The **Turn Panel** is the core human interaction surface. It appears at the bott
 - **System message**: A system message appears in chat: `"It's your turn"` / `"轮到你了"` — this anchors the transition visually.
 - **During wait (not your turn)**: The panel area shows a subtle status line: `"Waiting for 中书令 to speak..."` / `"等待中书令发言..."` with a typing dots animation.
 
-### 5.0. Between-Turns Waiting State (V2 addition)
+### Human message rendering in chat (V3 addition)
+
+**Human messages look IDENTICAL to AI messages.** Same agent name, same avatar, same bubble style. No "human" badge, no different color, no visual distinction. This is a hard rule for two reasons:
+1. Game fairness — in werewolf, if everyone can tell which message is from a human, it changes voting strategies
+2. Future Turing-test mode — the UI already supports anonymity by default
+
+The only difference: human messages appear instantly (no streaming animation), since the full text is submitted at once. To avoid this "tells" the human apart, add a brief simulated typing delay (200-500ms, matching typical AI first-token latency) before the message renders.
+
+### 5.0a. First-Turn Onboarding (V3 addition)
+
+When the room starts and the human has NOT yet taken their first turn, show a one-time onboarding message in the status bar area:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  👋 Welcome! You're playing as 吏部尚书.                  │
+│     欢迎！你将扮演吏部尚书。                                │
+│                                                           │
+│  Watch the conversation — your turn will come at          │
+│  position 5 of 9 in the round.                            │
+│  观察对话 — 你将在本轮第 5/9 位发言。                        │
+│                                                           │
+│  [Dismiss]                                                │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Why this matters**: Without this, the human watches 4 AI agents talk for ~12-20 seconds with no idea when they'll get to act. The onboarding sets expectations: you're watching first, your turn is coming, here's when.
+
+- Shown only once (first round, before first human turn)
+- Auto-dismissed when the human's first turn panel appears
+- Click to dismiss early
+
+### 5.0b. Between-Turns Waiting State (V2 addition)
 
 When it's NOT the human's turn, the turn panel area doesn't disappear entirely — it collapses to a **48px status bar** pinned at the bottom:
 
@@ -719,6 +750,19 @@ If grace expires:
 - **Simplest mode**: Just a free-text turn panel that appears on your turn in round-robin order.
 - **Leader behavior**: If the human is the leader agent, the leader directive (from team-room.ts `leaderDirectiveFor`) should be shown in the HUD as a subtle reminder: `"As leader, guide the discussion."` / `"作为领导者，引导讨论。"`
 
+### Pacing: the long-wait problem (V3 addition)
+
+**The issue**: In a 9-agent room with 1 human, the human waits for 8 AI turns (~24s at 3s each) between their own turns. In a 5-round game, that's ~2 minutes of watching per round vs ~30s of acting. The spectating:acting ratio is 4:1 — too high.
+
+**Principle**: In single-human rooms, minimize dead time for the human. The AIs are not real people; there's no fairness reason to give them "natural" pacing.
+
+**Suggested mitigations** (implementation-level, not UX spec):
+1. **Compressed AI pacing**: In single-human rooms, reduce inter-AI message delay from ~3s to ~1s. AI responses still render one at a time (preserving readability), but the gap between them is shorter.
+2. **"Fast-forward to my turn" button**: Optional button in the between-turns status bar. Clicking it fires all remaining AI turns in rapid succession (~0.3s intervals) and jumps to the human's turn. Useful for impatient players.
+3. **Read-time awareness**: If the last AI message was long (>200 chars), add 1s extra before the next AI speaks. If short (<50 chars), reduce to 0.5s. Match pacing to reading speed.
+
+These are implementation suggestions, not hard requirements. The spec doesn't mandate pacing — it mandates that the problem be acknowledged and addressed.
+
 ### Roundtable
 - **Round structure visible**: HUD shows `"Round 2 of 5"`. Turn panel shows: `"Your perspective this round"` / `"你在本轮的观点"`.
 - **After final round**: If the mode includes a summary/vote, show a special summary panel.
@@ -743,7 +787,7 @@ New components to build:
 | `TimerBar` | `app/room/[id]/components/v2/` | Animated countdown bar (§6) |
 | `TimeoutToast` | `app/room/[id]/components/v2/` | Fallback notification (§7) |
 | `EliminatedOverlay` | `app/room/[id]/components/v2/` | Death screen (§9) |
-| `SeatAssignment` | `app/rooms/new/` | Human/AI toggle per seat (§2) |
+| `SeatAssignment` | `app/rooms/new/` | Full multi-seat page (4.5d only). MVP: inline dropdown in ModeConfigForm (§2) |
 | `WaitingRoom` | `app/room/[id]/components/v2/` | Pre-game invite + readiness (§3, 4.5d) |
 | `DisconnectOverlay` | `app/room/[id]/components/v2/` | Reconnection UX (§10, 4.5d) |
 | `ViewerContext` | `app/lib/` | Provider: seat token → role → visible channels |
@@ -755,7 +799,7 @@ Modified components:
 | `ChatSidebar` / `ChatView` | Filter messages by ViewerContext channels |
 | `WerewolfView` | Integrate PlayerHUD + TurnPanel |
 | `RoundtableView` | Integrate PlayerHUD + TurnPanel |
-| `ModeConfigForm` | Add seat assignment step |
+| `ModeConfigForm` | Add inline "Play as" dropdown (MVP); full SeatAssignment page (4.5d) |
 | Room API routes | Accept human-input POST, handle waiting state |
 
 ---
@@ -770,6 +814,22 @@ Not full API specs — just the contracts the UI needs.
 | `/api/rooms/:id/messages` | GET | Filtered by seat token (viewer's channels only) |
 | `/api/rooms/:id/state` | GET | Room snapshot + human-relevant state (is it my turn? timer remaining?) |
 | `/api/rooms/:id/join` | POST | Claim a seat (4.5d: validates invite token, marks seat as occupied) |
+
+### Payload shapes per turn type (V3 addition)
+
+The `payload` field in `POST /api/rooms/:id/human-input` must match the AI agent's structured output schema for the same turn type. This ensures the runtime can process human and AI turns identically.
+
+| turnId | Payload shape | Notes |
+|--------|--------------|-------|
+| `speak` | `{ content: string }` | Free-text for day/wolf/open/roundtable/last words |
+| `wolf-vote` | `{ target: string, reason?: string }` | `target` is agentId |
+| `day-vote` | `{ target: string \| 'skip', reason?: string }` | `'skip'` = abstain |
+| `witch-action` | `{ action: 'save' \| 'poison' \| 'pass', poisonTarget?: string }` | `poisonTarget` required when action='poison' |
+| `seer-check` | `{ target: string }` | agentId |
+| `guard-protect` | `{ target: string }` | agentId |
+| `hunter-shoot` | `{ shoot: boolean, target?: string }` | `target` required when shoot=true |
+| `sheriff-election` | `{ target: string \| 'skip' }` | `'skip'` = don't run |
+| `sheriff-transfer` | `{ target: string \| 'destroy' }` | `'destroy'` = destroy badge |
 
 ---
 
@@ -823,7 +883,7 @@ These are decisions deferred to implementation time (4.5c):
 
 ---
 
-## Appendix: V2 Self-Critique Log
+## Appendix: Self-Critique Log
 
 V1 → V2 changes made after /mtc self-critique:
 
@@ -847,6 +907,16 @@ V1 → V2 changes made after /mtc self-critique:
 | 11 | Witch panel assumed a kill always happened — guard protection case unhandled | Added "no one was killed tonight" variant panel with Save hidden |
 | 12 | Sheriff election stuffed into VotePanel despite different semantics | Clarified SheriffPanel is separate component; VotePanel only handles wolf/day votes |
 
+**V3 /mtc user-journey critique** (walked through as a first-time Chinese casual gamer):
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 13 | Seat Assignment was a full separate page — overkill for picking ONE seat in MVP | Inlined as dropdown in ModeConfigForm (§2). Full page deferred to 4.5d. |
+| 14 | No first-turn onboarding — human stared at AI chatter for ~20s with no context | Added §5.0a: one-time welcome message with position indicator |
+| 15 | Human message rendering in chat was unspecified — breaks game fairness if distinguishable | Added rendering rule: identical to AI messages + simulated typing delay |
+| 16 | API payload shapes per turn type were too vague for implementation | Added full payload table in §13 matching AI structured output schemas |
+| 17 | 8+ AI turns × 3s = 24s+ waiting per round never acknowledged | Added pacing section in §11 with compressed pacing + fast-forward suggestions |
+
 ---
 
-*End of V2 spec (self-critiqued + audit-verified).*
+*End of V3 spec (V1 → V2 technical audit → V3 /mtc user-journey critique).*
