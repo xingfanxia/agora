@@ -1,14 +1,21 @@
 import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import localFont from 'next/font/local'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { AppShell } from './components/AppShell'
 import './globals.css'
 
-const geistSans = localFont({
-  src: './fonts/GeistVF.woff',
-  variable: '--font-geist-sans',
+// Inter Variable per DESIGN.md §3 — weights 400 (read), 510 (UI), 590 (strong emphasis).
+// OpenType features cv01 + ss03 are applied globally via body font-feature-settings.
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+  axes: ['opsz'],
 })
+
+// Geist Mono kept for code blocks / event timeline until Berkeley Mono is licensed.
 const geistMono = localFont({
   src: './fonts/GeistMonoVF.woff',
   variable: '--font-geist-mono',
@@ -28,7 +35,7 @@ export default async function RootLayout({
   const messages = await getMessages()
   return (
     <html lang={locale}>
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body className={`${inter.variable} ${geistMono.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
           <AppShell>{children}</AppShell>
         </NextIntlClientProvider>

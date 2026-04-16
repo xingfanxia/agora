@@ -1,47 +1,82 @@
 /*
- * Palette inspired by Accio Work — dark near-black canvas + mint
- * green accent, clear typographic hierarchy (primary/muted/tertiary).
- * Light mode preserved for daytime reads but we treat dark as the
- * primary visual target.
+ * Agora Design System — Linear dark-mode-first foundation with mint (#22c493) accent.
+ * See DESIGN.md at project root for the full spec.
+ *
+ * Dark is the DEFAULT (not an override). Light mode is a minimal fallback for
+ * prefers-color-scheme: light users — the platform is designed dark-first.
  */
 :root {
-  --background: #fafafa;
-  --foreground: #111111;
-  --muted: #6b6f76;
-  --muted-strong: #3a3d44;
-  --border: #e5e5e5;
-  --accent: #22c493;
-  --accent-hover: #2ed49a;
-  --surface: #ffffff;
-  --surface-hover: #f5f5f5;
-  --surface-elevated: #ffffff;
-  --danger: #dc3545;
-  --warn: #e0a64a;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.1);
+  /* Background surfaces — luminance stacking 0.02 → 0.05 */
+  --background: #08090a;           /* Deep Canvas — landing, replay hero */
+  --panel: #0f1011;                /* Panel Dark — sidebar, chat column */
+  --surface: #191a1b;              /* Elevated — cards, dropdowns, bubbles */
+  --surface-hover: #28282c;        /* Hover state */
+  --surface-elevated: #191a1b;     /* Alias for back-compat */
+
+  /* Text tiers — never pure white */
+  --foreground: #f7f8f8;           /* Primary */
+  --foreground-secondary: #d0d6e0; /* Body / agent message content */
+  --muted: #8a8f98;                /* Metadata, placeholders, model labels */
+  --muted-strong: #62666d;         /* Timestamps, disabled */
+
+  /* Brand — Agora Mint (the only chromatic color outside game views) */
+  --accent: #22c493;               /* Primary CTA, brand */
+  --accent-hover: #3fe4b0;         /* Hover on accent */
+  --accent-bright: #2dd9a4;        /* Active nav, your-turn, human indicator */
+  --accent-ring: rgba(34, 196, 147, 0.3);
+  --accent-soft: rgba(34, 196, 147, 0.15);
+  --accent-tint: rgba(34, 196, 147, 0.08);
+
+  /* Borders — whisper-thin semi-transparent white */
+  --border: rgba(255, 255, 255, 0.08);     /* Standard — cards, inputs */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --border-solid: #23252a;                 /* For cases that need opacity-independent borders */
+
+  /* Status */
+  --live: #27a644;                 /* running */
+  --warn: #f5a623;                 /* waiting (human turn pending) */
+  --danger: #e74c3c;
+  --success: #10b981;
+
+  /* Radii per DESIGN.md §5 */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius: 6px;                   /* buttons, inputs */
+  --radius-card: 8px;              /* agent/team cards */
+  --radius-panel: 12px;            /* chat bubbles, turn panels */
+  --radius-lg: 22px;               /* large panel wrappers */
+
+  /* Elevation — dark surfaces use background luminance, not drop shadows */
+  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 3px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.07), 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-inset: inset 0 0 12px rgba(0, 0, 0, 0.2);
+  --focus-ring: 0 0 0 3px rgba(34, 196, 147, 0.15);
 }
 
-@media (prefers-color-scheme: dark) {
+/* Light-mode fallback — minimal, still uses mint accent. Most users will be on dark. */
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0f1012;
-    --foreground: #e8e9ec;
-    --muted: #8a8b92;
-    --muted-strong: #55565c;
-    --border: #25272c;
-    --accent: #22c493;
-    --accent-hover: #2ed49a;
-    --surface: #17181c;
-    --surface-hover: #1e2025;
-    --surface-elevated: #1a1b1f;
-    --danger: #ff6371;
-    --warn: #e0a64a;
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+    --background: #fafafa;
+    --panel: #ffffff;
+    --surface: #ffffff;
+    --surface-hover: #f5f5f5;
+    --surface-elevated: #ffffff;
+
+    --foreground: #111111;
+    --foreground-secondary: #3a3d44;
+    --muted: #6b6f76;
+    --muted-strong: #8a8f98;
+
+    --border: #e5e5e5;
+    --border-subtle: #eeeeee;
+    --border-hover: #d0d0d0;
+    --border-solid: #dddddd;
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.1);
   }
 }
 
@@ -62,9 +97,13 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-inter), 'Inter', 'SF Pro Display', -apple-system, system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  /* Inter's geometric alternates — non-negotiable per DESIGN.md §3 */
+  font-feature-settings: 'cv01', 'ss03';
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 a {
@@ -75,12 +114,19 @@ a {
 button {
   cursor: pointer;
   font-family: inherit;
+  font-feature-settings: inherit;
 }
 
 input,
 textarea,
 select {
   font-family: inherit;
+  font-feature-settings: inherit;
+}
+
+code,
+pre {
+  font-family: var(--font-geist-mono), 'Berkeley Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 /* ============================================================
@@ -100,6 +146,11 @@ select {
 @keyframes agora-bubble-out {
   from { opacity: 1; transform: translateY(0) scale(1); }
   to { opacity: 0; transform: translateY(-6px) scale(0.96); }
+}
+
+@keyframes agora-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -125,8 +176,9 @@ select {
 .agora-markdown h2,
 .agora-markdown h3,
 .agora-markdown h4 {
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 590;
+  line-height: 1.33;
+  letter-spacing: -0.24px;
   margin: 0.9em 0 0.4em;
 }
 .agora-markdown h1 { font-size: 1.25em; }
@@ -148,22 +200,22 @@ select {
   color: var(--muted);
 }
 .agora-markdown strong {
-  font-weight: 600;
+  font-weight: 590;
 }
 .agora-markdown em {
   font-style: italic;
 }
 .agora-markdown code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  background: var(--surface-hover);
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(255, 255, 255, 0.04);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 0.9em;
 }
 .agora-markdown pre {
-  background: var(--surface-hover);
+  background: rgba(255, 255, 255, 0.04);
   padding: 10px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   overflow-x: auto;
   font-size: 12.5px;
   line-height: 1.5;
@@ -180,8 +232,9 @@ select {
   color: var(--muted);
 }
 .agora-markdown a {
-  color: var(--accent);
+  color: var(--accent-bright);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .agora-markdown hr {
   border: none;
@@ -200,8 +253,8 @@ select {
   text-align: left;
 }
 .agora-markdown th {
-  background: var(--surface-hover);
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 590;
 }
 
 /* ============================================================
@@ -215,6 +268,7 @@ select {
   }
   .agora-hero h1 {
     font-size: 2rem !important;
+    letter-spacing: -0.704px !important;
   }
   .agora-chat-message {
     padding: 10px 12px !important;
@@ -230,7 +284,7 @@ select:focus-visible,
 [role='button']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 /* When the card is the focused element itself, don't double-ring */
@@ -252,4 +306,3 @@ button[tabindex='-1']:focus-visible {
     padding: 20px 16px !important;
   }
 }
-
