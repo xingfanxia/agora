@@ -21,6 +21,7 @@ interface CreateOpenChatBody {
   topic?: unknown
   rounds?: unknown
   language?: unknown
+  humanSeatId?: unknown
 }
 
 export async function POST(request: NextRequest) {
@@ -70,6 +71,15 @@ export async function POST(request: NextRequest) {
   }
   if (agents.length > 12) {
     return NextResponse.json({ error: 'Open-chat supports at most 12 agents' }, { status: 400 })
+  }
+
+  // Mark the human seat (Phase 4.5c)
+  const humanSeatId = typeof body.humanSeatId === 'string' ? body.humanSeatId : null
+  if (humanSeatId) {
+    const seat = agents.find((a) => a.id === humanSeatId)
+    if (seat) {
+      (seat as { isHuman?: boolean }).isHuman = true
+    }
   }
 
   const roomId = crypto.randomUUID()

@@ -72,6 +72,7 @@ function NewRoomPage() {
     lastWords: false,
   })
   const [language, setLanguage] = useState<'zh' | 'en'>('zh')
+  const [humanSeatId, setHumanSeatId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -132,13 +133,13 @@ function NewRoomPage() {
       let body: Record<string, unknown>
       if (mode === 'open-chat') {
         url = '/api/rooms/open-chat'
-        body = { teamId, topic: topic.trim(), rounds, language }
+        body = { teamId, topic: topic.trim(), rounds, language, humanSeatId }
       } else if (mode === 'roundtable') {
         url = '/api/rooms'
-        body = { teamId, topic: topic.trim(), rounds, language }
+        body = { teamId, topic: topic.trim(), rounds, language, humanSeatId }
       } else {
         url = '/api/rooms/werewolf'
-        body = { teamId, advancedRules, language }
+        body = { teamId, advancedRules, language, humanSeatId }
       }
       const res = await fetch(url, {
         method: 'POST',
@@ -150,6 +151,15 @@ function NewRoomPage() {
         throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`)
       }
       const data = (await res.json()) as { roomId: string }
+      // Store human seat token in localStorage for the room page to read
+      if (humanSeatId) {
+        try {
+          localStorage.setItem(
+            `agora-seat-${data.roomId}`,
+            JSON.stringify({ roomId: data.roomId, agentId: humanSeatId }),
+          )
+        } catch { /* localStorage unavailable */ }
+      }
       router.push(`/room/${data.roomId}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -428,6 +438,32 @@ function NewRoomPage() {
               </button>
             ))}
           </div>
+        </Field>
+
+        {/* Play as — human seat selector (Phase 4.5c) */}
+        <Field label={language === 'zh' ? '参与身份（可选）' : 'Play as (optional)'}>
+          <select
+            value={humanSeatId ?? ''}
+            onChange={(e) => setHumanSeatId(e.target.value || null)}
+            style={{
+              ...inputStyle,
+              cursor: 'pointer',
+            }}
+          >
+            <option value="">{language === 'zh' ? '🤖 仅 AI（旁观）' : '🤖 AI only (spectate)'}</option>
+            {members.map((m) => (
+              <option key={m.agentId} value={m.agentId}>
+                🧑 {m.agent.name}
+              </option>
+            ))}
+          </select>
+          {humanSeatId && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {language === 'zh'
+                ? `你将扮演 ${members.find((m) => m.agentId === humanSeatId)?.agent.name ?? '?'}，使用其人设参与对话。`
+                : `You'll play as ${members.find((m) => m.agentId === humanSeatId)?.agent.name ?? '?'} with their persona.`}
+            </div>
+          )}
         </Field>
       </div>
 
