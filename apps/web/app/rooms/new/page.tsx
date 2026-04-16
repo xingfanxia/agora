@@ -177,8 +177,8 @@ function NewRoomPage() {
         <Link
           href="/teams"
           style={{
-            background: 'var(--accent)',
-            color: '#08090a',
+            background: 'var(--accent-strong)',
+            color: '#ffffff',
             padding: '10px 18px',
             borderRadius: 'var(--radius-card)',
             fontSize: 14,
@@ -502,8 +502,8 @@ function NewRoomPage() {
           onClick={start}
           disabled={!modeValid || saving}
           style={{
-            background: modeValid && !saving ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
-            color: modeValid && !saving ? '#08090a' : 'var(--muted)',
+            background: modeValid && !saving ? 'var(--accent-strong)' : 'rgba(255,255,255,0.04)',
+            color: modeValid && !saving ? '#ffffff' : 'var(--muted)',
             border: 'none',
             padding: '10px 24px',
             borderRadius: 'var(--radius-card)',

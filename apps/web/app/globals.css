@@ -20,9 +20,11 @@
   --muted-strong: #62666d;         /* Timestamps, disabled */
 
   /* Brand — Agora Mint (the only chromatic color outside game views) */
-  --accent: #22c493;               /* Primary CTA, brand */
-  --accent-hover: #3fe4b0;         /* Hover on accent */
-  --accent-bright: #2dd9a4;        /* Active nav, your-turn, human indicator */
+  --accent: #22c493;               /* Brand mint — borders, nav indicator, non-text accents */
+  --accent-strong: #0d9c6a;        /* Darker mint for primary button bgs — passes AA with #ffffff text (~4.6:1) */
+  --accent-strong-hover: #0f8f61;  /* Button hover */
+  --accent-hover: #3fe4b0;         /* Hover on text/icon accents */
+  --accent-bright: #2dd9a4;        /* Active nav text, your-turn, human indicator */
   --accent-ring: rgba(34, 196, 147, 0.3);
   --accent-soft: rgba(34, 196, 147, 0.15);
   --accent-tint: rgba(34, 196, 147, 0.08);

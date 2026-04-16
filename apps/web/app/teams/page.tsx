@@ -93,8 +93,8 @@ export default function TeamsListPage() {
         <Link
           href="/teams/new"
           style={{
-            background: 'var(--accent)',
-            color: '#08090a',
+            background: 'var(--accent-strong)',
+            color: '#ffffff',
             padding: '10px 18px',
             borderRadius: 'var(--radius-card)',
             fontSize: 14,

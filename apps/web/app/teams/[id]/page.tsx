@@ -131,8 +131,8 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
             <Link
               href={`/rooms/new?teamId=${team.id}`}
               style={{
-                background: 'var(--accent)',
-                color: '#08090a',
+                background: 'var(--accent-strong)',
+                color: '#ffffff',
                 padding: '8px 16px',
                 borderRadius: 'var(--radius-card)',
                 fontSize: 13,

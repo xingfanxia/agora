@@ -113,8 +113,8 @@ export default function Home() {
           <Link
             href="/teams"
             style={{
-              background: 'var(--accent)',
-              color: '#08090a',
+              background: 'var(--accent-strong)',
+              color: '#ffffff',
               padding: '10px 20px',
               borderRadius: 'var(--radius-card)',
               fontSize: 15,
@@ -358,8 +358,8 @@ function EmptyStrip({
           display: 'inline-block',
           padding: '8px 16px',
           borderRadius: 'var(--radius)',
-          background: 'var(--accent)',
-          color: '#08090a',
+          background: 'var(--accent-strong)',
+          color: '#ffffff',
           fontSize: 13,
           fontWeight: 590,
           letterSpacing: '-0.13px',

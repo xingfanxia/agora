@@ -142,8 +142,8 @@ export function AgentCard({
             }}
             disabled={disabled}
             style={{
-              background: disabled ? 'rgba(255,255,255,0.04)' : 'var(--accent)',
-              color: disabled ? 'var(--muted)' : '#08090a',
+              background: disabled ? 'rgba(255,255,255,0.04)' : 'var(--accent-strong)',
+              color: disabled ? 'var(--muted)' : '#ffffff',
               border: 'none',
               padding: '6px 14px',
               borderRadius: 'var(--radius)',

@@ -483,8 +483,8 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
               onClick={save}
               disabled={!canSave || saving}
               style={{
-                background: canSave && !saving ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
-                color: canSave && !saving ? '#08090a' : 'var(--muted)',
+                background: canSave && !saving ? 'var(--accent-strong)' : 'rgba(255,255,255,0.04)',
+                color: canSave && !saving ? '#ffffff' : 'var(--muted)',
                 border: 'none',
                 padding: '10px 20px',
                 borderRadius: 'var(--radius-card)',
