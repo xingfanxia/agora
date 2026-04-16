@@ -17,6 +17,8 @@ export interface OpenChatAgentConfig {
    */
   readonly systemPrompt: string
   readonly model: ModelConfig
+  /** If true, this agent is human-controlled. The runtime pauses on their turn. */
+  readonly isHuman?: boolean
 }
 
 export interface OpenChatConfig {

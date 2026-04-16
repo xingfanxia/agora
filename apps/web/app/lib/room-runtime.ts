@@ -70,6 +70,7 @@ const _createObjFn: (model: ModelConfig) => GenerateObjectFn = (m) =>
 export type AdvanceResult =
   | { kind: 'continue' }
   | { kind: 'complete'; result: 'village_wins' | 'werewolves_win' | null }
+  | { kind: 'waiting'; agentId: string }
   | { kind: 'error'; message: string }
 
 interface PlayerInput {
@@ -104,6 +105,10 @@ export async function advanceRoom(roomId: string): Promise<AdvanceResult> {
   }
   if (roomRow.status === 'error') {
     return { kind: 'error', message: roomRow.errorMessage ?? 'Room in error state' }
+  }
+  if (roomRow.status === 'waiting') {
+    const gs = roomRow.gameState as { waitingForHuman?: string } | null
+    return { kind: 'waiting', agentId: gs?.waitingForHuman ?? 'unknown' }
   }
 
   if (roomRow.modeId === 'werewolf') return advanceWerewolfRoom(roomRow)
@@ -216,6 +221,24 @@ async function advanceOpenChatRoom(
     return { kind: 'error', message: msg }
   }
 
+  // Human turn detected — pause the tick chain
+  if (turnResult.waitingForHuman) {
+    await flushRuntimePending(runtime)
+    await setCurrentPhase(roomId, turnResult.phase || 'discussion')
+    await setCurrentRound(roomId, turnResult.round)
+    await setGameState(roomId, {
+      topic,
+      turnsCompleted: messagesSoFar,
+      totalTurns,
+      leaderAgentId: leaderAgentId ?? null,
+      waitingForHuman: turnResult.waitingForHuman,
+      waitingSince: Date.now(),
+    })
+    await updateRoomStatus(roomId, 'waiting')
+    disposeRuntime(roomId)
+    return { kind: 'waiting', agentId: turnResult.waitingForHuman }
+  }
+
   // Checkpoint progress so /admin and /replay see it mid-run.
   await setCurrentPhase(roomId, turnResult.phase || 'discussion')
   await setCurrentRound(roomId, turnResult.round)
@@ -267,6 +290,7 @@ function toOpenChatAgentConfig(
       temperature,
       maxTokens,
     },
+    isHuman: info.isHuman ?? false,
   }
 }
 

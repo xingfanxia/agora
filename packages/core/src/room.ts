@@ -9,6 +9,15 @@ import { ChannelManager } from './channel.js'
 import { EventBus } from './events.js'
 import type { Announcement, StateMachineFlow } from './state-machine.js'
 
+/** Result of a single iteration — may signal human pause */
+export interface IterationResult {
+  readonly isComplete: boolean
+  readonly lastRound: number
+  readonly lastPhase: string | null
+  /** Set when the next speaker is human and the runtime should pause */
+  readonly waitingForHuman?: string
+}
+
 /**
  * Room orchestrates a multi-agent session:
  *  1. Holds agents, flow controller, channels, and event bus
@@ -48,7 +57,7 @@ export class Room {
         name: agent.config.name,
         persona: agent.config.persona,
         model: agent.config.model,
-        isHuman: false,
+        isHuman: agent.config.isHuman ?? false,
       },
     })
   }
@@ -111,6 +120,7 @@ export class Room {
     phaseChanged: boolean
     phase: string
     round: number
+    waitingForHuman?: string
   }> {
     let lastRound = options.startingRound ?? 0
     let lastPhase: string | null = options.startingPhase ?? null
@@ -120,6 +130,17 @@ export class Room {
       const result = await this.runOneIteration(flow, lastRound, lastPhase)
       lastRound = result.lastRound
       lastPhase = result.lastPhase
+
+      // Human agent detected — pause before their turn
+      if (result.waitingForHuman) {
+        return {
+          gameCompleted: false,
+          phaseChanged: prevPhase !== null && lastPhase !== prevPhase,
+          phase: lastPhase ?? '',
+          round: lastRound,
+          waitingForHuman: result.waitingForHuman,
+        }
+      }
 
       if (result.isComplete) {
         return {
@@ -159,7 +180,7 @@ export class Room {
   async runOneTurn(
     flow: FlowController,
     options: { startingPhase?: string | null; startingRound?: number } = {},
-  ): Promise<{ completed: boolean; phase: string; round: number }> {
+  ): Promise<{ completed: boolean; phase: string; round: number; waitingForHuman?: string }> {
     const result = await this.runOneIteration(
       flow,
       options.startingRound ?? 0,
@@ -169,6 +190,7 @@ export class Room {
       completed: result.isComplete,
       phase: result.lastPhase ?? '',
       round: result.lastRound,
+      waitingForHuman: result.waitingForHuman,
     }
   }
 
@@ -180,7 +202,7 @@ export class Room {
     flow: FlowController,
     lastRound: number,
     lastPhase: string | null,
-  ): Promise<{ isComplete: boolean; lastRound: number; lastPhase: string | null }> {
+  ): Promise<IterationResult> {
     // Drain any pending announcements (from StateMachineFlow phase transitions)
     this.drainAnnouncements(flow)
 
@@ -221,6 +243,16 @@ export class Room {
     for (const speakerId of tick.nextSpeakers) {
       const agent = this.agents.get(speakerId)
       if (!agent) continue
+
+      // Human agent detection — pause BEFORE calling reply()
+      if (agent.config.isHuman) {
+        this.eventBus.emit({
+          type: 'agent:thinking',
+          roomId: this.config.id,
+          agentId: speakerId,
+        })
+        return { isComplete: false, lastRound, lastPhase, waitingForHuman: speakerId }
+      }
 
       // Signal thinking
       this.eventBus.emit({

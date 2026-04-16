@@ -45,6 +45,8 @@ export interface AgentInfo {
   systemPrompt?: string
   style?: Record<string, unknown>
   avatarSeed?: string
+  /** Phase 4.5c — true if this seat is human-controlled */
+  isHuman?: boolean
 }
 
 // ── Create ──────────────────────────────────────────────────

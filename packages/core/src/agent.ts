@@ -24,6 +24,8 @@ export interface AgentConfig {
   readonly persona: PersonaConfig
   readonly model: ModelConfig
   readonly systemPrompt?: string
+  /** True for human-controlled agents. The runtime pauses before their turn. */
+  readonly isHuman?: boolean
 }
 
 /** Chat message in LLM-compatible format */
@@ -185,6 +187,54 @@ export class AIAgent implements Agent {
         modelId,
       },
     }
+  }
+
+  observe(message: Message): void {
+    this.history.push(message)
+  }
+
+  getHistory(): readonly Message[] {
+    return this.history
+  }
+}
+
+// ── Human Agent ────────────────────────────────────────────
+
+/**
+ * Sentinel error thrown when the runtime encounters a human agent's turn.
+ * The caller catches this to pause the tick chain and wait for human input.
+ *
+ * NOT a real error — it's a control flow signal. The runtime converts it
+ * into a `{ waitingForHuman: agentId }` return value.
+ */
+export class WaitingForHumanError extends Error {
+  readonly agentId: string
+  constructor(agentId: string) {
+    super(`Waiting for human input from agent ${agentId}`)
+    this.name = 'WaitingForHumanError'
+    this.agentId = agentId
+  }
+}
+
+/**
+ * Human-controlled agent. `reply()` throws WaitingForHumanError,
+ * signaling the runtime to pause and wait for external input.
+ *
+ * The human's actual message is inserted via the human-input API
+ * endpoint and replayed on rehydration, same as AI messages.
+ */
+export class HumanAgent implements Agent {
+  readonly id: string
+  readonly config: AgentConfig
+  private readonly history: Message[] = []
+
+  constructor(config: Omit<AgentConfig, 'isHuman'>) {
+    this.id = config.id
+    this.config = { ...config, isHuman: true }
+  }
+
+  async reply(_context: ReplyContext): Promise<Message> {
+    throw new WaitingForHumanError(this.id)
   }
 
   observe(message: Message): void {

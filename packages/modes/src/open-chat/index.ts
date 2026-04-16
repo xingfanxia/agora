@@ -10,6 +10,7 @@
 
 import {
   AIAgent,
+  HumanAgent,
   EventBus,
   Room,
   RoundRobinFlow,
@@ -61,17 +62,28 @@ export function createOpenChat(
   )
 
   for (const agentCfg of ordered) {
-    const agent = new AIAgent(
-      {
+    if (agentCfg.isHuman) {
+      const agent = new HumanAgent({
         id: agentCfg.id,
         name: agentCfg.name,
         persona: { name: agentCfg.name, description: agentCfg.persona },
         model: agentCfg.model,
         systemPrompt: agentCfg.systemPrompt,
-      },
-      createGenFn(agentCfg.model),
-    )
-    room.addAgent(agent)
+      })
+      room.addAgent(agent)
+    } else {
+      const agent = new AIAgent(
+        {
+          id: agentCfg.id,
+          name: agentCfg.name,
+          persona: { name: agentCfg.name, description: agentCfg.persona },
+          model: agentCfg.model,
+          systemPrompt: agentCfg.systemPrompt,
+        },
+        createGenFn(agentCfg.model),
+      )
+      room.addAgent(agent)
+    }
   }
 
   const flow = new RoundRobinFlow({ rounds })

@@ -4,7 +4,7 @@
 
 export { EventBus } from './events.js'
 
-export { AIAgent } from './agent.js'
+export { AIAgent, HumanAgent, WaitingForHumanError } from './agent.js'
 export type {
   Agent,
   AgentConfig,
@@ -33,6 +33,7 @@ export type {
 export { Channel, ChannelManager } from './channel.js'
 
 export { Room } from './room.js'
+export type { IterationResult } from './room.js'
 
 export { TokenAccountant, formatSummary } from './token-accountant.js'
 export type {
