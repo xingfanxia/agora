@@ -41,42 +41,73 @@ export type GenerateObjectFn = (
 // ── Usage extraction ─────────────────────────────────────────
 
 /**
- * Shape-flexible extraction — covers both v4 (promptTokens/completionTokens)
- * and any future renames. Provider-specific fields (prompt caching, reasoning)
- * come from `providerMetadata`.
+ * Shape-flexible extraction — tolerates AI SDK v4 through v6.
+ *
+ * Key field migrations across versions:
+ *   v4 usage:             promptTokens, completionTokens
+ *   v5+ usage:            inputTokens, outputTokens
+ *   v6 usage (top-level): cachedInputTokens, inputTokenDetails.{cacheReadTokens, cacheWriteTokens}
+ *
+ * Anthropic providerMetadata shape differs too:
+ *   v4:     meta.anthropic.cacheReadInputTokens, meta.anthropic.cacheCreationInputTokens
+ *   v6:     meta.anthropic.usage.cache_read_input_tokens (nested snake_case),
+ *           meta.anthropic.cacheCreationInputTokens (still flat for back-compat)
+ *
+ * OpenAI reasoning tokens: meta.openai.reasoningTokens (v4+).
  */
 function extractUsage(result: {
   usage?: Record<string, unknown>
   providerMetadata?: Record<string, unknown>
 }): TokenUsage {
-  const usage = (result.usage ?? {}) as Record<string, number | undefined>
+  const usage = (result.usage ?? {}) as Record<string, unknown>
   const meta = (result.providerMetadata ?? {}) as Record<string, unknown>
 
-  const anthropic = (meta['anthropic'] ?? {}) as Record<string, number | undefined>
-  const openai = (meta['openai'] ?? {}) as Record<string, number | undefined>
+  const anthropic = (meta['anthropic'] ?? {}) as Record<string, unknown>
+  const anthropicUsage = (anthropic['usage'] ?? {}) as Record<string, unknown>
+  const openai = (meta['openai'] ?? {}) as Record<string, unknown>
+
+  const inputTokenDetails = (usage['inputTokenDetails'] ?? {}) as Record<string, unknown>
+
+  const num = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined
 
   const inputTokens =
-    usage['promptTokens'] ?? usage['inputTokens'] ?? usage['prompt_tokens'] ?? 0
+    num(usage['promptTokens']) ?? num(usage['inputTokens']) ?? num(usage['prompt_tokens']) ?? 0
   const outputTokens =
-    usage['completionTokens'] ??
-    usage['outputTokens'] ??
-    usage['completion_tokens'] ??
+    num(usage['completionTokens']) ??
+    num(usage['outputTokens']) ??
+    num(usage['completion_tokens']) ??
     0
-  const cachedInputTokens = Number(anthropic['cacheReadInputTokens'] ?? 0)
-  const cacheCreationTokens = Number(anthropic['cacheCreationInputTokens'] ?? 0)
-  const reasoningTokens = Number(
-    openai['reasoningTokens'] ?? usage['reasoningTokens'] ?? 0,
-  )
+
+  // Cache reads: v6 puts them on `usage.cachedInputTokens` (top-level), also in
+  // `usage.inputTokenDetails.cacheReadTokens`. v4 had them on `meta.anthropic.cacheReadInputTokens`.
+  const cachedInputTokens =
+    num(usage['cachedInputTokens']) ??
+    num(inputTokenDetails['cacheReadTokens']) ??
+    num(anthropicUsage['cache_read_input_tokens']) ??
+    num(anthropic['cacheReadInputTokens']) ??
+    0
+
+  // Cache creations: v6 exposes on flat camelCase + nested snake_case + inputTokenDetails.
+  const cacheCreationTokens =
+    num(anthropic['cacheCreationInputTokens']) ??
+    num(inputTokenDetails['cacheWriteTokens']) ??
+    num(anthropicUsage['cache_creation_input_tokens']) ??
+    0
+
+  const reasoningTokens =
+    num(usage['reasoningTokens']) ?? num(openai['reasoningTokens']) ?? 0
+
   const totalTokens =
-    usage['totalTokens'] ?? usage['total_tokens'] ?? inputTokens + outputTokens
+    num(usage['totalTokens']) ?? num(usage['total_tokens']) ?? inputTokens + outputTokens
 
   return {
-    inputTokens: Number(inputTokens),
-    outputTokens: Number(outputTokens),
+    inputTokens,
+    outputTokens,
     cachedInputTokens,
     cacheCreationTokens,
     reasoningTokens,
-    totalTokens: Number(totalTokens),
+    totalTokens,
   }
 }
 

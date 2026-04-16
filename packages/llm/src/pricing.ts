@@ -31,6 +31,12 @@ type LiteLLMRegistry = Record<string, LiteLLMEntry>
 // Only covers default models so tracking stays usable if the
 // LiteLLM fetch fails. Update when model lineup changes.
 const FALLBACK_PRICING: Record<string, Omit<ModelPricing, 'provider' | 'modelId'>> = {
+  'claude-opus-4-7': {
+    inputPricePerMillion: 15,
+    outputPricePerMillion: 75,
+    cachedInputPricePerMillion: 1.5,
+    cacheCreationPricePerMillion: 18.75,
+  },
   'claude-opus-4-6': {
     inputPricePerMillion: 15,
     outputPricePerMillion: 75,
@@ -42,6 +48,12 @@ const FALLBACK_PRICING: Record<string, Omit<ModelPricing, 'provider' | 'modelId'
     outputPricePerMillion: 15,
     cachedInputPricePerMillion: 0.3,
     cacheCreationPricePerMillion: 3.75,
+  },
+  'claude-haiku-4-5-20251001': {
+    inputPricePerMillion: 1,
+    outputPricePerMillion: 5,
+    cachedInputPricePerMillion: 0.1,
+    cacheCreationPricePerMillion: 1.25,
   },
   'gpt-5.4': {
     inputPricePerMillion: 5,
