@@ -43,6 +43,13 @@
       "when": 1776260000000,
       "tag": "0005_retarget_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776420000000,
+      "tag": "0006_retarget_anthropic_opus",
+      "breakpoints": true
     }
   ]
 }

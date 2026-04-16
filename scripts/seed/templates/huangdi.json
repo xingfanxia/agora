@@ -11,7 +11,7 @@
       "name": "中书令",
       "avatarSeed": "huangdi-zhongshuling",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.8,
         "maxTokens": 1024,
@@ -24,7 +24,7 @@
       "name": "门下侍中",
       "avatarSeed": "huangdi-shizhong",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.6,
         "maxTokens": 1024,
@@ -37,7 +37,7 @@
       "name": "尚书令",
       "avatarSeed": "huangdi-shangshuling",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.6,
         "maxTokens": 1024,
@@ -63,7 +63,7 @@
       "name": "户部",
       "avatarSeed": "huangdi-hubu",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.5,
         "maxTokens": 1024,
@@ -89,7 +89,7 @@
       "name": "兵部",
       "avatarSeed": "huangdi-bingbu",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 1024,
@@ -102,7 +102,7 @@
       "name": "刑部",
       "avatarSeed": "huangdi-xingbu",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.6,
         "maxTokens": 1024,

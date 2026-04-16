@@ -11,7 +11,7 @@
       "name": "CFO (首席财务官)",
       "avatarSeed": "investment-cfo",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 1024,
@@ -24,7 +24,7 @@
       "name": "Quant (量化研究员)",
       "avatarSeed": "investment-quant",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.5,
         "maxTokens": 1024,
@@ -37,7 +37,7 @@
       "name": "Risk (风控)",
       "avatarSeed": "investment-risk",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.6,
         "maxTokens": 1024,
@@ -63,7 +63,7 @@
       "name": "Macro (宏观策略师)",
       "avatarSeed": "investment-macro",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 1024,

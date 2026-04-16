@@ -11,7 +11,7 @@
       "name": "林溪",
       "avatarSeed": "werewolf-linxi",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 768,
@@ -37,7 +37,7 @@
       "name": "苏婉",
       "avatarSeed": "werewolf-su_wan",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.8,
         "maxTokens": 768,
@@ -50,7 +50,7 @@
       "name": "程昱",
       "avatarSeed": "werewolf-chengyu",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.5,
         "maxTokens": 768,
@@ -89,7 +89,7 @@
       "name": "周默",
       "avatarSeed": "werewolf-zhou_mo",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.6,
         "maxTokens": 768,
@@ -102,7 +102,7 @@
       "name": "林月",
       "avatarSeed": "werewolf-lin_yue",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.85,
         "maxTokens": 768,
@@ -115,7 +115,7 @@
       "name": "顾君",
       "avatarSeed": "werewolf-gu_jun",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 768,

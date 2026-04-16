@@ -11,7 +11,7 @@
       "name": "乐观派",
       "avatarSeed": "debate-optimist",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.9,
         "maxTokens": 1024,
@@ -37,7 +37,7 @@
       "name": "务实派",
       "avatarSeed": "debate-pragmatist",
       "modelProvider": "anthropic",
-      "modelId": "claude-sonnet-4-6",
+      "modelId": "claude-opus-4-7",
       "style": {
         "temperature": 0.7,
         "maxTokens": 1024,
