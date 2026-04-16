@@ -22,11 +22,13 @@ into multiple teams, start a room in any mode, and watch the team work
 - **狼人杀** — 9-player standard game with authored playstyle personas.
 
 **Modes shipped**:
-- **Open chat** — free-form round-robin discussion, optional leader
+- **Open chat** — free-form round-robin discussion, optional leader, ✨ **human play**
 - **Roundtable** — structured N-round debate, 2-8 agents
-- **Werewolf (狼人杀)** — 6-12 agents, Chinese rules, togglable Guard / Idiot / Sheriff / Last Words
+- **Werewolf (狼人杀)** — 6-12 agents, Chinese rules, togglable Guard / Idiot / Sheriff / Last Words, ✨ **human play (7 role-specific panels)**
 
-**On the roadmap**: Script Kill (剧本杀), TRPG (跑团), human-in-the-loop play (Phase 4.5b-d).
+**Human play (Phase 4.5c)**: Any seat in a team can be toggled to "You" on `/rooms/new`. During the game, a bottom bar shows your turn panel — free text for discussions, target picker for votes, role-specific UIs for witch/seer/guard/hunter/sheriff. Single-human MVP; multi-human + Supabase Auth in 4.5d.
+
+**On the roadmap**: Script Kill (剧本杀), TRPG (跑团), multi-human rooms (Phase 4.5d).
 
 ## Architecture
 
@@ -79,16 +81,24 @@ npx tsx scripts/token-report.ts                              # LiteLLM pricing s
 
 ## Status
 
+**Phase 4.5c (Human Play) shipped** on 2026-04-16 — HumanAgent runtime pause,
+seat tokens in localStorage, /api/rooms/[id]/human-input endpoint,
+"Play as" dropdown on /rooms/new, HumanPlayBar with phase-based panel
+dispatch, 7 werewolf turn panels (Vote/Witch/Seer/Guard/Hunter/
+Sheriff election+transfer). Supports open-chat + werewolf. Roundtable
+deferred (still on legacy path).
+
 **Phase 6 (Team Platform) shipped** on 2026-04-15 — five primitives
 (agents · teams · rooms · modes · templates), four ship-with templates,
 open-chat mode, durable runtime (Phase 4.5a), Accio-inspired UI.
 
 **Earlier phases**: 1 (Roundtable) · 2 (Werewolf core + advanced rules) ·
 3 (Frontend + observability + token tracking) · 4 (Persistence + replay) ·
-4.5a (AI-only durable runtime) · 5 (UI + i18n + chat-default).
+4.5a (AI-only durable runtime) · 4.5b (Human-play UX spec V3) ·
+5 (UI + i18n + chat-default).
 
-**Next on deck**: Phase 4.5b-d (human-in-the-loop play), Phase 7 (TRPG),
-Phase 8 (Script Kill).
+**Next on deck**: Phase 4.5d (multi-human + Supabase Auth),
+Phase 7 (TRPG), Phase 8 (Script Kill).
 
 See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md),
 [docs/implementation-plan.md](docs/implementation-plan.md), and
