@@ -36,38 +36,35 @@ export default function Home() {
     let cancelled = false
     async function load() {
       try {
+        // Phase 4.5c perf: templates+members in ONE request (previously 5).
+        // CDN-cached for 5min; 'mine' scopes are not cacheable (per-user).
         const [tplRes, mineTeamRes, mineAgentRes] = await Promise.all([
-          fetch('/api/teams?scope=templates'),
+          fetch('/api/teams?scope=templates&include=members'),
           fetch('/api/teams?scope=mine'),
           fetch('/api/agents?scope=mine'),
         ])
-        const tpl = (await tplRes.json()) as { teams: TeamRow[] }
+        type TemplateWithMembers = {
+          team: TeamRow
+          members: Array<{ agentId: string; agent: { avatarSeed: string; name: string } }>
+        }
+        const tpl = (await tplRes.json()) as { teams: TemplateWithMembers[] }
         const mineTeam = (await mineTeamRes.json()) as { teams: TeamRow[] }
         const mineAgent = (await mineAgentRes.json()) as { agents: AgentRow[] }
         if (cancelled) return
-        setTemplates(tpl.teams ?? [])
+        const templateRows = (tpl.teams ?? []).map((t) => t.team)
+        setTemplates(templateRows)
         setMyTeams((mineTeam.teams ?? []).slice(0, 6))
         setMyAgents((mineAgent.agents ?? []).slice(0, 6))
 
-        // Fetch members for the 4 templates (small, fine to serial-fanout)
-        const memberResults = await Promise.all(
-          (tpl.teams ?? []).map((row) =>
-            fetch(`/api/teams/${row.id}/members`)
-              .then((r) => (r.ok ? r.json() : { members: [] }))
-              .then((d: { members: Array<{ agentId: string; agent: { avatarSeed: string; name: string } }> }) => ({
-                teamId: row.id,
-                members: d.members.map((m) => ({
-                  agentId: m.agentId,
-                  avatarSeed: m.agent.avatarSeed,
-                  name: m.agent.name,
-                })),
-              }))
-              .catch(() => ({ teamId: row.id, members: [] as TeamCardMember[] })),
-          ),
-        )
-        if (cancelled) return
+        // Members already arrived with the templates — no fan-out needed.
         const next: Record<string, TeamCardMember[]> = {}
-        for (const r of memberResults) next[r.teamId] = r.members
+        for (const row of tpl.teams ?? []) {
+          next[row.team.id] = row.members.map((m) => ({
+            agentId: m.agentId,
+            avatarSeed: m.agent.avatarSeed,
+            name: m.agent.name,
+          }))
+        }
         setTemplatesMembers(next)
       } finally {
         if (!cancelled) setLoading(false)

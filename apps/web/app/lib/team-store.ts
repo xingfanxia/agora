@@ -19,7 +19,7 @@ import {
   type TeamMemberRow,
   type TeamRow,
 } from '@agora/db'
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 
 const db = new Proxy({} as ReturnType<typeof getDb>, {
   get(_target, prop) {
@@ -100,6 +100,43 @@ export async function listTeams(filter: ListTeamsFilter = {}): Promise<TeamRow[]
   const query = db.select().from(teams)
   const scoped = where ? query.where(where) : query
   return scoped.orderBy(desc(teams.createdAt)).limit(limit)
+}
+
+/**
+ * Single-round-trip fetch of teams + their members. Replaces the
+ * N+1 pattern of `listTeams()` + `getMembers(id)` × N with one JOIN
+ * query. Used by landing page to load template cards fast.
+ */
+export async function listTeamsWithMembers(
+  filter: ListTeamsFilter = {},
+): Promise<TeamWithMembers[]> {
+  const teamRows = await listTeams(filter)
+  if (teamRows.length === 0) return []
+  const teamIds = teamRows.map((t) => t.id)
+
+  // Single JOIN query: all members for all teams in one shot.
+  const memberRows = await db
+    .select({
+      teamId: teamMembers.teamId,
+      agentId: teamMembers.agentId,
+      position: teamMembers.position,
+      createdAt: teamMembers.createdAt,
+      agent: agents,
+    })
+    .from(teamMembers)
+    .innerJoin(agents, eq(agents.id, teamMembers.agentId))
+    .where(inArray(teamMembers.teamId, teamIds))
+    .orderBy(asc(teamMembers.position))
+
+  // Group members by teamId
+  const byTeamId = new Map<string, (TeamMemberRow & { agent: AgentRow })[]>()
+  for (const row of memberRows) {
+    const list = byTeamId.get(row.teamId) ?? []
+    list.push(row)
+    byTeamId.set(row.teamId, list)
+  }
+
+  return teamRows.map((team) => ({ team, members: byTeamId.get(team.id) ?? [] }))
 }
 
 export async function updateTeam(

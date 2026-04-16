@@ -5,10 +5,17 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { getAgents } from '../../lib/agent-store'
-import { createTeam, listTeams, setMembers } from '../../lib/team-store'
+import { createTeam, listTeams, listTeamsWithMembers, setMembers } from '../../lib/team-store'
 import { getUserIdFromRequest } from '../../lib/user-id'
 
 export const dynamic = 'force-dynamic'
+
+// CDN cache for template responses. Templates are ~static (change only
+// via migrations), so a 5-min edge cache saves ~6s per landing-page
+// cold load. User-specific scopes ('mine') are never cached.
+const TEMPLATE_CACHE_HEADERS = {
+  'Cache-Control': 's-maxage=300, stale-while-revalidate=3600',
+}
 
 const VALID_MODES = ['open-chat', 'roundtable', 'werewolf'] as const
 
@@ -26,6 +33,7 @@ interface CreateTeamBody {
 export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const scope = url.searchParams.get('scope')
+  const include = url.searchParams.get('include') // 'members' for one-shot
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '200', 10), 1), 500)
   const uid = getUserIdFromRequest(request)
 
@@ -35,8 +43,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ teams: rows })
   }
   if (scope === 'templates') {
+    // One-shot fetch with members — eliminates N+1 pattern on landing page
+    if (include === 'members') {
+      const rows = await listTeamsWithMembers({ isTemplate: true, limit })
+      return NextResponse.json({ teams: rows }, { headers: TEMPLATE_CACHE_HEADERS })
+    }
     const rows = await listTeams({ isTemplate: true, limit })
-    return NextResponse.json({ teams: rows })
+    return NextResponse.json({ teams: rows }, { headers: TEMPLATE_CACHE_HEADERS })
   }
 
   const [templates, mine] = await Promise.all([
