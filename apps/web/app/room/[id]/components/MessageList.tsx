@@ -249,7 +249,7 @@ function SystemMessage({ message }: { message: MessageData }) {
         fontStyle: 'italic',
       }}
     >
-      <span style={{ fontWeight: 600, color: 'var(--foreground)', fontStyle: 'normal' }}>
+      <span style={{ fontWeight: 590, color: 'var(--foreground)', fontStyle: 'normal' }}>
         {message.senderName}:
       </span>{' '}
       {message.content}

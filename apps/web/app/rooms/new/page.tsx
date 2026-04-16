@@ -170,7 +170,7 @@ function NewRoomPage() {
   if (!teamId) {
     return (
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '40px 24px', textAlign: 'center' }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>{t('pickTeamTitle')}</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 590, marginBottom: 12 }}>{t('pickTeamTitle')}</h1>
         <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 24 }}>
           {t('pickTeamSubtitle')}
         </p>
@@ -182,7 +182,7 @@ function NewRoomPage() {
             padding: '10px 18px',
             borderRadius: 999,
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: 590,
             textDecoration: 'none',
           }}
         >
@@ -237,7 +237,7 @@ function NewRoomPage() {
         ← {t('backToTeam')}
       </Link>
 
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{t('title')}</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 590, marginBottom: 4 }}>{t('title')}</h1>
       <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 24 }}>{t('subtitle')}</p>
 
       {/* Team preview */}
@@ -253,7 +253,7 @@ function NewRoomPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <AgentAvatarPixel seed={team.avatarSeed} size={40} />
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{team.name}</div>
+            <div style={{ fontSize: 15, fontWeight: 590 }}>{team.name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>
               {members.length} 位成员
               {team.leaderAgentId && <> · 队长 {members.find((m) => m.agentId === team.leaderAgentId)?.agent.name}</>}
@@ -283,7 +283,7 @@ function NewRoomPage() {
       </section>
 
       {/* Mode picker */}
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>{t('pickMode')}</h2>
+      <h2 style={{ fontSize: 16, fontWeight: 590, marginBottom: 12 }}>{t('pickMode')}</h2>
       <div
         style={{
           display: 'grid',
@@ -303,7 +303,7 @@ function NewRoomPage() {
               style={{
                 padding: 16,
                 borderRadius: 'var(--radius)',
-                background: selected ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+                background: selected ? 'var(--accent-tint)' : 'var(--surface)',
                 border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                 textAlign: 'left',
                 cursor: c.allowed ? 'pointer' : 'not-allowed',
@@ -314,7 +314,7 @@ function NewRoomPage() {
               <div
                 style={{
                   fontSize: 14,
-                  fontWeight: 600,
+                  fontWeight: 590,
                   color: selected ? 'var(--accent)' : 'var(--foreground)',
                   marginBottom: 4,
                 }}
@@ -343,7 +343,7 @@ function NewRoomPage() {
       </div>
 
       {/* Mode-specific config */}
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>{t('configTitle')}</h2>
+      <h2 style={{ fontSize: 16, fontWeight: 590, marginBottom: 12 }}>{t('configTitle')}</h2>
       <div
         style={{
           padding: 16,
@@ -401,7 +401,7 @@ function NewRoomPage() {
                     style={{
                       padding: '6px 12px',
                       borderRadius: 999,
-                      background: advancedRules[rule] ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface-hover)',
+                      background: advancedRules[rule] ? 'var(--accent-tint)' : 'var(--surface-hover)',
                       border: `1px solid ${advancedRules[rule] ? 'var(--accent)' : 'var(--border)'}`,
                       color: advancedRules[rule] ? 'var(--accent)' : 'var(--foreground)',
                       fontSize: 13,
@@ -428,7 +428,7 @@ function NewRoomPage() {
                   padding: '8px 12px',
                   borderRadius: 'var(--radius-sm)',
                   border: `1px solid ${language === lang ? 'var(--accent)' : 'var(--border)'}`,
-                  background: language === lang ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+                  background: language === lang ? 'var(--accent-tint)' : 'var(--surface)',
                   color: language === lang ? 'var(--accent)' : 'var(--foreground)',
                   fontSize: 13,
                   cursor: 'pointer',
@@ -491,7 +491,7 @@ function NewRoomPage() {
             border: 'none',
             padding: '10px 20px',
             fontSize: 14,
-            fontWeight: 500,
+            fontWeight: 510,
             textDecoration: 'none',
           }}
         >
@@ -508,7 +508,7 @@ function NewRoomPage() {
             padding: '10px 24px',
             borderRadius: 999,
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: 590,
             cursor: modeValid && !saving ? 'pointer' : 'not-allowed',
             minWidth: 140,
           }}
@@ -523,7 +523,7 @@ function NewRoomPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)', marginBottom: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 510, color: 'var(--foreground)', marginBottom: 6 }}>
         {label}
       </div>
       {children}

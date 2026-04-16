@@ -191,7 +191,7 @@ export function ChatView({
             color: 'white',
             border: 'none',
             fontSize: 12,
-            fontWeight: 500,
+            fontWeight: 510,
             cursor: 'pointer',
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             zIndex: 10,
@@ -262,7 +262,7 @@ function MessageBlock({
             onClick={onAgentClick ? () => onAgentClick(msg.senderId) : undefined}
             style={{
               fontSize: 13,
-              fontWeight: 600,
+              fontWeight: 590,
               color: color.name,
               cursor: onAgentClick ? 'pointer' : 'default',
             }}

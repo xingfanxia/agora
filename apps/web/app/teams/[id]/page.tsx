@@ -119,7 +119,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
       >
         <AgentAvatarPixel seed={team.avatarSeed} size={96} />
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{team.name}</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 590, marginBottom: 4 }}>{team.name}</h1>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
             {members.length} 位成员
             {team.defaultModeId && <> · 默认：{MODE_LABEL[team.defaultModeId] ?? team.defaultModeId}</>}
@@ -136,7 +136,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
                 padding: '8px 16px',
                 borderRadius: 999,
                 fontSize: 13,
-                fontWeight: 600,
+                fontWeight: 590,
                 textDecoration: 'none',
               }}
             >
@@ -151,7 +151,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
                   background: 'var(--surface-hover)',
                   color: 'var(--foreground)',
                   fontSize: 13,
-                  fontWeight: 500,
+                  fontWeight: 510,
                   textDecoration: 'none',
                   border: '1px solid var(--border)',
                 }}
@@ -168,7 +168,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
           <div
             style={{
               fontSize: 12,
-              fontWeight: 500,
+              fontWeight: 510,
               color: 'var(--muted)',
               letterSpacing: 0.4,
               textTransform: 'uppercase',
@@ -187,7 +187,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
         <div
           style={{
             fontSize: 12,
-            fontWeight: 500,
+            fontWeight: 510,
             color: 'var(--muted)',
             letterSpacing: 0.4,
             textTransform: 'uppercase',
@@ -210,14 +210,14 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
                   padding: 12,
                   borderRadius: 'var(--radius-sm)',
                   background: 'var(--surface)',
-                  border: `1px solid ${isLeader ? 'rgba(34, 196, 147, 0.3)' : 'var(--border)'}`,
+                  border: `1px solid ${isLeader ? 'var(--accent-ring)' : 'var(--border)'}`,
                   textDecoration: 'none',
                   color: 'inherit',
                 }}
               >
                 <AgentAvatarPixel seed={m.agent.avatarSeed} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500 }}>
+                  <div style={{ fontSize: 14, fontWeight: 510 }}>
                     {m.agent.name}
                     {isLeader && (
                       <span style={{ marginLeft: 8, color: 'var(--accent)', fontSize: 12 }}>

@@ -87,7 +87,7 @@ export function SettingsMenu() {
           background: 'var(--surface)',
           color: 'var(--foreground)',
           fontSize: '0.75rem',
-          fontWeight: 500,
+          fontWeight: 510,
           cursor: 'pointer',
           opacity: isPending ? 0.6 : 1,
           transition: 'opacity 0.15s',
@@ -161,7 +161,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <div
         style={{
           fontSize: '0.65rem',
-          fontWeight: 600,
+          fontWeight: 590,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           color: 'var(--muted)',
@@ -196,7 +196,7 @@ function Pill({
         background: active ? 'var(--accent)' : 'transparent',
         color: active ? '#fff' : 'var(--foreground)',
         fontSize: '0.7rem',
-        fontWeight: 500,
+        fontWeight: 510,
         cursor: 'pointer',
         transition: 'all 0.15s',
       }}

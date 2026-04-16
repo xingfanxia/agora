@@ -205,7 +205,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>
+      <h1 style={{ fontSize: 28, fontWeight: 590, marginBottom: 4 }}>
         {isEdit ? t('edit.title') : t('new.title')}
       </h1>
       <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 24 }}>
@@ -234,7 +234,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
           <div
             style={{
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 590,
               textTransform: 'uppercase',
               letterSpacing: 0.4,
               color: 'var(--muted)',
@@ -288,7 +288,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
               >
                 <AgentAvatarPixel seed={a.avatarSeed} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontWeight: 510, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {a.name}
                     {a.isTemplate && (
                       <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 6 }}>模板</span>
@@ -296,7 +296,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{a.modelId}</div>
                 </div>
-                <span style={{ color: 'var(--accent)', fontSize: 16, fontWeight: 700 }}>+</span>
+                <span style={{ color: 'var(--accent)', fontSize: 16, fontWeight: 590 }}>+</span>
               </button>
             ))}
           </div>
@@ -317,7 +317,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
           <div
             style={{
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 590,
               textTransform: 'uppercase',
               letterSpacing: 0.4,
               color: 'var(--muted)',
@@ -346,8 +346,8 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                     gap: 8,
                     padding: '6px 8px',
                     borderRadius: 'var(--radius-sm)',
-                    background: isLeader ? 'rgba(34, 196, 147, 0.06)' : 'transparent',
-                    border: `1px solid ${isLeader ? 'rgba(34, 196, 147, 0.3)' : 'transparent'}`,
+                    background: isLeader ? 'var(--accent-tint)' : 'transparent',
+                    border: `1px solid ${isLeader ? 'var(--accent-ring)' : 'transparent'}`,
                   }}
                 >
                   <button
@@ -368,7 +368,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                   </button>
                   <AgentAvatarPixel seed={a.avatarSeed} size={28} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 13, fontWeight: 510, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {a.name}
                     </div>
                   </div>
@@ -435,7 +435,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                       borderRadius: 'var(--radius-sm)',
                       border: `1px solid ${form.defaultModeId === m.id ? 'var(--accent)' : 'var(--border)'}`,
                       background:
-                        form.defaultModeId === m.id ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+                        form.defaultModeId === m.id ? 'var(--accent-tint)' : 'var(--surface)',
                       color: form.defaultModeId === m.id ? 'var(--accent)' : 'var(--foreground)',
                       fontSize: 13,
                       cursor: 'pointer',
@@ -472,7 +472,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                 border: 'none',
                 padding: '8px 16px',
                 fontSize: 14,
-                fontWeight: 500,
+                fontWeight: 510,
                 cursor: 'pointer',
               }}
             >
@@ -489,7 +489,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
                 padding: '10px 20px',
                 borderRadius: 999,
                 fontSize: 14,
-                fontWeight: 600,
+                fontWeight: 590,
                 cursor: canSave && !saving ? 'pointer' : 'not-allowed',
                 minWidth: 120,
               }}
@@ -506,7 +506,7 @@ export function TeamComposer({ initial, onCancelHref }: TeamComposerProps) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--foreground)', marginBottom: 4 }}>
+      <div style={{ fontSize: 12, fontWeight: 510, color: 'var(--foreground)', marginBottom: 4 }}>
         {label}
       </div>
       {children}

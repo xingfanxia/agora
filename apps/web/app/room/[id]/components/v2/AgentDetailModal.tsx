@@ -139,14 +139,14 @@ export function AgentDetailModal({
           <div style={{ flex: 1 }}>
             <h2
               id="agora-agent-modal-title"
-              style={{ margin: 0, fontSize: 20, fontWeight: 600, color: color.name }}
+              style={{ margin: 0, fontSize: 20, fontWeight: 590, color: color.name }}
             >
               {agent.name}
               {agent.role && (
                 <span
                   style={{
                     fontSize: 13,
-                    fontWeight: 500,
+                    fontWeight: 510,
                     marginLeft: 10,
                     padding: '2px 8px',
                     borderRadius: 8,
@@ -230,7 +230,7 @@ function TabBtn({
         borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
         color: active ? 'var(--foreground)' : 'var(--muted)',
         fontSize: 13,
-        fontWeight: active ? 600 : 400,
+        fontWeight: active ? 590 : 400,
         cursor: 'pointer',
       }}
     >
@@ -345,7 +345,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
           textTransform: 'uppercase',
           letterSpacing: 0.8,
           marginBottom: 8,
-          fontWeight: 600,
+          fontWeight: 590,
         }}
       >
         {label}
@@ -368,7 +368,7 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div
         style={{
           fontSize: 15,
-          fontWeight: 600,
+          fontWeight: 590,
           fontFamily: 'ui-monospace, monospace',
         }}
       >

@@ -92,7 +92,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 24 }}>
         <AgentAvatarPixel seed={agent.avatarSeed} size={96} />
         <div style={{ flex: 1 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>{agent.name}</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 590, marginBottom: 4 }}>{agent.name}</h1>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 12 }}>
             {agent.modelProvider} · {agent.modelId}
             {agent.isTemplate && (
@@ -109,7 +109,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
                 background: 'var(--surface-hover)',
                 color: 'var(--foreground)',
                 fontSize: 13,
-                fontWeight: 500,
+                fontWeight: 510,
                 textDecoration: 'none',
                 border: '1px solid var(--border)',
               }}
@@ -159,7 +159,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <div
         style={{
           fontSize: 12,
-          fontWeight: 500,
+          fontWeight: 510,
           color: 'var(--muted)',
           letterSpacing: 0.4,
           textTransform: 'uppercase',

@@ -149,7 +149,7 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           <h1
             style={{
               fontSize: '1.25rem',
-              fontWeight: 600,
+              fontWeight: 590,
               letterSpacing: '-0.02em',
               marginRight: 'auto',
             }}
@@ -328,7 +328,7 @@ function CompletedFooter({
         maxWidth: 640,
       }}
     >
-      <p style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+      <p style={{ fontSize: '1rem', fontWeight: 590, marginBottom: '0.5rem' }}>
         {t('debateComplete')}
       </p>
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
@@ -344,7 +344,7 @@ function CompletedFooter({
           background: 'var(--foreground)',
           color: 'var(--background)',
           fontSize: '0.875rem',
-          fontWeight: 500,
+          fontWeight: 510,
           textDecoration: 'none',
         }}
       >
@@ -368,7 +368,7 @@ function ErrorFooter({ error }: { error?: string }) {
         maxWidth: 640,
       }}
     >
-      <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.5rem' }}>
+      <p style={{ fontSize: '1rem', fontWeight: 590, color: 'var(--danger)', marginBottom: '0.5rem' }}>
         {t('debateError')}
       </p>
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
@@ -383,7 +383,7 @@ function ErrorFooter({ error }: { error?: string }) {
           borderRadius: 'var(--radius-sm)',
           border: '1px solid var(--border)',
           fontSize: '0.875rem',
-          fontWeight: 500,
+          fontWeight: 510,
           textDecoration: 'none',
         }}
       >

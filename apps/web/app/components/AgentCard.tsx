@@ -72,7 +72,7 @@ export function AgentCard({
               background: badge.color,
               color: 'white',
               fontSize: 10,
-              fontWeight: 700,
+              fontWeight: 590,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

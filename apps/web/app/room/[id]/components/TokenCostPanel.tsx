@@ -65,7 +65,7 @@ export function TokenCostPanel({ summary, agents, defaultExpanded = false }: Tok
           fontFamily: 'inherit',
         }}
       >
-        <span style={{ fontWeight: 600 }}>{fmtUSD(summary.totalCost)}</span>
+        <span style={{ fontWeight: 590 }}>{fmtUSD(summary.totalCost)}</span>
         <span style={{ color: 'var(--muted)' }}>·</span>
         <span style={{ color: 'var(--muted)' }}>
           {fmtTokens(summary.totalTokens)} tokens · {summary.callCount} calls
@@ -121,7 +121,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontSize: '0.65rem',
-        fontWeight: 600,
+        fontWeight: 590,
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
         color: 'var(--muted)',
@@ -151,9 +151,9 @@ function RowEntry({
         fontSize: '0.8rem',
       }}
     >
-      <span style={{ fontWeight: 500 }}>{label}</span>
+      <span style={{ fontWeight: 510 }}>{label}</span>
       <span style={{ color: 'var(--muted)', fontSize: '0.7rem', flex: 1 }}>{sublabel}</span>
-      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 500 }}>{value}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 510 }}>{value}</span>
     </div>
   )
 }

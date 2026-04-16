@@ -124,13 +124,13 @@ export default function CreateWerewolf() {
           {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('breadcrumb')}</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 510 }}>{t('breadcrumb')}</span>
       </div>
 
       <h1
         style={{
           fontSize: '2rem',
-          fontWeight: 700,
+          fontWeight: 590,
           letterSpacing: '-0.03em',
           marginBottom: '0.5rem',
         }}
@@ -162,7 +162,7 @@ export default function CreateWerewolf() {
                 background: playerCount === n ? 'var(--accent)' : 'var(--surface)',
                 color: playerCount === n ? '#ffffff' : 'var(--foreground)',
                 fontSize: '1rem',
-                fontWeight: 500,
+                fontWeight: 510,
                 cursor: 'pointer',
                 transition: 'all 0.15s',
               }}
@@ -189,7 +189,7 @@ export default function CreateWerewolf() {
                   background: active ? 'var(--accent)' : 'var(--surface)',
                   color: active ? '#ffffff' : 'var(--foreground)',
                   fontSize: '0.8rem',
-                  fontWeight: 500,
+                  fontWeight: 510,
                   cursor: 'pointer',
                   transition: 'all 0.15s',
                 }}
@@ -217,7 +217,7 @@ export default function CreateWerewolf() {
                 borderRadius: 'var(--radius-sm)',
               }}
             >
-              <span style={{ color: 'var(--muted)', fontSize: '0.75rem', fontWeight: 600, textAlign: 'center' }}>
+              <span style={{ color: 'var(--muted)', fontSize: '0.75rem', fontWeight: 590, textAlign: 'center' }}>
                 {i + 1}
               </span>
               <input
@@ -280,7 +280,7 @@ export default function CreateWerewolf() {
             width: '100%',
             padding: '0.875rem',
             fontSize: '1rem',
-            fontWeight: 600,
+            fontWeight: 590,
             border: 'none',
             borderRadius: 'var(--radius-sm)',
             background: isSubmitting ? 'var(--muted)' : 'var(--foreground)',
@@ -302,7 +302,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontSize: '0.8rem',
-        fontWeight: 600,
+        fontWeight: 590,
         textTransform: 'uppercase',
         letterSpacing: '0.05em',
         color: 'var(--muted)',

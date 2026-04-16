@@ -63,7 +63,7 @@ export default function AgentsListPage() {
         }}
       >
         <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4, color: 'var(--foreground)' }}>
+          <h1 style={{ fontSize: 28, fontWeight: 590, marginBottom: 4, color: 'var(--foreground)' }}>
             {t('title')}
           </h1>
           <p style={{ fontSize: 14, color: 'var(--muted)' }}>{t('subtitle')}</p>
@@ -76,7 +76,7 @@ export default function AgentsListPage() {
             padding: '10px 18px',
             borderRadius: 999,
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: 590,
             textDecoration: 'none',
           }}
         >
@@ -102,7 +102,7 @@ export default function AgentsListPage() {
               border: 'none',
               padding: '12px 16px',
               fontSize: 14,
-              fontWeight: 500,
+              fontWeight: 510,
               color: tab === k ? 'var(--foreground)' : 'var(--muted)',
               borderBottom: `2px solid ${tab === k ? 'var(--accent)' : 'transparent'}`,
               cursor: 'pointer',

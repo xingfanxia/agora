@@ -116,7 +116,7 @@ export default function ObservabilityPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 590, letterSpacing: '-0.02em' }}>
             {t('eventTimeline')}
           </h1>
           <span

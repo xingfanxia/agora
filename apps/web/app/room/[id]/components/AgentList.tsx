@@ -42,7 +42,7 @@ export function AgentList({ agents, thinkingAgentId, colorFor, renderExtra }: Ag
               border: `1px solid ${colors.border}`,
               background: colors.bg,
               fontSize: '0.75rem',
-              fontWeight: 500,
+              fontWeight: 510,
               color: colors.name,
               whiteSpace: 'nowrap',
               flexShrink: 0,

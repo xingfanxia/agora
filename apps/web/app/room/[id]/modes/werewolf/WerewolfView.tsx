@@ -208,7 +208,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
             flexWrap: 'wrap',
           }}
         >
-          <h1 style={{ fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 590, letterSpacing: '-0.02em' }}>
             {tRoom('werewolfMode')}
           </h1>
           <StatusPill status={status} />
@@ -250,7 +250,7 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
                 ? 'color-mix(in srgb, #22c55e 15%, transparent)'
                 : 'color-mix(in srgb, var(--danger) 15%, transparent)',
             border: `1px solid ${winResult === 'village_wins' ? '#22c55e' : 'var(--danger)'}`,
-            fontWeight: 700,
+            fontWeight: 590,
             fontSize: '1rem',
             maxWidth: 1280,
             margin: '1rem auto 0',

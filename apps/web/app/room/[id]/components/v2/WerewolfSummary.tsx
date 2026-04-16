@@ -85,7 +85,7 @@ export function WerewolfSummary({
       <div
         style={{
           fontSize: 12,
-          fontWeight: 600,
+          fontWeight: 590,
           textTransform: 'uppercase',
           letterSpacing: 0.6,
           color: 'var(--muted)',
@@ -174,11 +174,11 @@ function AgentRow({
         padding: '8px 10px',
         borderRadius: 'var(--radius-sm)',
         background: onWinningSide
-          ? 'rgba(34, 196, 147, 0.06)'
+          ? 'var(--accent-tint)'
           : eliminated
             ? 'var(--surface-hover)'
             : 'transparent',
-        border: `1px solid ${onWinningSide ? 'rgba(34, 196, 147, 0.25)' : 'var(--border)'}`,
+        border: `1px solid ${onWinningSide ? 'var(--accent-ring)' : 'var(--border)'}`,
         opacity: eliminated ? 0.7 : 1,
       }}
     >
@@ -187,7 +187,7 @@ function AgentRow({
         <div
           style={{
             fontSize: 13,
-            fontWeight: 500,
+            fontWeight: 510,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',

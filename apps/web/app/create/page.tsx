@@ -138,12 +138,12 @@ export default function CreateRoom() {
           {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('breadcrumb')}</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 510 }}>{t('breadcrumb')}</span>
       </div>
 
       <h1 style={{
         fontSize: '2rem',
-        fontWeight: 700,
+        fontWeight: 590,
         letterSpacing: '-0.03em',
         marginBottom: '2rem',
       }}>
@@ -158,7 +158,7 @@ export default function CreateRoom() {
             style={{
               display: 'block',
               fontSize: '0.8rem',
-              fontWeight: 600,
+              fontWeight: 590,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
               color: 'var(--muted)',
@@ -194,7 +194,7 @@ export default function CreateRoom() {
             style={{
               display: 'block',
               fontSize: '0.8rem',
-              fontWeight: 600,
+              fontWeight: 590,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
               color: 'var(--muted)',
@@ -221,7 +221,7 @@ export default function CreateRoom() {
                   background: rounds === n ? 'var(--accent)' : 'var(--surface)',
                   color: rounds === n ? '#ffffff' : 'var(--foreground)',
                   fontSize: '1rem',
-                  fontWeight: 500,
+                  fontWeight: 510,
                   transition: 'all 0.15s',
                 }}
               >
@@ -241,7 +241,7 @@ export default function CreateRoom() {
           }}>
             <label style={{
               fontSize: '0.8rem',
-              fontWeight: 600,
+              fontWeight: 590,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
               color: 'var(--muted)',
@@ -255,7 +255,7 @@ export default function CreateRoom() {
                 style={{
                   padding: '0.375rem 0.75rem',
                   fontSize: '0.8rem',
-                  fontWeight: 500,
+                  fontWeight: 510,
                   border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-sm)',
                   background: 'var(--surface)',
@@ -287,7 +287,7 @@ export default function CreateRoom() {
                 }}>
                   <span style={{
                     fontSize: '0.75rem',
-                    fontWeight: 600,
+                    fontWeight: 590,
                     color: 'var(--muted)',
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em',
@@ -397,7 +397,7 @@ export default function CreateRoom() {
             width: '100%',
             padding: '0.875rem',
             fontSize: '1rem',
-            fontWeight: 600,
+            fontWeight: 590,
             border: 'none',
             borderRadius: 'var(--radius-sm)',
             background: isSubmitting ? 'var(--muted)' : 'var(--foreground)',

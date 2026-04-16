@@ -98,7 +98,7 @@ export function PlaybackControls({ state, controls }: Props) {
           style={{
             padding: '0.375rem 0.875rem',
             fontSize: '0.8rem',
-            fontWeight: 600,
+            fontWeight: 590,
             borderRadius: 'var(--radius-sm)',
             border: 'none',
             background: 'var(--foreground)',
@@ -135,7 +135,7 @@ export function PlaybackControls({ state, controls }: Props) {
               style={{
                 padding: '0.25rem 0.5rem',
                 fontSize: '0.7rem',
-                fontWeight: state.speed === s ? 600 : 500,
+                fontWeight: state.speed === s ? 590 : 510,
                 borderRadius: '999px',
                 border: `1px solid ${state.speed === s ? 'var(--accent)' : 'var(--border)'}`,
                 background: state.speed === s ? 'var(--accent)' : 'transparent',

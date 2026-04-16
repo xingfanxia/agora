@@ -27,7 +27,7 @@ export function PhaseIndicator({ phase, labelMap, accent }: PhaseIndicatorProps)
         padding: '0.25rem 0.625rem',
         borderRadius: '999px',
         fontSize: '0.7rem',
-        fontWeight: 600,
+        fontWeight: 590,
         letterSpacing: '0.02em',
         textTransform: 'uppercase',
         background: accent ?? 'var(--surface)',

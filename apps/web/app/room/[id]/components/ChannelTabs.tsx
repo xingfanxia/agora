@@ -35,7 +35,7 @@ export function ChannelTabs({ channels, activeChannelId, onChange }: ChannelTabs
             style={{
               padding: '0.375rem 0.75rem',
               fontSize: '0.8rem',
-              fontWeight: active ? 600 : 500,
+              fontWeight: active ? 590 : 510,
               border: 'none',
               borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
               background: 'transparent',

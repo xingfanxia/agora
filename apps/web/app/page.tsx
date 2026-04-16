@@ -160,7 +160,7 @@ export default function Home() {
           action={
             <Link
               href="/teams"
-              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}
+              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 510 }}
             >
               {t('sections.seeAll')} →
             </Link>
@@ -212,7 +212,7 @@ export default function Home() {
           action={
             <Link
               href="/agents"
-              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 500 }}
+              style={{ color: 'var(--accent)', fontSize: 13, textDecoration: 'none', fontWeight: 510 }}
             >
               {t('sections.seeAll')} →
             </Link>
@@ -351,7 +351,7 @@ function EmptyStrip({
           background: 'var(--accent)',
           color: 'white',
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: 590,
           textDecoration: 'none',
         }}
       >

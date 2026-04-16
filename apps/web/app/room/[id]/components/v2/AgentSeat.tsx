@@ -113,7 +113,7 @@ export function AgentSeat({
         <span
           style={{
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: 590,
             color: color.name,
             fontFamily: 'system-ui, -apple-system, sans-serif',
             textAlign: 'center',

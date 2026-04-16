@@ -122,7 +122,7 @@ function FilterBar({
             style={{
               padding: '0.3rem 0.625rem',
               fontSize: '0.75rem',
-              fontWeight: 500,
+              fontWeight: 510,
               borderRadius: '999px',
               border: `1px solid ${filter === f.key ? 'var(--accent)' : 'var(--border)'}`,
               background: filter === f.key ? 'var(--accent)' : 'transparent',
@@ -239,7 +239,7 @@ function EventBody({
             type="message"
             label={
               <>
-                <span style={{ color: colors?.name, fontWeight: 600 }}>{senderName}</span>
+                <span style={{ color: colors?.name, fontWeight: 590 }}>{senderName}</span>
                 {channelId !== 'main' && (
                   <span style={{ color: 'var(--muted)', fontSize: '0.7rem', marginLeft: '0.375rem' }}>
                     #{channelId}
@@ -279,7 +279,7 @@ function EventBody({
           type="phase"
           label={
             <>
-              <span style={{ fontWeight: 600 }}>{phase}</span>
+              <span style={{ fontWeight: 590 }}>{phase}</span>
               {previousPhase && (
                 <span style={{ color: 'var(--muted)', fontSize: '0.7rem', marginLeft: '0.375rem' }}>
                   from {String(previousPhase)}
@@ -303,7 +303,7 @@ function EventBody({
           type="thinking"
           label={
             <>
-              <span style={{ color: colors.name, fontWeight: 600 }}>{name}</span>
+              <span style={{ color: colors.name, fontWeight: 590 }}>{name}</span>
               <span style={{ color: 'var(--muted)' }}> {tCommon('isThinking')}</span>
             </>
           }
@@ -318,7 +318,7 @@ function EventBody({
           type="done"
           label={
             <>
-              <span style={{ fontWeight: 600 }}>{name}</span>
+              <span style={{ fontWeight: 590 }}>{name}</span>
               <span style={{ color: 'var(--muted)' }}> {tCommon('finished')}</span>
             </>
           }
@@ -338,7 +338,7 @@ function EventBody({
           type="token"
           label={
             <>
-              <span style={{ color: colors.name, fontWeight: 600 }}>{name}</span>
+              <span style={{ color: colors.name, fontWeight: 590 }}>{name}</span>
               <span style={{ color: 'var(--muted)' }}>
                 {' '}
                 {modelLabel(modelId)} · {fmtTokens(totalTokens)} tokens · {fmtUSD(cost)}

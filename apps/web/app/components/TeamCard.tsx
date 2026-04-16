@@ -191,7 +191,7 @@ function AvatarStack({
             border: '2px solid var(--background)',
             color: 'var(--muted)',
             fontSize: 11,
-            fontWeight: 600,
+            fontWeight: 590,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

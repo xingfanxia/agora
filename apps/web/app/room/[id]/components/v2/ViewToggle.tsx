@@ -57,7 +57,7 @@ function Tab({
       style={{
         padding: '6px 14px',
         fontSize: 12,
-        fontWeight: active ? 600 : 400,
+        fontWeight: active ? 590 : 400,
         background: active ? 'var(--surface)' : 'transparent',
         color: active ? 'var(--foreground)' : 'var(--muted)',
         border: 'none',

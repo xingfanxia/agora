@@ -31,7 +31,7 @@ export function PhaseBadge({ phase, label, round, accent }: PhaseBadgeProps) {
         border: `1.5px solid ${accentColor}`,
         color: accentColor,
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 590,
         fontFamily: 'system-ui, -apple-system, sans-serif',
         boxShadow: 'var(--shadow-sm)',
         letterSpacing: 0.2,

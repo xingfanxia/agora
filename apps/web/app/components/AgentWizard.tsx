@@ -21,6 +21,8 @@ interface ModelOption {
 }
 
 const MODEL_OPTIONS: readonly ModelOption[] = [
+  { provider: 'anthropic', modelId: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
+  { provider: 'anthropic', modelId: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   { provider: 'anthropic', modelId: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
   { provider: 'anthropic', modelId: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { provider: 'openai', modelId: 'gpt-5.4', label: 'GPT-5.4' },
@@ -159,7 +161,7 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
           style={{
             fontSize: 12,
             color: 'var(--muted)',
-            fontWeight: 500,
+            fontWeight: 510,
             letterSpacing: 0.4,
             textTransform: 'uppercase',
             marginBottom: 8,
@@ -194,7 +196,7 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
       <h1
         style={{
           fontSize: 28,
-          fontWeight: 700,
+          fontWeight: 590,
           marginBottom: 8,
           color: 'var(--foreground)',
         }}
@@ -275,7 +277,7 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
             border: 'none',
             padding: '8px 16px',
             fontSize: 14,
-            fontWeight: 500,
+            fontWeight: 510,
             cursor: 'pointer',
           }}
         >
@@ -292,7 +294,7 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
             padding: '10px 20px',
             borderRadius: 999,
             fontSize: 14,
-            fontWeight: 600,
+            fontWeight: 590,
             cursor: stepValid && !saving ? 'pointer' : 'not-allowed',
             minWidth: 140,
           }}
@@ -346,7 +348,7 @@ function Step1Identity({
               border: 'none',
               fontSize: 12,
               cursor: 'pointer',
-              fontWeight: 500,
+              fontWeight: 510,
             }}
           >
             {t('wizard.step1.regenAvatar')}
@@ -435,10 +437,10 @@ function Step2Model({
                 padding: '10px 16px',
                 borderRadius: 'var(--radius-sm)',
                 border: `1px solid ${form.language === lang ? 'var(--accent)' : 'var(--border)'}`,
-                background: form.language === lang ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+                background: form.language === lang ? 'var(--accent-tint)' : 'var(--surface)',
                 color: form.language === lang ? 'var(--accent)' : 'var(--foreground)',
                 fontSize: 14,
-                fontWeight: 500,
+                fontWeight: 510,
                 cursor: 'pointer',
               }}
             >
@@ -486,10 +488,10 @@ function Step3Prompt({
             padding: '10px 16px',
             borderRadius: 'var(--radius-sm)',
             border: `1px solid ${!usingCustom ? 'var(--accent)' : 'var(--border)'}`,
-            background: !usingCustom ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+            background: !usingCustom ? 'var(--accent-tint)' : 'var(--surface)',
             color: !usingCustom ? 'var(--accent)' : 'var(--foreground)',
             fontSize: 14,
-            fontWeight: 500,
+            fontWeight: 510,
             cursor: 'pointer',
           }}
         >
@@ -503,10 +505,10 @@ function Step3Prompt({
             padding: '10px 16px',
             borderRadius: 'var(--radius-sm)',
             border: `1px solid ${usingCustom ? 'var(--accent)' : 'var(--border)'}`,
-            background: usingCustom ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+            background: usingCustom ? 'var(--accent-tint)' : 'var(--surface)',
             color: usingCustom ? 'var(--accent)' : 'var(--foreground)',
             fontSize: 14,
-            fontWeight: 500,
+            fontWeight: 510,
             cursor: 'pointer',
           }}
         >
@@ -575,7 +577,7 @@ function Step4Review({
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <AgentAvatarPixel seed={form.avatarSeed} size={64} />
         <div>
-          <div style={{ fontSize: 20, fontWeight: 600 }}>{form.name}</div>
+          <div style={{ fontSize: 20, fontWeight: 590 }}>{form.name}</div>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
             {form.modelProvider} · {form.modelId}
           </div>
@@ -603,7 +605,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
         style={{
           fontSize: 12,
           color: 'var(--muted)',
-          fontWeight: 500,
+          fontWeight: 510,
           letterSpacing: 0.4,
           textTransform: 'uppercase',
           marginBottom: 4,
@@ -632,7 +634,7 @@ function Label({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontSize: 13,
-        fontWeight: 500,
+        fontWeight: 510,
         color: 'var(--foreground)',
         marginBottom: 6,
       }}

@@ -93,7 +93,7 @@ export function AgentAvatar({
       <span
         style={{
           fontSize: Math.round(size * 0.45),
-          fontWeight: 600,
+          fontWeight: 590,
           color: color.name,
           lineHeight: 1,
           fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -114,7 +114,7 @@ export function AgentAvatar({
             background: badge.bg,
             color: badge.fg,
             fontSize: Math.round(badgeSize * 0.55),
-            fontWeight: 700,
+            fontWeight: 590,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

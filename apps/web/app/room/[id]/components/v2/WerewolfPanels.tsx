@@ -92,7 +92,7 @@ function AgentGrid({ agents, selected, onSelect, disabledIds }: AgentGridProps) 
               borderRadius: 6,
               border: `2px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
               background: isSelected
-                ? 'rgba(34, 196, 147, 0.12)'
+                ? 'var(--accent-soft)'
                 : isDisabled
                   ? 'var(--surface-hover)'
                   : 'var(--surface)',
@@ -100,7 +100,7 @@ function AgentGrid({ agents, selected, onSelect, disabledIds }: AgentGridProps) 
               cursor: isDisabled ? 'not-allowed' : 'pointer',
               opacity: isDisabled ? 0.5 : 1,
               fontSize: 12,
-              fontWeight: 500,
+              fontWeight: 510,
               textAlign: 'center',
               transition: 'all 150ms ease',
             }}
@@ -151,7 +151,7 @@ function ActionButton({
         padding: '6px 16px',
         borderRadius: 999,
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 590,
         cursor: disabled ? 'not-allowed' : 'pointer',
       }}
     >
@@ -192,7 +192,7 @@ export function VotePanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {isWolfVote ? '🗳️ Choose tonight\'s target' : '🗳️ Vote to eliminate'}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
@@ -204,7 +204,7 @@ export function VotePanel({
             marginBottom: 8,
             borderRadius: 6,
             border: `1px solid ${target === 'skip' ? 'var(--accent)' : 'var(--border)'}`,
-            background: target === 'skip' ? 'rgba(34, 196, 147, 0.08)' : 'var(--surface)',
+            background: target === 'skip' ? 'var(--accent-tint)' : 'var(--surface)',
             color: target === 'skip' ? 'var(--accent)' : 'var(--muted)',
             fontSize: 12,
             cursor: 'pointer',
@@ -277,7 +277,7 @@ export function WitchPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🧪 '}Witch&apos;s Turn
       </div>
       {killedAgent ? (
@@ -369,7 +369,7 @@ export function SeerPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🔮 '}Seer&apos;s Turn — Check one player
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
@@ -415,7 +415,7 @@ export function GuardPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🛡️ '}Guard&apos;s Turn — Protect one player tonight
       </div>
       {lastProtected && (
@@ -460,7 +460,7 @@ export function HunterPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🏹 '}You&apos;ve been eliminated! Take someone with you?
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
@@ -503,7 +503,7 @@ export function SheriffElectionPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🎖️ '}Sheriff Election — Vote for a candidate
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
@@ -540,7 +540,7 @@ export function SheriffTransferPanel({
 
   return (
     <div>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
         {'🎖️ '}Transfer your Sheriff badge
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />

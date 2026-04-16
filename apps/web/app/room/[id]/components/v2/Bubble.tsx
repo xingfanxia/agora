@@ -161,7 +161,7 @@ function ClampedText({ text, hasClickAffordance }: { text: string; hasClickAffor
             opacity: 0.55,
             letterSpacing: 0.5,
             textTransform: 'uppercase',
-            fontWeight: 600,
+            fontWeight: 590,
           }}
         >
           click to read full →

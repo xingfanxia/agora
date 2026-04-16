@@ -71,7 +71,7 @@ export function DebateSummary({
       <div
         style={{
           fontSize: 12,
-          fontWeight: 600,
+          fontWeight: 590,
           textTransform: 'uppercase',
           letterSpacing: 0.6,
           color: 'var(--muted)',
@@ -85,7 +85,7 @@ export function DebateSummary({
         <div
           style={{
             fontSize: 15,
-            fontWeight: 500,
+            fontWeight: 510,
             color: 'var(--foreground)',
             marginBottom: 16,
             lineHeight: 1.5,
@@ -108,7 +108,7 @@ export function DebateSummary({
               <AgentAvatar name={a.name} color={colorFor(a.id)} size={24} provider={a.provider} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>{a.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 510 }}>{a.name}</span>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {count} {count === 1 ? 'message' : 'messages'}
                   </span>

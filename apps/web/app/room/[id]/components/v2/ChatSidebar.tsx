@@ -93,7 +93,7 @@ export function ChatSidebar({
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{title}</span>
+        <span style={{ fontSize: 14, fontWeight: 590, flex: 1 }}>{title}</span>
         {channels && onChannelFilterChange && (
           <select
             value={channelFilter ?? ''}
@@ -179,7 +179,7 @@ export function ChatSidebar({
             color: 'white',
             border: 'none',
             fontSize: 12,
-            fontWeight: 500,
+            fontWeight: 510,
             cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
             zIndex: 10,
@@ -249,7 +249,7 @@ function Row({
           <span
             style={{
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 590,
               color: color.name,
               overflow: 'hidden',
               textOverflow: 'ellipsis',

@@ -68,13 +68,13 @@ export default function ReplaysPage() {
           {tCommon('appName')}
         </Link>
         <span style={{ color: 'var(--border)' }}>/</span>
-        <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{t('title')}</span>
+        <span style={{ fontSize: '0.875rem', fontWeight: 510 }}>{t('title')}</span>
       </div>
 
       <h1
         style={{
           fontSize: '2rem',
-          fontWeight: 700,
+          fontWeight: 590,
           letterSpacing: '-0.03em',
           marginBottom: '0.5rem',
         }}
@@ -94,7 +94,7 @@ export default function ReplaysPage() {
             style={{
               padding: '0.375rem 0.875rem',
               fontSize: '0.8rem',
-              fontWeight: 500,
+              fontWeight: 510,
               borderRadius: '999px',
               border: `1px solid ${filter === m ? 'var(--accent)' : 'var(--border)'}`,
               background: filter === m ? 'var(--accent)' : 'transparent',
@@ -172,7 +172,7 @@ export default function ReplaysPage() {
                     background: badgeAccent,
                     color: '#fff',
                     fontSize: '0.7rem',
-                    fontWeight: 600,
+                    fontWeight: 590,
                     letterSpacing: '0.03em',
                     textTransform: 'uppercase',
                     flexShrink: 0,
@@ -183,7 +183,7 @@ export default function ReplaysPage() {
                 <h3
                   style={{
                     fontSize: '1rem',
-                    fontWeight: 600,
+                    fontWeight: 590,
                     lineHeight: 1.3,
                     flex: 1,
                     minWidth: 0,
@@ -205,7 +205,7 @@ export default function ReplaysPage() {
                           ? 'color-mix(in srgb, #22c55e 15%, transparent)'
                           : 'color-mix(in srgb, var(--danger) 15%, transparent)',
                       color: winResult === 'village_wins' ? '#15803d' : 'var(--danger)',
-                      fontWeight: 600,
+                      fontWeight: 590,
                     }}
                   >
                     {winResult === 'village_wins' ? t('badges.village') : t('badges.wolves')}
@@ -226,7 +226,7 @@ export default function ReplaysPage() {
                 <span>{t('messages', { count: room.messageCount })}</span>
                 <span>{t('calls', { count: room.callCount })}</span>
                 <span>{t('tokens', { count: fmtTokens(room.totalTokens) })}</span>
-                <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
+                <span style={{ fontWeight: 590, color: 'var(--foreground)' }}>
                   {fmtUSD(room.totalCost)}
                 </span>
                 {durationSec != null && <span>{t('duration', { seconds: durationSec })}</span>}
