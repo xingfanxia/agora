@@ -329,6 +329,11 @@ async function advanceWerewolfRoom(
     ? buildLanguageDirective(cfg.language)
     : undefined
 
+  // Build a name → isHuman lookup from the agents snapshot
+  const humanNames = new Set(
+    agentInfos.filter((a) => a.isHuman).map((a) => a.name),
+  )
+
   const agentConfigs: WerewolfAgentConfig[] = cfg.players.map((p) => ({
     name: p.name,
     model: {
@@ -337,6 +342,7 @@ async function advanceWerewolfRoom(
       temperature: 0.7,
       maxTokens: 1500,
     },
+    isHuman: humanNames.has(p.name),
   }))
 
   const result = createWerewolf(
@@ -416,9 +422,22 @@ async function advanceWerewolfRoom(
 
   // Final gameState snapshot in case the last wireGameStateSnapshots
   // listener didn't fire (e.g. game ended without phase:changed).
-  const finalState = {
+  const finalState: Record<string, unknown> = {
     ...(result.flow.getGameState().custom as Record<string, unknown>),
   }
+
+  // Human turn detected — pause the tick chain
+  if (tickResult.waitingForHuman) {
+    finalState['waitingForHuman'] = tickResult.waitingForHuman
+    finalState['waitingSince'] = Date.now()
+    await setGameState(roomId, finalState)
+    await setCurrentPhase(roomId, tickResult.phase || '')
+    await setCurrentRound(roomId, tickResult.round)
+    await updateRoomStatus(roomId, 'waiting')
+    disposeRuntime(roomId)
+    return { kind: 'waiting', agentId: tickResult.waitingForHuman }
+  }
+
   await setGameState(roomId, finalState)
 
   if (tickResult.gameCompleted) {

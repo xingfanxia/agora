@@ -4,6 +4,7 @@
 
 import {
   AIAgent,
+  HumanAgent,
   EventBus,
   Room,
   StateMachineFlow,
@@ -26,6 +27,8 @@ import type { WerewolfRole, WerewolfGameState, WerewolfAdvancedRules } from './t
 export interface WerewolfAgentConfig {
   readonly name: string
   readonly model: ModelConfig
+  /** If true, this seat is human-controlled. Runtime pauses on their turn. */
+  readonly isHuman?: boolean
 }
 
 export interface WerewolfConfig {
@@ -142,17 +145,27 @@ export function createWerewolf(
     agentIds.push(agentId)
     agentNames[agentId] = agentConfig.name
 
-    const agent = new AIAgent(
-      {
+    if (agentConfig.isHuman) {
+      const humanAgent = new HumanAgent({
         id: agentId,
         name: agentConfig.name,
-        persona: { name: agentConfig.name, description: 'A player in the werewolf game' },
+        persona: { name: agentConfig.name, description: 'A human player in the werewolf game' },
         model: agentConfig.model,
-      },
-      createGenFn(agentConfig.model),
-      createObjFn(agentConfig.model),
-    )
-    room.addAgent(agent)
+      })
+      room.addAgent(humanAgent)
+    } else {
+      const agent = new AIAgent(
+        {
+          id: agentId,
+          name: agentConfig.name,
+          persona: { name: agentConfig.name, description: 'A player in the werewolf game' },
+          model: agentConfig.model,
+        },
+        createGenFn(agentConfig.model),
+        createObjFn(agentConfig.model),
+      )
+      room.addAgent(agent)
+    }
   }
 
   // Assign roles (seeded if seed provided, otherwise Math.random)
@@ -178,17 +191,27 @@ export function createWerewolf(
     const agentConfig = config.agents.find((a) => a.name === name)!
 
     room.removeAgent(agentId)
-    room.addAgent(new AIAgent(
-      {
+    if (agentConfig.isHuman) {
+      room.addAgent(new HumanAgent({
         id: agentId,
         name,
-        persona: { name, description: `${role} in the werewolf game` },
+        persona: { name, description: `${role} in the werewolf game (human player)` },
         model: agentConfig.model,
         systemPrompt,
-      },
-      createGenFn(agentConfig.model),
-      createObjFn(agentConfig.model),
-    ))
+      }))
+    } else {
+      room.addAgent(new AIAgent(
+        {
+          id: agentId,
+          name,
+          persona: { name, description: `${role} in the werewolf game` },
+          model: agentConfig.model,
+          systemPrompt,
+        },
+        createGenFn(agentConfig.model),
+        createObjFn(agentConfig.model),
+      ))
+    }
   }
 
   // Set up channels

@@ -45,6 +45,7 @@ interface CreateWerewolfBody {
   teamId?: string
   advancedRules?: WerewolfAdvancedRules
   language?: 'en' | 'zh'
+  humanSeatId?: string | null
 }
 
 function resolveProvider(modelId: string): LLMProvider {
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
     // Phase 6 — resolve `players` list either from explicit body or a team.
     let players: PlayerInput[]
     let teamId: string | null = null
+    let humanPlayerName: string | null = null
     if (body.teamId) {
       const team = await getTeam(body.teamId)
       if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
@@ -78,6 +80,11 @@ export async function POST(request: NextRequest) {
         model: m.agent.modelId,
         provider: m.agent.modelProvider as LLMProvider,
       }))
+      // Phase 4.5c — map humanSeatId (agentId) → agent name
+      if (body.humanSeatId) {
+        const humanMember = members.find((m) => m.agentId === body.humanSeatId)
+        if (humanMember) humanPlayerName = humanMember.agent.name
+      }
     } else {
       if (!body.players || body.players.length < 6 || body.players.length > 12) {
         return NextResponse.json(
@@ -101,6 +108,7 @@ export async function POST(request: NextRequest) {
         temperature: 0.7,
         maxTokens: 1500,
       } satisfies ModelConfig,
+      isHuman: humanPlayerName !== null && p.name === humanPlayerName,
     }))
 
     // Generate roomId upfront — it seeds deterministic agentId + role
@@ -129,6 +137,7 @@ export async function POST(request: NextRequest) {
         name: agent.config.name,
         model: agent.config.model.modelId,
         provider: agent.config.model.provider,
+        isHuman: humanPlayerName !== null && agent.config.name === humanPlayerName,
       }
     })
 

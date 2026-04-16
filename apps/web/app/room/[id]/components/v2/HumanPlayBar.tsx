@@ -14,6 +14,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PollResponse, AgentData } from '../theme'
+import {
+  VotePanel,
+  WitchPanel,
+  SeerPanel,
+  GuardPanel,
+  HunterPanel,
+  SheriffElectionPanel,
+  SheriffTransferPanel,
+} from './WerewolfPanels'
 
 export interface HumanPlayBarProps {
   roomId: string
@@ -61,13 +70,16 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
   const submit = useCallback(async () => {
     if (!text.trim() || sending) return
     setSending(true)
+    // Map phase → turnId for free-text turns
+    const phase = snapshot.currentPhase ?? ''
+    const turnId = phase === 'wolfDiscuss' ? 'wolf-speak' : phase === 'lastWords' ? 'last-words' : 'speak'
     try {
       const res = await fetch(`/api/rooms/${roomId}/human-input`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agentId: humanAgentId,
-          turnId: 'speak',
+          turnId,
           payload: { content: text.trim() },
         }),
       })
@@ -83,7 +95,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     } finally {
       setSending(false)
     }
-  }, [text, sending, roomId, humanAgentId])
+  }, [text, sending, roomId, humanAgentId, snapshot.currentPhase])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -132,8 +144,30 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     )
   }
 
-  // ── My turn — show input panel ───────────────────────────
+  // ── My turn — dispatch to werewolf panel if applicable ───
   if (isMyTurn) {
+    const phase = snapshot.currentPhase ?? ''
+    const werewolfPanel = renderWerewolfPanel(phase, roomId, humanAgentId, snapshot, () => setHasActed(true))
+    if (werewolfPanel) {
+      return (
+        <div style={barContainerStyle}>
+          <div
+            style={{
+              ...barStyle,
+              padding: '12px 16px',
+              borderLeft: '3px solid var(--accent)',
+              animation: 'slideUp 300ms ease-out',
+            }}
+          >
+            {werewolfPanel}
+          </div>
+        </div>
+      )
+    }
+
+    // Default: free-text speech panel (open-chat, roundtable, day/wolf discuss)
+    const placeholder = getPlaceholder(phase)
+    const heading = getHeading(phase)
     return (
       <div style={barContainerStyle}>
         <div
@@ -145,7 +179,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-            {'💬 '}Your turn to speak
+            {heading}
           </div>
           {myAgent && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
@@ -157,7 +191,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Share your thoughts..."
+            placeholder={placeholder}
             rows={3}
             style={{
               width: '100%',
@@ -240,4 +274,66 @@ const barStyle: React.CSSProperties = {
   background: 'var(--surface)',
   borderTop: '1px solid var(--border)',
   borderRadius: '8px 8px 0 0',
+}
+
+// ── Phase → panel dispatch ─────────────────────────────────
+
+function renderWerewolfPanel(
+  phase: string,
+  roomId: string,
+  humanAgentId: string,
+  snapshot: Omit<PollResponse, 'messages'>,
+  onSubmitted: () => void,
+): React.ReactNode | null {
+  const common = { roomId, humanAgentId, snapshot, onSubmitted }
+  switch (phase) {
+    case 'wolfVote':
+      return <VotePanel {...common} turnId="wolf-vote" />
+    case 'dayVote':
+      return <VotePanel {...common} turnId="day-vote" />
+    case 'witchAction':
+      return <WitchPanel {...common} />
+    case 'seerCheck':
+      return <SeerPanel {...common} />
+    case 'guardProtect':
+      return <GuardPanel {...common} />
+    case 'hunterShoot':
+      return <HunterPanel {...common} />
+    case 'sheriffElection':
+      return <SheriffElectionPanel {...common} />
+    case 'sheriffTransfer':
+      return <SheriffTransferPanel {...common} />
+    // Free-text phases use the default textarea path
+    case 'wolfDiscuss':
+    case 'dayDiscuss':
+    case 'lastWords':
+    default:
+      return null
+  }
+}
+
+function getPlaceholder(phase: string): string {
+  switch (phase) {
+    case 'wolfDiscuss':
+      return 'Discuss who to eliminate...'
+    case 'dayDiscuss':
+      return 'Defend yourself or accuse...'
+    case 'lastWords':
+      return 'Any final words?'
+    default:
+      return 'Share your thoughts...'
+  }
+}
+
+function getHeading(phase: string): string {
+  switch (phase) {
+    case 'wolfDiscuss':
+      return '🐺 Wolf discussion'
+    case 'dayDiscuss':
+      return '☀️ Day discussion'
+    case 'lastWords':
+      return '💀 Your last words'
+    default:
+      return '💬 Your turn to speak'
+  }
 }
