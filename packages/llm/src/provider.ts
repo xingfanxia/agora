@@ -21,8 +21,10 @@ const PROVIDER_DISPLAY: Record<LLMProvider, string> = {
 }
 
 const MODEL_DISPLAY: Record<string, string> = {
+  'claude-opus-4-7': 'Claude Opus 4.7',
   'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+  'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
   'gpt-5.4': 'GPT-5.4',
   'gemini-3.1-pro-preview': 'Gemini 3.1 Pro',
   'deepseek-chat': 'DeepSeek Chat',
@@ -40,24 +42,54 @@ function resolveApiKey(config: ModelConfig): string {
   return key
 }
 
+/**
+ * Vercel AI SDK v4 hardcodes `temperature: 0` into the request body when the
+ * caller omits it (see ai@4.3.19/dist/index.js line 1697). Claude Opus 4.7
+ * and other reasoning-first models reject ANY temperature field with
+ * "`temperature` is deprecated for this model". We intercept the outgoing
+ * JSON body and strip `temperature` before it reaches Anthropic.
+ *
+ * Applied uniformly across providers — temperature-free requests are safe for
+ * every current model and prevent the SDK's hardcoded default from leaking
+ * onto the wire.
+ */
+const stripTemperatureFetch: typeof fetch = async (input, init) => {
+  if (init?.body && typeof init.body === 'string') {
+    try {
+      const parsed = JSON.parse(init.body) as Record<string, unknown>
+      if ('temperature' in parsed) {
+        delete parsed.temperature
+        init = { ...init, body: JSON.stringify(parsed) }
+      }
+    } catch {
+      // Non-JSON body (streaming multipart etc.) — leave untouched.
+    }
+  }
+  return fetch(input, init)
+}
+
 export function createModel(config: ModelConfig): LanguageModel {
   const apiKey = resolveApiKey(config)
 
   switch (config.provider) {
     case 'anthropic': {
-      const provider = createAnthropic({ apiKey })
+      const provider = createAnthropic({ apiKey, fetch: stripTemperatureFetch })
       return provider(config.modelId)
     }
     case 'openai': {
-      const provider = createOpenAI({ apiKey })
+      const provider = createOpenAI({ apiKey, fetch: stripTemperatureFetch })
       return provider(config.modelId)
     }
     case 'google': {
-      const provider = createGoogleGenerativeAI({ apiKey })
+      const provider = createGoogleGenerativeAI({ apiKey, fetch: stripTemperatureFetch })
       return provider(config.modelId)
     }
     case 'deepseek': {
-      const provider = createOpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' })
+      const provider = createOpenAI({
+        apiKey,
+        baseURL: 'https://api.deepseek.com/v1',
+        fetch: stripTemperatureFetch,
+      })
       return provider(config.modelId)
     }
     case 'azure-openai': {
@@ -65,12 +97,12 @@ export function createModel(config: ModelConfig): LanguageModel {
       if (!endpoint) {
         throw new Error('Missing AZURE_OPENAI_ENDPOINT environment variable')
       }
-      // Azure OpenAI uses deployment names, not model IDs
       const deployment = process.env['AZURE_OPENAI_DEPLOYMENT'] ?? config.modelId
       const provider = createOpenAI({
         apiKey,
         baseURL: endpoint.replace(/\/$/, ''),
         headers: { 'api-key': apiKey },
+        fetch: stripTemperatureFetch,
       })
       return provider(deployment)
     }
