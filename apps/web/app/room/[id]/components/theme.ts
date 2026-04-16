@@ -110,7 +110,7 @@ export interface TokenSummary {
 
 export interface PollResponse {
   messages: MessageData[]
-  status: 'running' | 'completed' | 'error'
+  status: 'running' | 'waiting' | 'completed' | 'error'
   currentRound: number
   totalRounds: number
   currentPhase: string | null

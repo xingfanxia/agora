@@ -1,11 +1,13 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { useRoomPoll } from './hooks/useRoomPoll'
 import { RoundtableView } from './modes/roundtable/RoundtableView'
 import { WerewolfView } from './modes/werewolf/WerewolfView'
+import { HumanPlayBar } from './components/v2/HumanPlayBar'
 
 /**
  * Thin dispatcher — polls the room, then renders the mode-specific
@@ -16,6 +18,18 @@ export default function RoomPage() {
   const params = useParams()
   const roomId = params.id as string
   const { messages, snapshot, errorMsg, loading } = useRoomPoll(roomId)
+
+  // Read human seat token from localStorage (Phase 4.5c)
+  const [humanAgentId, setHumanAgentId] = useState<string | null>(null)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`agora-seat-${roomId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { agentId?: string }
+        if (parsed.agentId) setHumanAgentId(parsed.agentId)
+      }
+    } catch { /* localStorage unavailable or corrupt */ }
+  }, [roomId])
 
   if (loading) {
     return <LoadingScreen />
@@ -29,16 +43,32 @@ export default function RoomPage() {
     return <LoadingScreen />
   }
 
+  // The human play bar — renders at the bottom when the viewer has a seat
+  const humanBar = humanAgentId ? (
+    <HumanPlayBar
+      roomId={roomId}
+      humanAgentId={humanAgentId}
+      snapshot={snapshot}
+      messageCount={messages.length}
+    />
+  ) : null
+
   // Route to the mode-specific view.
   if (snapshot.modeId === 'werewolf') {
-    return <WerewolfView messages={messages} snapshot={snapshot} />
-  }
-  if (snapshot.modeId === 'roundtable') {
-    return <RoundtableView messages={messages} snapshot={snapshot} />
+    return (
+      <>
+        <WerewolfView messages={messages} snapshot={snapshot} />
+        {humanBar}
+      </>
+    )
   }
 
-  // Unknown mode — fall back to roundtable rendering (safe default).
-  return <RoundtableView messages={messages} snapshot={snapshot} />
+  return (
+    <>
+      <RoundtableView messages={messages} snapshot={snapshot} />
+      {humanBar}
+    </>
+  )
 }
 
 function LoadingScreen() {

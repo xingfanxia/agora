@@ -279,16 +279,18 @@ function useMessagesPerAgent(messages: readonly MessageData[]): Record<string, n
 
 // ── Sub-components (status pill, footers) ──────────────────
 
-function StatusPill({ status }: { status: 'running' | 'completed' | 'error' }) {
+function StatusPill({ status }: { status: 'running' | 'waiting' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =
     status === 'running'
       ? '#22c55e'
-      : status === 'completed'
-        ? 'var(--muted)'
-        : 'var(--danger)'
+      : status === 'waiting'
+        ? '#f5a623'
+        : status === 'completed'
+          ? 'var(--muted)'
+          : 'var(--danger)'
   const label =
-    status === 'running' ? t('live') : status === 'completed' ? t('completed') : t('error')
+    status === 'running' ? t('live') : status === 'waiting' ? 'Waiting' : status === 'completed' ? t('completed') : t('error')
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}>
       <span

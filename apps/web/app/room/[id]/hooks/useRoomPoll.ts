@@ -14,7 +14,7 @@ export function useRoomPoll(roomId: string) {
   const [loading, setLoading] = useState(true)
 
   const lastTimestampRef = useRef(0)
-  const statusRef = useRef<'running' | 'completed' | 'error'>('running')
+  const statusRef = useRef<'running' | 'waiting' | 'completed' | 'error'>('running')
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +60,8 @@ export function useRoomPoll(roomId: string) {
       }
 
       if (!cancelled) {
-        const delay = statusRef.current === 'running' ? 1000 : 5000
+        // Poll fast when running or waiting (human may submit any moment)
+        const delay = statusRef.current === 'running' || statusRef.current === 'waiting' ? 1000 : 5000
         setTimeout(poll, delay)
       }
     }
