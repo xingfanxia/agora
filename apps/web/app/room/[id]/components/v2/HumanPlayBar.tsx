@@ -240,7 +240,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
               disabled={!text.trim() || sending}
               style={{
                 background: text.trim() && !sending ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
-                color: text.trim() && !sending ? '#ffffff' : 'var(--muted)',
+                color: text.trim() && !sending ? '#08090a' : 'var(--muted)',
                 border: 'none',
                 padding: '7px 16px',
                 borderRadius: 'var(--radius)',

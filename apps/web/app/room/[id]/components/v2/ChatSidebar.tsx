@@ -176,7 +176,7 @@ export function ChatSidebar({
             padding: '6px 12px',
             borderRadius: 999,
             background: 'var(--accent)',
-            color: 'white',
+            color: '#08090a',
             border: 'none',
             fontSize: 12,
             fontWeight: 510,

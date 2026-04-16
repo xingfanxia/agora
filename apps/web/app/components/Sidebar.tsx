@@ -45,7 +45,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             height: 28,
             borderRadius: 'var(--radius-sm)',
             background: 'var(--accent)',
-            color: '#ffffff',
+            color: '#08090a',
             fontSize: 14,
             fontWeight: 590,
             display: 'flex',
@@ -69,7 +69,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </span>
       </Link>
 
-      {/* + New chat CTA — primary mint button */}
+      {/* + New chat CTA — primary mint button (dark text for WCAG AA) */}
       <Link
         href="/rooms/new"
         onClick={onNavigate}
@@ -81,7 +81,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           marginBottom: 20,
           borderRadius: 'var(--radius)',
           background: 'var(--accent)',
-          color: '#ffffff',
+          color: '#08090a',
           textDecoration: 'none',
           fontSize: 13,
           fontWeight: 590,
@@ -98,14 +98,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           href="/agents"
           label={t('agents.all')}
           icon="👤"
-          active={pathname === '/agents' || pathname.startsWith('/agents/')}
+          active={isActiveParent(pathname, '/agents', ['/agents/new'])}
           onNavigate={onNavigate}
         />
         <NavLink
           href="/agents/new"
           label={t('agents.new')}
           icon="＋"
-          active={pathname.startsWith('/agents/new')}
+          active={pathname === '/agents/new' || pathname.startsWith('/agents/new/')}
           onNavigate={onNavigate}
           subtle
         />
@@ -116,14 +116,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           href="/teams"
           label={t('teams.all')}
           icon="👥"
-          active={pathname === '/teams' || pathname.startsWith('/teams/')}
+          active={isActiveParent(pathname, '/teams', ['/teams/new'])}
           onNavigate={onNavigate}
         />
         <NavLink
           href="/teams/new"
           label={t('teams.new')}
           icon="＋"
-          active={pathname.startsWith('/teams/new')}
+          active={pathname === '/teams/new' || pathname.startsWith('/teams/new/')}
           onNavigate={onNavigate}
           subtle
         />
@@ -167,6 +167,18 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         }
       `}</style>
     </div>
+  )
+}
+
+function isActiveParent(
+  pathname: string,
+  base: string,
+  excludePrefixes: readonly string[],
+): boolean {
+  if (pathname === base) return true
+  if (!pathname.startsWith(base + '/')) return false
+  return !excludePrefixes.some(
+    (p) => pathname === p || pathname.startsWith(p + '/'),
   )
 }
 

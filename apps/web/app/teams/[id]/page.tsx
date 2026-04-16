@@ -132,9 +132,9 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
               href={`/rooms/new?teamId=${team.id}`}
               style={{
                 background: 'var(--accent)',
-                color: 'white',
+                color: '#08090a',
                 padding: '8px 16px',
-                borderRadius: 999,
+                borderRadius: 'var(--radius-card)',
                 fontSize: 13,
                 fontWeight: 590,
                 textDecoration: 'none',
@@ -147,7 +147,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
                 href={`/teams/${team.id}/edit`}
                 style={{
                   padding: '8px 14px',
-                  borderRadius: 999,
+                  borderRadius: 'var(--radius)',
                   background: 'var(--surface-hover)',
                   color: 'var(--foreground)',
                   fontSize: 13,

@@ -188,7 +188,7 @@ export function ChatView({
             padding: '6px 14px',
             borderRadius: 999,
             background: 'var(--accent)',
-            color: 'white',
+            color: '#08090a',
             border: 'none',
             fontSize: 12,
             fontWeight: 510,

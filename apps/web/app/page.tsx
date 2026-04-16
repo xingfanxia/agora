@@ -114,7 +114,7 @@ export default function Home() {
             href="/teams"
             style={{
               background: 'var(--accent)',
-              color: '#ffffff',
+              color: '#08090a',
               padding: '10px 20px',
               borderRadius: 'var(--radius-card)',
               fontSize: 15,
@@ -334,24 +334,35 @@ function EmptyStrip({
   return (
     <div
       style={{
-        padding: '32px 24px',
-        borderRadius: 'var(--radius)',
+        padding: '28px 24px',
+        borderRadius: 'var(--radius-card)',
         border: '1px dashed var(--border)',
-        background: 'var(--surface)',
+        background: 'rgba(255, 255, 255, 0.02)',
         textAlign: 'center',
       }}
     >
-      <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 12 }}>{message}</p>
+      <p
+        style={{
+          fontSize: 14,
+          fontWeight: 400,
+          letterSpacing: '-0.13px',
+          color: 'var(--muted)',
+          marginBottom: 12,
+        }}
+      >
+        {message}
+      </p>
       <Link
         href={ctaHref}
         style={{
           display: 'inline-block',
-          padding: '8px 18px',
-          borderRadius: 999,
+          padding: '8px 16px',
+          borderRadius: 'var(--radius)',
           background: 'var(--accent)',
-          color: 'white',
+          color: '#08090a',
           fontSize: 13,
           fontWeight: 590,
+          letterSpacing: '-0.13px',
           textDecoration: 'none',
         }}
       >

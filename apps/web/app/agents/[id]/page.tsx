@@ -105,7 +105,7 @@ export default function AgentDetailPage({ params }: { params: Promise<{ id: stri
               style={{
                 display: 'inline-block',
                 padding: '6px 14px',
-                borderRadius: 999,
+                borderRadius: 'var(--radius)',
                 background: 'var(--surface-hover)',
                 color: 'var(--foreground)',
                 fontSize: 13,

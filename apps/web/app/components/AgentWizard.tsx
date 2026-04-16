@@ -288,11 +288,11 @@ export function AgentWizard({ initial, onCancelHref }: AgentWizardProps) {
           onClick={next}
           disabled={!stepValid || saving}
           style={{
-            background: stepValid && !saving ? 'var(--accent)' : 'var(--surface-hover)',
-            color: stepValid && !saving ? 'white' : 'var(--muted)',
+            background: stepValid && !saving ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
+            color: stepValid && !saving ? '#08090a' : 'var(--muted)',
             border: 'none',
             padding: '10px 20px',
-            borderRadius: 999,
+            borderRadius: 'var(--radius-card)',
             fontSize: 14,
             fontWeight: 590,
             cursor: stepValid && !saving ? 'pointer' : 'not-allowed',

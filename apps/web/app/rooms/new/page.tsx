@@ -178,9 +178,9 @@ function NewRoomPage() {
           href="/teams"
           style={{
             background: 'var(--accent)',
-            color: 'white',
+            color: '#08090a',
             padding: '10px 18px',
-            borderRadius: 999,
+            borderRadius: 'var(--radius-card)',
             fontSize: 14,
             fontWeight: 590,
             textDecoration: 'none',
@@ -502,11 +502,11 @@ function NewRoomPage() {
           onClick={start}
           disabled={!modeValid || saving}
           style={{
-            background: modeValid && !saving ? 'var(--accent)' : 'var(--surface-hover)',
-            color: modeValid && !saving ? 'white' : 'var(--muted)',
+            background: modeValid && !saving ? 'var(--accent)' : 'rgba(255,255,255,0.04)',
+            color: modeValid && !saving ? '#08090a' : 'var(--muted)',
             border: 'none',
             padding: '10px 24px',
-            borderRadius: 999,
+            borderRadius: 'var(--radius-card)',
             fontSize: 14,
             fontWeight: 590,
             cursor: modeValid && !saving ? 'pointer' : 'not-allowed',
