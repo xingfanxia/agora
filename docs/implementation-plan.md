@@ -18,8 +18,8 @@
 | **4.5a** | Durable Runtime (AI-only) | ✅ **DONE** | Bespoke advanceRoom + chained tick dispatcher, deterministic agent IDs, waiting state, /admin observability, replay determinism | — (foundation; AI-only games complete reliably) |
 | **5** | UI Overhaul (i18n + Round Table) | ✅ **DONE** | next-intl (en/zh), round-table viz, click-to-view modal, WeChat chat sidebar, Accio palette, chat-default view | — (visual polish) |
 | **6** | Team Platform (the real Agora) | ✅ **DONE 2026-04-15** | Five primitives (agents · teams · rooms · modes · templates), 4 ship-with templates, open-chat mode, DiceBear avatars, AppShell + Sidebar, team-snapshot room creation, leader directive via prompt-append | Open-chat |
-| **4.5b** | Human-Play UX Design | ⏳ **NEXT** (option A) | Design-only: wireframes + copy for every human turn type, timeout + fallback UX | — (doc deliverable only) |
-| **4.5c** | Seat Tokens + Human Play | ⏸ After 4.5b | HumanAgent, JWT seat tokens, human-input route, Supabase Realtime, ViewerContext, MyInputPanel, per-mode timeouts | 1-human-8-AI games |
+| **4.5b** | Human-Play UX Design | ✅ **DONE 2026-04-15** | V2 spec: 15 sections, 12 turn panels, visibility matrix, timer/fallback/disconnect UX, component inventory. Self-critiqued + audit-verified (12 issues fixed). | — (doc deliverable: `docs/design/phase-4.5b-human-play-ux.md`) |
+| **4.5c** | Seat Tokens + Human Play | ⏳ **NEXT** | HumanAgent, JWT seat tokens, human-input route, ViewerContext, turn panels, per-mode timeouts. Spec: `docs/design/phase-4.5b-human-play-ux.md` | 1-human-8-AI games |
 | **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth, room_memberships + RLS, presence, fan-in, disconnection grace. **Triggers workflow-primitive re-eval** per `docs/design/workflow-architecture.md` | N-human rooms |
 | **7** | TRPG | ⏳ **NEXT** (option B) | GM Agent, Dice system, Narrative generation, Character growth. Likely **triggers WDK migration** for durable long pauses | TRPG |
 | **8** | Script Kill | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
