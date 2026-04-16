@@ -86,25 +86,30 @@ export default function ReplaysPage() {
       </p>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-        {(['all', 'roundtable', 'werewolf'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setFilter(m)}
-            style={{
-              padding: '0.375rem 0.875rem',
-              fontSize: '0.8rem',
-              fontWeight: 510,
-              borderRadius: '999px',
-              border: `1px solid ${filter === m ? 'var(--accent)' : 'var(--border)'}`,
-              background: filter === m ? 'var(--accent)' : 'transparent',
-              color: filter === m ? '#fff' : 'var(--foreground)',
-              cursor: 'pointer',
-            }}
-          >
-            {m === 'all' ? t('filters.all') : modeLabels[m] ?? m}
-          </button>
-        ))}
+        {(['all', 'roundtable', 'werewolf'] as const).map((m) => {
+          const active = filter === m
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setFilter(m)}
+              style={{
+                padding: '0.375rem 0.875rem',
+                fontSize: '0.8rem',
+                fontWeight: 510,
+                letterSpacing: '-0.13px',
+                borderRadius: '999px',
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                background: active ? 'var(--accent)' : 'transparent',
+                color: active ? '#08090a' : 'var(--foreground-secondary)',
+                cursor: 'pointer',
+                transition: 'background .15s ease, color .15s ease',
+              }}
+            >
+              {m === 'all' ? t('filters.all') : modeLabels[m] ?? m}
+            </button>
+          )
+        })}
       </div>
 
       {loading && <p style={{ color: 'var(--muted)' }}>{t('loading')}</p>}
@@ -140,7 +145,9 @@ export default function ReplaysPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {filtered.map((room) => {
           const badgeLabel = modeLabels[room.modeId] ?? room.modeId
-          const badgeAccent = MODE_BADGE_ACCENTS[room.modeId] ?? 'var(--muted)'
+          const badgeAccent = MODE_BADGE_ACCENTS[room.modeId] ?? 'var(--muted-strong)'
+          // Mint badge needs dark text for contrast; colored badges (werewolf purple, muted gray) use white.
+          const badgeText = badgeAccent === 'var(--accent)' ? '#08090a' : '#ffffff'
           const winResult = (room.gameState as { winResult?: string } | null)?.winResult
           const started = room.startedAt ? new Date(room.startedAt) : null
           const ended = room.endedAt ? new Date(room.endedAt) : null
@@ -168,12 +175,12 @@ export default function ReplaysPage() {
                 <span
                   style={{
                     padding: '0.2rem 0.625rem',
-                    borderRadius: '999px',
+                    borderRadius: 4,
                     background: badgeAccent,
-                    color: '#fff',
-                    fontSize: '0.7rem',
+                    color: badgeText,
+                    fontSize: 11,
                     fontWeight: 590,
-                    letterSpacing: '0.03em',
+                    letterSpacing: '0.08em',
                     textTransform: 'uppercase',
                     flexShrink: 0,
                   }}
