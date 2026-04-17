@@ -50,6 +50,13 @@
       "when": 1776420000000,
       "tag": "0006_retarget_anthropic_opus",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776510000000,
+      "tag": "0007_allowed_emails",
+      "breakpoints": true
     }
   ]
 }

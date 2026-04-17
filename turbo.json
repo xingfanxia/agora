@@ -27,7 +27,8 @@
     "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     "VERCEL_OIDC_TOKEN",
     "CRON_SECRET",
-    "AGORA_ADMIN_SECRET"
+    "AGORA_ADMIN_SECRET",
+    "AGORA_SEAT_SECRET"
   ],
   "tasks": {
     "build": {

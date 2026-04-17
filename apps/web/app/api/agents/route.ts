@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAgent, listAgents, type AgentStyle } from '../../lib/agent-store'
-import { getUserIdFromRequest } from '../../lib/user-id'
+import { getReaderId, requireAuthUserId } from '../../lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url)
   const scope = url.searchParams.get('scope') // 'mine' | 'templates' | null (all visible)
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '200', 10), 1), 500)
-  const uid = getUserIdFromRequest(request)
+  const uid = await getReaderId(request)
 
   if (scope === 'mine') {
     if (!uid) return NextResponse.json({ agents: [] })
@@ -51,13 +51,11 @@ export async function GET(request: NextRequest) {
 // ── POST ───────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  const uid = getUserIdFromRequest(request)
-  if (!uid) {
-    return NextResponse.json(
-      { error: 'Missing agora-uid cookie. Visit the app once to initialize.' },
-      { status: 401 },
-    )
+  const auth = await requireAuthUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
   }
+  const uid = auth.id
 
   let body: CreateAgentBody
   try {

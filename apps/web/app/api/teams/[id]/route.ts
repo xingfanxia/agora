@@ -12,7 +12,7 @@ import {
   updateTeam,
   type UpdateTeamArgs,
 } from '../../../lib/team-store'
-import { getUserIdFromRequest } from '../../../lib/user-id'
+import { requireAuthUserId } from '../../../lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,8 +35,9 @@ export async function GET(_request: NextRequest, ctx: RouteCtx) {
 
 export async function PATCH(request: NextRequest, ctx: RouteCtx) {
   const { id } = await ctx.params
-  const uid = getUserIdFromRequest(request)
-  if (!uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAuthUserId()
+  if (!auth.ok) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+  const uid = auth.id
 
   const existing = await getTeam(id)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -111,8 +112,9 @@ export async function PATCH(request: NextRequest, ctx: RouteCtx) {
 
 export async function DELETE(request: NextRequest, ctx: RouteCtx) {
   const { id } = await ctx.params
-  const uid = getUserIdFromRequest(request)
-  if (!uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAuthUserId()
+  if (!auth.ok) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+  const uid = auth.id
 
   const existing = await getTeam(id)
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })

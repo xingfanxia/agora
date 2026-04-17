@@ -461,6 +461,7 @@
       "label": "History",
       "replays": "Replays"
     },
-    "tagline": "Assemble · Compose · Run"
+    "tagline": "Assemble · Compose · Run",
+    "signIn": "Sign in"
   }
 }

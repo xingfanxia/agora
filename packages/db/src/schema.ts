@@ -203,6 +203,29 @@ export const rooms = pgTable(
 export type RoomRow = typeof rooms.$inferSelect
 export type NewRoomRow = typeof rooms.$inferInsert
 
+// ── allowed_emails (Phase 4.5d) ────────────────────────────
+//
+// Signup gate. The magic-link /login form always accepts any email
+// and sends the link. The /auth/callback checks `allowed_emails`
+// when exchanging the code; if the email isn't in the list we sign
+// the user out and redirect to a "request access" page.
+//
+// Writes are service-role only (no RLS SELECT policy for authed
+// users — a member shouldn't be able to enumerate other members).
+
+export const allowedEmails = pgTable(
+  'allowed_emails',
+  {
+    email: text('email').primaryKey(), // always stored lower-cased
+    invitedBy: uuid('invited_by'),     // auth.users.id of the inviter, nullable for seeds
+    note: text('note'),                // free-form context ("friend from twitter")
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+)
+
+export type AllowedEmailRow = typeof allowedEmails.$inferSelect
+export type NewAllowedEmailRow = typeof allowedEmails.$inferInsert
+
 // ── events ─────────────────────────────────────────────────
 
 export const events = pgTable(

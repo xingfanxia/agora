@@ -5,8 +5,11 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { supabaseBrowser } from '../lib/supabase-browser'
+import type { Session } from '@supabase/supabase-js'
 
 export interface SidebarProps {
   onNavigate?: () => void
@@ -15,6 +18,31 @@ export interface SidebarProps {
 export function Sidebar({ onNavigate }: SidebarProps) {
   const t = useTranslations('sidebar')
   const pathname = usePathname() ?? '/'
+  const router = useRouter()
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [authReady, setAuthReady] = useState(false)
+
+  useEffect(() => {
+    const supabase = supabaseBrowser()
+    // Initial read — getSession is cookie-only, no round-trip.
+    // Authorization decisions happen server-side via getUser().
+    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
+      setUserEmail(data.session?.user.email ?? null)
+      setAuthReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: Session | null) => {
+      setUserEmail(session?.user.email ?? null)
+      setAuthReady(true)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  async function signOut() {
+    const supabase = supabaseBrowser()
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
 
   return (
     <div
@@ -141,6 +169,94 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
+
+      {/* Auth footer — only render after first auth read to avoid flash */}
+      {authReady && (
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            padding: '10px 8px 4px',
+            marginBottom: 4,
+          }}
+        >
+          {userEmail ? (
+            <div
+              className="agora-sidebar-label"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+              }}
+            >
+              <div
+                title={userEmail}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: 'var(--accent-strong)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 11,
+                  fontWeight: 590,
+                  textTransform: 'uppercase',
+                  flexShrink: 0,
+                }}
+              >
+                {userEmail.charAt(0)}
+              </div>
+              <span
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: 'var(--foreground-secondary)',
+                }}
+              >
+                {userEmail}
+              </span>
+              <button
+                type="button"
+                onClick={signOut}
+                aria-label="Sign out"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  padding: 4,
+                }}
+              >
+                ↪
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              onClick={onNavigate}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 8px',
+                borderRadius: 'var(--radius-sm)',
+                textDecoration: 'none',
+                fontSize: 13,
+                fontWeight: 510,
+                color: 'var(--foreground-secondary)',
+              }}
+            >
+              <span style={{ width: 18, textAlign: 'center', fontSize: 13 }}>↪</span>
+              <span className="agora-sidebar-label">{t('signIn')}</span>
+            </Link>
+          )}
+        </div>
+      )}
 
       <div
         style={{

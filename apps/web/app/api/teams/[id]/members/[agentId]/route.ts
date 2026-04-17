@@ -7,7 +7,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { getTeam, removeMember, updateTeam } from '../../../../../lib/team-store'
-import { getUserIdFromRequest } from '../../../../../lib/user-id'
+import { requireAuthUserId } from '../../../../../lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,8 +17,9 @@ interface RouteCtx {
 
 export async function DELETE(request: NextRequest, ctx: RouteCtx) {
   const { id, agentId } = await ctx.params
-  const uid = getUserIdFromRequest(request)
-  if (!uid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAuthUserId()
+  if (!auth.ok) return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+  const uid = auth.id
 
   const team = await getTeam(id)
   if (!team) return NextResponse.json({ error: 'Not found' }, { status: 404 })

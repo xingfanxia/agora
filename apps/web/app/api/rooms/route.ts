@@ -27,7 +27,7 @@ import {
 import { buildLanguageDirective, resolveAgentLanguage } from '../../lib/language'
 import { getTeam } from '../../lib/team-store'
 import { buildTeamSnapshot } from '../../lib/team-room'
-import { getUserIdFromRequest } from '../../lib/user-id'
+import { requireAuthUserId } from '../../lib/auth'
 import type { NextRequest } from 'next/server'
 
 interface AgentInput {
@@ -71,7 +71,11 @@ export async function POST(request: NextRequest) {
 
     const roomId = crypto.randomUUID()
     const eventBus = new EventBus()
-    const createdBy = getUserIdFromRequest(request)
+    const auth = await requireAuthUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+    }
+    const createdBy = auth.id
 
     const agentInfos: AgentInfo[] = []
     const aiAgents: AIAgent[] = []
