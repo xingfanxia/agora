@@ -72,7 +72,15 @@ function NewRoomPage() {
     lastWords: false,
   })
   const [language, setLanguage] = useState<'zh' | 'en'>('zh')
-  const [humanSeatId, setHumanSeatId] = useState<string | null>(null)
+  // Phase 4.5d — multi-human seats. Set of agentIds the creator wants to
+  // claim/invite humans for. Single-seat UX: creator checks one and plays
+  // it themselves. Multi-seat UX: creator checks N, plays one themselves,
+  // sends invite URLs (via InvitePanel in the room) for the rest.
+  const [humanSeatIds, setHumanSeatIds] = useState<Set<string>>(new Set())
+  // For auto-claim on room creation, the creator's own seat is the first
+  // checkbox they ticked — mirror old humanSeatId behavior. Null when
+  // they want to spectate all seats (send all links to others).
+  const [ownSeatId, setOwnSeatId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -129,17 +137,18 @@ function NewRoomPage() {
     setSaving(true)
     setError(null)
     try {
+      const humanSeatIdsArray = [...humanSeatIds]
       let url: string
       let body: Record<string, unknown>
       if (mode === 'open-chat') {
         url = '/api/rooms/open-chat'
-        body = { teamId, topic: topic.trim(), rounds, language, humanSeatId }
+        body = { teamId, topic: topic.trim(), rounds, language, humanSeatIds: humanSeatIdsArray }
       } else if (mode === 'roundtable') {
         url = '/api/rooms'
-        body = { teamId, topic: topic.trim(), rounds, language, humanSeatId }
+        body = { teamId, topic: topic.trim(), rounds, language, humanSeatIds: humanSeatIdsArray }
       } else {
         url = '/api/rooms/werewolf'
-        body = { teamId, advancedRules, language, humanSeatId }
+        body = { teamId, advancedRules, language, humanSeatIds: humanSeatIdsArray }
       }
       const res = await fetch(url, {
         method: 'POST',
@@ -151,12 +160,14 @@ function NewRoomPage() {
         throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`)
       }
       const data = (await res.json()) as { roomId: string }
-      // Store human seat token in localStorage for the room page to read
-      if (humanSeatId) {
+      // Auto-claim the creator's own seat (if any) in localStorage so the
+      // room page opens with them already seated. Other humans claim their
+      // seats via invite URLs from InvitePanel.
+      if (ownSeatId) {
         try {
           localStorage.setItem(
             `agora-seat-${data.roomId}`,
-            JSON.stringify({ roomId: data.roomId, agentId: humanSeatId }),
+            JSON.stringify({ roomId: data.roomId, agentId: ownSeatId }),
           )
         } catch { /* localStorage unavailable */ }
       }
@@ -440,28 +451,92 @@ function NewRoomPage() {
           </div>
         </Field>
 
-        {/* Play as — human seat selector (Phase 4.5c) */}
-        <Field label={language === 'zh' ? '参与身份（可选）' : 'Play as (optional)'}>
-          <select
-            value={humanSeatId ?? ''}
-            onChange={(e) => setHumanSeatId(e.target.value || null)}
+        {/* Phase 4.5d — multi-human seat picker. Check any seats that
+            should be played by humans. Your own seat gets auto-claimed;
+            others become invite URLs in the room's invite panel. */}
+        <Field label={language === 'zh' ? '人类座位（可多选）' : 'Human seats (multi-select)'}>
+          <div
             style={{
-              ...inputStyle,
-              cursor: 'pointer',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 8,
             }}
           >
-            <option value="">{language === 'zh' ? '🤖 仅 AI（旁观）' : '🤖 AI only (spectate)'}</option>
-            {members.map((m) => (
-              <option key={m.agentId} value={m.agentId}>
-                🧑 {m.agent.name}
-              </option>
-            ))}
-          </select>
-          {humanSeatId && (
+            {members.map((m) => {
+              const checked = humanSeatIds.has(m.agentId)
+              const isOwn = ownSeatId === m.agentId
+              return (
+                <label
+                  key={m.agentId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
+                    background: checked ? 'var(--accent-tint)' : 'var(--surface)',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => {
+                      const next = new Set(humanSeatIds)
+                      if (checked) {
+                        next.delete(m.agentId)
+                        if (isOwn) setOwnSeatId(null)
+                      } else {
+                        next.add(m.agentId)
+                        // Auto-assign own seat to the first one checked.
+                        if (!ownSeatId) setOwnSeatId(m.agentId)
+                      }
+                      setHumanSeatIds(next)
+                    }}
+                    style={{ accentColor: 'var(--accent)' }}
+                  />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {m.agent.name}
+                  </span>
+                  {isOwn && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        background: 'var(--accent-strong)',
+                        color: '#fff',
+                        fontWeight: 590,
+                      }}
+                    >
+                      {language === 'zh' ? '我' : 'Me'}
+                    </span>
+                  )}
+                </label>
+              )
+            })}
+          </div>
+          {humanSeatIds.size > 1 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
+              {language === 'zh'
+                ? `房间创建后会显示 ${humanSeatIds.size - (ownSeatId ? 1 : 0)} 个邀请链接，发送给其他人类玩家加入。`
+                : `After creation, ${humanSeatIds.size - (ownSeatId ? 1 : 0)} invite links will be shown for other humans to join.`}
+            </div>
+          )}
+          {humanSeatIds.size > 0 && ownSeatId && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
               {language === 'zh'
-                ? `你将扮演 ${members.find((m) => m.agentId === humanSeatId)?.agent.name ?? '?'}，使用其人设参与对话。`
-                : `You'll play as ${members.find((m) => m.agentId === humanSeatId)?.agent.name ?? '?'} with their persona.`}
+                ? `你将扮演 ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'}。`
+                : `You'll play as ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'}.`}
+            </div>
+          )}
+          {humanSeatIds.size > 0 && !ownSeatId && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {language === 'zh'
+                ? '所有人类座位都会通过邀请链接分发 — 你将作为旁观者观看。'
+                : 'All human seats will be distributed by invite link — you\u2019ll spectate.'}
             </div>
           )}
         </Field>

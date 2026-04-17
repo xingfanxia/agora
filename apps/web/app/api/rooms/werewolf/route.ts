@@ -25,7 +25,7 @@ import { createRoom, setGameState, type AgentInfo } from '../../../lib/room-stor
 import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
 import { getTeam } from '../../../lib/team-store'
 import { getMembers } from '../../../lib/team-store'
-import { getUserIdFromRequest } from '../../../lib/user-id'
+import { requireAuthUserId } from '../../../lib/auth'
 import type { NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -45,7 +45,9 @@ interface CreateWerewolfBody {
   teamId?: string
   advancedRules?: WerewolfAdvancedRules
   language?: 'en' | 'zh'
+  /** Accepted shapes for backwards-compat: single id, array of ids, or null. */
   humanSeatId?: string | null
+  humanSeatIds?: readonly string[]
 }
 
 function resolveProvider(modelId: string): LLMProvider {
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Phase 6 — resolve `players` list either from explicit body or a team.
     let players: PlayerInput[]
     let teamId: string | null = null
-    let humanPlayerName: string | null = null
+    const humanPlayerNames = new Set<string>()
     if (body.teamId) {
       const team = await getTeam(body.teamId)
       if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
@@ -80,10 +82,15 @@ export async function POST(request: NextRequest) {
         model: m.agent.modelId,
         provider: m.agent.modelProvider as LLMProvider,
       }))
-      // Phase 4.5c — map humanSeatId (agentId) → agent name
-      if (body.humanSeatId) {
-        const humanMember = members.find((m) => m.agentId === body.humanSeatId)
-        if (humanMember) humanPlayerName = humanMember.agent.name
+      // Phase 4.5d — accept either humanSeatIds[] or legacy humanSeatId.
+      const humanSeatAgentIds = new Set<string>()
+      if (Array.isArray(body.humanSeatIds)) {
+        for (const id of body.humanSeatIds) if (typeof id === 'string') humanSeatAgentIds.add(id)
+      }
+      if (typeof body.humanSeatId === 'string') humanSeatAgentIds.add(body.humanSeatId)
+      for (const agentId of humanSeatAgentIds) {
+        const humanMember = members.find((m) => m.agentId === agentId)
+        if (humanMember) humanPlayerNames.add(humanMember.agent.name)
       }
     } else {
       if (!body.players || body.players.length < 6 || body.players.length > 12) {
@@ -98,7 +105,11 @@ export async function POST(request: NextRequest) {
     const advancedRules = body.advancedRules ?? {}
     const language = await resolveAgentLanguage(body.language)
     const languageDirective = buildLanguageDirective(language)
-    const createdBy = getUserIdFromRequest(request)
+    const auth = await requireAuthUserId()
+    if (!auth.ok) {
+      return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+    }
+    const createdBy = auth.id
 
     const agentConfigs = players.map((p) => ({
       name: p.name,
@@ -107,7 +118,7 @@ export async function POST(request: NextRequest) {
         modelId: p.model,
         maxTokens: 1500,
       } satisfies ModelConfig,
-      isHuman: humanPlayerName !== null && p.name === humanPlayerName,
+      isHuman: humanPlayerNames.has(p.name),
     }))
 
     // Generate roomId upfront — it seeds deterministic agentId + role
@@ -136,7 +147,7 @@ export async function POST(request: NextRequest) {
         name: agent.config.name,
         model: agent.config.model.modelId,
         provider: agent.config.model.provider,
-        isHuman: humanPlayerName !== null && agent.config.name === humanPlayerName,
+        isHuman: humanPlayerNames.has(agent.config.name),
       }
     })
 

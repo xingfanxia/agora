@@ -11,7 +11,7 @@ import { waitUntil } from '@vercel/functions'
 import { createRoom, setGameState } from '../../../lib/room-store'
 import { getTeam } from '../../../lib/team-store'
 import { buildTeamSnapshot } from '../../../lib/team-room'
-import { getUserIdFromRequest } from '../../../lib/user-id'
+import { requireAuthUserId } from '../../../lib/auth'
 import { resolveAgentLanguage } from '../../../lib/language'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,8 @@ interface CreateOpenChatBody {
   topic?: unknown
   rounds?: unknown
   language?: unknown
-  humanSeatId?: unknown
+  humanSeatId?: unknown      // legacy single-seat; still honored
+  humanSeatIds?: unknown     // Phase 4.5d multi-seat
 }
 
 export async function POST(request: NextRequest) {
@@ -73,17 +74,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Open-chat supports at most 12 agents' }, { status: 400 })
   }
 
-  // Mark the human seat (Phase 4.5c)
-  const humanSeatId = typeof body.humanSeatId === 'string' ? body.humanSeatId : null
-  if (humanSeatId) {
-    const seat = agents.find((a) => a.id === humanSeatId)
+  // Mark human seats (Phase 4.5d — multi, with legacy single fallback).
+  const humanSeatIds = new Set<string>()
+  if (Array.isArray(body.humanSeatIds)) {
+    for (const id of body.humanSeatIds) if (typeof id === 'string') humanSeatIds.add(id)
+  }
+  if (typeof body.humanSeatId === 'string') humanSeatIds.add(body.humanSeatId)
+  for (const seatId of humanSeatIds) {
+    const seat = agents.find((a) => a.id === seatId)
     if (seat) {
       (seat as { isHuman?: boolean }).isHuman = true
     }
   }
 
   const roomId = crypto.randomUUID()
-  const createdBy = getUserIdFromRequest(request)
+  const auth = await requireAuthUserId()
+  if (!auth.ok) {
+    return NextResponse.json({ error: 'Sign in required' }, { status: 401 })
+  }
+  const createdBy = auth.id
 
   await createRoom({
     id: roomId,

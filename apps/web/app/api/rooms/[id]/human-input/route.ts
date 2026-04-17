@@ -16,8 +16,32 @@
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { getRoom, updateRoomStatus, appendEvent, getEventCount } from '../../../../lib/room-store'
+import { getAuthUser } from '../../../../lib/supabase-server'
+import { verifySeatToken } from '../../../../lib/seat-tokens'
 
 export const dynamic = 'force-dynamic'
+
+async function authorizeSeatClaim(
+  request: Request,
+  roomId: string,
+  agentId: string,
+  ownerUserId: string | null,
+): Promise<boolean> {
+  // Bearer seat-token → must be for this (roomId, agentId) pair.
+  const authHeader = request.headers.get('authorization') ?? ''
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice('Bearer '.length).trim()
+    const payload = await verifySeatToken(token, roomId)
+    return payload?.agentId === agentId
+  }
+
+  // Else fall back to a logged-in room owner — they can play any seat
+  // (e.g. testing locally with a second tab).
+  const user = await getAuthUser()
+  if (user && ownerUserId && user.id === ownerUserId) return true
+
+  return false
+}
 
 interface HumanInputBody {
   /** The agent seat ID the human is playing as */
@@ -73,6 +97,15 @@ export async function POST(
     return NextResponse.json(
       { error: `Room is not waiting for agent ${agentId}` },
       { status: 403 },
+    )
+  }
+
+  // AuthZ — bearer seat-token or owner session.
+  const authorized = await authorizeSeatClaim(request, roomId, agentId, roomRow.createdBy)
+  if (!authorized) {
+    return NextResponse.json(
+      { error: 'Missing or invalid seat token' },
+      { status: 401 },
     )
   }
 

@@ -8,6 +8,7 @@ import { useRoomPoll } from './hooks/useRoomPoll'
 import { RoundtableView } from './modes/roundtable/RoundtableView'
 import { WerewolfView } from './modes/werewolf/WerewolfView'
 import { HumanPlayBar } from './components/v2/HumanPlayBar'
+import { InvitePanel } from './components/InvitePanel'
 
 /**
  * Thin dispatcher — polls the room, then renders the mode-specific
@@ -53,12 +54,16 @@ export default function RoomPage() {
     />
   ) : null
 
+  // Owner-only invite panel — shown when the room has 2+ human seats.
+  const invitePanel = <InvitePanel roomId={roomId} agents={snapshot.agents ?? []} />
+
   // Route to the mode-specific view.
   if (snapshot.modeId === 'werewolf') {
     return (
       <>
         <WerewolfView messages={messages} snapshot={snapshot} />
         {humanBar}
+        {invitePanel}
       </>
     )
   }
@@ -67,6 +72,7 @@ export default function RoomPage() {
     <>
       <RoundtableView messages={messages} snapshot={snapshot} />
       {humanBar}
+      {invitePanel}
     </>
   )
 }
