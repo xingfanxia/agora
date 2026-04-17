@@ -460,16 +460,6 @@ async function rehydrateWerewolfFromDb(
   const roomId = roomRow.id
   const agentIds = result.room.getAgentIds()
 
-  // Replay message events into agents so their chat history matches the
-  // original session. Done BEFORE wiring persistence so no duplicate
-  // events land in DB.
-  const past = await getEventsSince(roomId, -1)
-  for (const entry of past) {
-    if (entry.event.type === 'message:created') {
-      result.room.replayMessage(entry.event.message as Message)
-    }
-  }
-
   const snapshot = (roomRow.gameState as Record<string, unknown>) ?? {}
   const rolesRaw = (snapshot['roleMap'] as Record<string, string>) ?? {}
   const roles = new Map<string, string>(Object.entries(rolesRaw))
@@ -495,5 +485,37 @@ async function rehydrateWerewolfFromDb(
     activeAgentIds,
     custom: snapshot,
   })
+
+  // Replay past message events:
+  //   1. agent.observe() via replayMessage — rebuilds chat history for all
+  //      messages regardless of phase (agents remember everything they saw).
+  //   2. flow.onMessage() ONLY for speaker messages in the current phase —
+  //      rebuilds speakerIndex + phaseDecisions so mid-phase resume (e.g.
+  //      multi-human day-vote) continues correctly.
+  //
+  // Two filters, both required for correctness:
+  //   - `inCurrentPhase`: tracked via phase:changed events. onMessage is
+  //     phase-scoped in the live run; matching that here prevents speakerIndex
+  //     inflation from prior phases.
+  //   - senderId ∈ agentIds: system announcement messages (senderId='system')
+  //     don't pass through flow.onMessage in the live run (see room.ts
+  //     drainAnnouncements), so they must not here either.
+  const agentIdSet = new Set(agentIds)
+  const past = await getEventsSince(roomId, -1)
+  let inCurrentPhase = false
+  for (const entry of past) {
+    const eventType = entry.event.type
+    if (eventType === 'phase:changed') {
+      const e = entry.event as { phase?: string }
+      inCurrentPhase = e.phase === phaseName
+      continue
+    }
+    if (eventType !== 'message:created') continue
+    const message = (entry.event as { message: Message }).message
+    result.room.replayMessage(message)
+    if (inCurrentPhase && agentIdSet.has(message.senderId)) {
+      result.flow.onMessage(message)
+    }
+  }
 }
 

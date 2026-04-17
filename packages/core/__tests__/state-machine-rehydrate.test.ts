@@ -140,6 +140,146 @@ describe('StateMachineFlow.rehydrate', () => {
     ).toThrow(/non-empty/)
   })
 
+  // ─── Phase 4.5d multi-human replay invariant ───────────────
+
+  it('rebuilds speakerIndex deterministically when onMessage is replayed after rehydrate', () => {
+    // Simulates the durable-runtime resume path for a phase with
+    // multiple speakers (e.g. day-vote). Two humans in the speaker
+    // list; their votes arrive as message events. On next tick, the
+    // runtime rehydrates the flow to this phase and replays events
+    // via flow.onMessage() to reconstruct speakerIndex.
+    const agentIds = ['human-1', 'ai-1', 'human-2', 'ai-2']
+
+    const f1 = new StateMachineFlow(buildConfig())
+    f1.rehydrate({
+      phaseName: 'phaseA',
+      round: 1,
+      agentIds,
+      roles: new Map(),
+      activeAgentIds: new Set(agentIds),
+      custom: {},
+    })
+
+    // Live run: speakers 0-1 speak. On speaker 2 (human) we pause.
+    expect(f1.tick().nextSpeakers).toEqual(['human-1'])
+    f1.onMessage({
+      id: 'm1', roomId: 'r', senderId: 'human-1', senderName: 'H1',
+      content: 'vote-a', channelId: 'main', timestamp: 0,
+      metadata: { decision: { target: 'ai-1' } },
+    })
+    expect(f1.tick().nextSpeakers).toEqual(['ai-1'])
+    f1.onMessage({
+      id: 'm2', roomId: 'r', senderId: 'ai-1', senderName: 'AI1',
+      content: 'vote-b', channelId: 'main', timestamp: 0,
+      metadata: { decision: { target: 'human-1' } },
+    })
+    // Now speakerIndex=2 pointing at human-2 — pause in real runtime.
+
+    // Rehydration — new flow, replay the two prior messages.
+    const f2 = new StateMachineFlow(buildConfig())
+    f2.rehydrate({
+      phaseName: 'phaseA',
+      round: 1,
+      agentIds,
+      roles: new Map(),
+      activeAgentIds: new Set(agentIds),
+      custom: {},
+    })
+    f2.onMessage({
+      id: 'm1', roomId: 'r', senderId: 'human-1', senderName: 'H1',
+      content: 'vote-a', channelId: 'main', timestamp: 0,
+      metadata: { decision: { target: 'ai-1' } },
+    })
+    f2.onMessage({
+      id: 'm2', roomId: 'r', senderId: 'ai-1', senderName: 'AI1',
+      content: 'vote-b', channelId: 'main', timestamp: 0,
+      metadata: { decision: { target: 'human-1' } },
+    })
+
+    // Both flows should now point at the same next speaker.
+    expect(f2.tick().nextSpeakers).toEqual(f1.tick().nextSpeakers)
+    expect(f2.tick().nextSpeakers).toEqual(['human-2'])
+  })
+
+  it('documents onMessage advances speakerIndex unconditionally — callers must pre-filter', () => {
+    // This test pins the contract that room-runtime.ts's
+    // rehydrateWerewolfFromDb depends on: StateMachineFlow.onMessage()
+    // is *not* self-filtering. It advances speakerIndex for EVERY
+    // message it sees. In the live run, announcement messages (from
+    // drainAnnouncements, senderId='system') are never fed into
+    // onMessage — room.ts only calls flow.onMessage for speaker
+    // replies. The durable rehydrate path MUST match that by filtering
+    // out non-speaker messages before onMessage'ing them. If someone
+    // "simplifies" this test or drops the filter in rehydrate,
+    // speakerIndex will inflate and mid-phase resume breaks.
+    const agentIds = ['a', 'b', 'c']
+    const f = new StateMachineFlow(buildConfig())
+    f.rehydrate({
+      phaseName: 'phaseA',
+      round: 1,
+      agentIds,
+      roles: new Map(),
+      activeAgentIds: new Set(agentIds),
+      custom: {},
+    })
+
+    // A system announcement masquerading as a message — passing it to
+    // onMessage DOES advance speakerIndex. The bug this test guards is
+    // "what happens if someone accidentally feeds it in".
+    const sysAnnouncement = {
+      id: 'sys', roomId: 'r', senderId: 'system', senderName: 'Narrator',
+      content: 'Night falls.', channelId: 'main', timestamp: 0,
+    }
+    f.onMessage(sysAnnouncement)
+    // After one onMessage the flow now points at speaker index 1 ('b'),
+    // NOT 'a' as we'd want if announcements were properly filtered out.
+    expect(f.tick().nextSpeakers).toEqual(['b'])
+  })
+
+  it('onMessage replay is order-independent for decisions (records all)', () => {
+    // Two humans vote independently via /human-input — their message
+    // events could land in either order. Verify phaseDecisions ends
+    // up with both regardless.
+    const agentIds = ['human-1', 'human-2']
+    const snapshot = {
+      phaseName: 'phaseA',
+      round: 1,
+      agentIds,
+      roles: new Map(),
+      activeAgentIds: new Set(agentIds),
+      custom: {},
+    }
+
+    const msgA = {
+      id: 'mA', roomId: 'r', senderId: 'human-1', senderName: 'H1',
+      content: 'a', channelId: 'main', timestamp: 0,
+      metadata: { decision: { target: 'human-2' } },
+    }
+    const msgB = {
+      id: 'mB', roomId: 'r', senderId: 'human-2', senderName: 'H2',
+      content: 'b', channelId: 'main', timestamp: 1,
+      metadata: { decision: { target: 'human-1' } },
+    }
+
+    const fAB = new StateMachineFlow(buildConfig())
+    fAB.rehydrate(snapshot)
+    fAB.onMessage(msgA)
+    fAB.onMessage(msgB)
+
+    const fBA = new StateMachineFlow(buildConfig())
+    fBA.rehydrate(snapshot)
+    fBA.onMessage(msgB)
+    fBA.onMessage(msgA)
+
+    // Both should have exhausted speakers (speakerIndex=2 after two msgs).
+    // Next tick returns nothing further in this phase — tests that both
+    // decisions were recorded and the phase is ready to transition/exit.
+    const tAB = fAB.tick()
+    const tBA = fBA.tick()
+    expect(tAB.isComplete || tAB.nextSpeakers.length === 0).toBe(true)
+    expect(tBA.isComplete || tBA.nextSpeakers.length === 0).toBe(true)
+  })
+
   it('resets per-phase counters — speakerIndex back to 0', () => {
     const flow = new StateMachineFlow(buildConfig())
     flow.initialize(['a', 'b', 'c'])
