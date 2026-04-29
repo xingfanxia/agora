@@ -258,9 +258,10 @@ Commits `ef08100` … `13542e6` (4 atomic commits). Tier 3 review complete (code
 
 ### Verification (original 4.5d-3 scope)
 
-- [ ] **2-human-7-AI werewolf E2E** on `runtime=wdk` room: full game, manual playthrough + Playwright multi-context smoke
-- [ ] **Disconnection recovery**: kill one human's tab during day-vote → fallback fires → reconnect within grace → seat resumes mid-game (or correctly applies default if grace expired)
-- [ ] **Cross-runtime replay determinism test**: take one HTTP-chain-era completed game (any from prod) + one WDK-era completed game; replay both; assert identical event sequences
+- [x] **Playwright E2E test harness** — `@playwright/test ^1.59.1` + chromium binary installed in apps/web; `playwright.config.ts` with auto-spawn `webServer` (uses `pnpm dev`); `pnpm e2e` + `pnpm e2e:ui` scripts wired; one passing `tests/e2e/smoke.spec.ts` proving the harness works (commit `f6e14fd`). Unblocks the multi-context tests below.
+- [ ] **2-human-7-AI werewolf E2E** on `runtime=wdk` room: full game, manual playthrough + Playwright multi-context smoke (harness exists; needs LLM mocking strategy + room-creation flow before this can be written)
+- [ ] **Disconnection recovery**: kill one human's tab during day-vote → fallback fires → reconnect within grace → seat resumes mid-game (or correctly applies default if grace expired). `BrowserContext.setOffline(true)` is the toggle; presence indicator turn red within 30s is the assertion.
+- [ ] **Cross-runtime replay determinism test**: take one HTTP-chain-era completed game (any from prod) + one WDK-era completed game; replay both; assert identical event sequences (BLOCKED on 4.5d-2 shipping)
 
 ### Docs
 
