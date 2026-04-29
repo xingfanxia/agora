@@ -59,6 +59,10 @@ import {
   getEventCount,
   getEventsSince,
   getMessagesSince,
+  // Renamed locally to disambiguate from this file's recordTurnUsage
+  // step. The room-store helper is a SQL aggregate increment; the
+  // step is a workflow-level event-write + aggregate-bump pair.
+  recordTokenUsage as bumpRoomTokenAggregates,
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
@@ -67,7 +71,14 @@ import {
 // factory's GenerateFn signature is identical to @agora/llm's;
 // production behavior is unchanged when WORKFLOW_TEST is unset.
 import { createGenerateFn } from '../lib/llm-factory.js'
-import type { LLMProvider, Message, ModelConfig, PlatformEvent } from '@agora/shared'
+import { resolvePricing, calculateCost } from '@agora/llm'
+import type {
+  LLMProvider,
+  Message,
+  ModelConfig,
+  PlatformEvent,
+  TokenUsage,
+} from '@agora/shared'
 
 // ── Public types ───────────────────────────────────────────
 
@@ -177,8 +188,10 @@ export async function roundtableWorkflow(
       const alreadyDone = await isTurnAlreadyPersisted({ roomId, turnIdx })
       if (alreadyDone) continue
 
-      // Step 1 (cached by WDK): generate the LLM reply. Retry of step 2
-      // does NOT re-invoke step 1 — WDK serves step 1's cached result.
+      // Step 1 (cached by WDK): generate the LLM reply. Retry of
+      // step 2 does NOT re-invoke step 1 -- WDK serves step 1's
+      // cached result. Returns content + usage so step 3 has the
+      // numbers without re-paying the LLM call.
       const reply = await generateAgentReply({
         roomId,
         turnIdx,
@@ -190,12 +203,28 @@ export async function roundtableWorkflow(
       })
 
       // Step 2: persist. Cheap; ON CONFLICT-safe; can retry freely.
-      await persistAgentMessage({
+      // Returns the messageId so step 3 can reference it in the
+      // token:recorded event without computing a separate UUID.
+      const messageId = await persistAgentMessage({
         roomId,
         turnIdx,
         agentId: agent.id,
         agentName: agent.name,
         content: reply.content,
+      })
+
+      // Step 3 (4.5d-2.5): persist token usage. Idempotent under
+      // standard WDK retry (step throws / transient failure). NOT
+      // idempotent under delivery-failure-after-success retries --
+      // see recordTurnUsage's body comment for the full hazard
+      // analysis and the 4.5d-2.6 schema work that closes it.
+      await recordTurnUsage({
+        roomId,
+        agentId: agent.id,
+        messageId,
+        provider: agent.model.provider,
+        modelId: agent.model.modelId,
+        usage: reply.usage,
       })
     }
 
@@ -290,6 +319,7 @@ interface GenerateAgentReplyInput {
 
 interface GenerateAgentReplyResult {
   readonly content: string
+  readonly usage: TokenUsage
 }
 
 async function generateAgentReply(
@@ -326,13 +356,15 @@ async function generateAgentReply(
   })
 
   // createGenerateFn is the clean LLM wrapper without eventBus
-  // coupling. Token cost tracking is its own event (Phase 4.5d-2.3 —
-  // emit a separate `usage:tracked` event alongside message:created).
+  // coupling. Token cost tracking lives in the separate
+  // recordTurnUsage step (4.5d-2.5) which receives the usage from
+  // here as input. Splitting LLM call from cost-recording prevents
+  // a recordTurnUsage retry from re-paying for the LLM call.
   const model: ModelConfig = { provider, modelId, maxTokens }
   const generateFn = createGenerateFn(model)
   const result = await generateFn(systemPrompt, history)
 
-  return { content: result.content }
+  return { content: result.content, usage: result.usage }
 }
 
 interface PersistAgentMessageInput {
@@ -343,7 +375,7 @@ interface PersistAgentMessageInput {
   readonly content: string
 }
 
-async function persistAgentMessage(input: PersistAgentMessageInput): Promise<void> {
+async function persistAgentMessage(input: PersistAgentMessageInput): Promise<string> {
   'use step'
 
   const { roomId, turnIdx, agentId, agentName, content } = input
@@ -356,8 +388,20 @@ async function persistAgentMessage(input: PersistAgentMessageInput): Promise<voi
   // creation guard preventing this case from happening in practice.
   const seq = await getEventCount(roomId)
 
+  // Deterministic messageId derived from (roomId, turnIdx, agentId).
+  // Was random crypto.randomUUID() before 4.5d-2.5 -- on a step-
+  // internal retry triggered by `step_completed` delivery failure,
+  // a fresh UUID would have been generated, leaving the previous
+  // attempt's row as a ghost message that no `token:recorded` event
+  // references. Deterministic ID + the planned event-table content-
+  // key idempotency (4.5d-2.6 schema work) closes the gap end-to-end.
+  // Until that DDL lands, two `message:created` events with the SAME
+  // messageId can still appear at DIFFERENT seq values; a content-
+  // key UNIQUE on (roomId, type, payload->>'message'->>'id') will
+  // make the second insert a no-op.
+  const messageId = `rt-${roomId}-t${turnIdx}-${agentId}`
   const message: Message = {
-    id: crypto.randomUUID(),
+    id: messageId,
     roomId,
     senderId: agentId,
     senderName: agentName,
@@ -368,11 +412,97 @@ async function persistAgentMessage(input: PersistAgentMessageInput): Promise<voi
       // Per-turn idempotency marker. Lets `isTurnAlreadyPersisted`
       // detect this turn's prior write on workflow restart.
       turnIdx,
+      // NOTE (cross-runtime equivalence): legacy AIAgent populates
+      // metadata.tokenUsage / provider / modelId here. WDK does NOT
+      // -- the WDK runtime carries token data in the separate
+      // `token:recorded` event written by recordTurnUsage. Both
+      // runtimes' room-aggregate readers go through the events log,
+      // so the live UI is consistent. Future replay/audit code that
+      // reads message.metadata directly for cost will silently miss
+      // WDK rooms.
     },
   }
 
   const event: PlatformEvent = { type: 'message:created', message }
   await appendEvent(roomId, seq, event)
+  // Return messageId so the workflow body can wire it into the
+  // subsequent recordTurnUsage step. The ID is deterministic on
+  // input, so workflow replays + step retries see the same value
+  // (no reliance on WDK's step-result cache for ID stability).
+  return messageId
+}
+
+interface RecordTurnUsageInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly messageId: string
+  readonly provider: LLMProvider
+  readonly modelId: string
+  readonly usage: TokenUsage
+}
+
+async function recordTurnUsage(input: RecordTurnUsageInput): Promise<void> {
+  'use step'
+
+  const { roomId, agentId, messageId, provider, modelId, usage } = input
+
+  // Resolve pricing inline. The LiteLLM registry is process-cached
+  // (packages/llm/src/pricing.ts module-level Promise), so the first
+  // turn pays the fetch latency and subsequent turns hit the cache.
+  // Per-call resolution -- vs. passing a pre-built pricing map as
+  // workflow input -- keeps step inputs scalar (Rule 6) and avoids
+  // bloating the step-input cache with a pricing-map blob.
+  //
+  // CROSS-PROCESS DETERMINISM: WDK runs steps in isolated worker
+  // contexts. Different turns can land on different workers, each
+  // with its own LiteLLM registry fetch. If LiteLLM updates its JSON
+  // mid-run (rare; hourly-to-daily cadence vs. <5min workflow), turn
+  // N and turn N+1 could see different prices for the same model.
+  // Bounded impact: USD aggregates only, no control-flow decision
+  // depends on cost. Acceptable for V1. To harden: pre-resolve in
+  // POST /api/rooms and pass a (model -> pricing) map as workflow
+  // input -- O(agents) bounded, ~1KB step-input bloat. Defer.
+  const pricing = await resolvePricing(provider, modelId)
+  const cost = calculateCost(usage, pricing)
+
+  // RETRY-IDEMPOTENCY (partial): operations are ordered to be safe
+  // under WDK's standard retry triggers (step throws, transient
+  // failure). The harder case -- step body completes but the
+  // `step_completed` event delivery fails, triggering a step retry
+  // that re-runs from the top -- is NOT fully idempotent here:
+  //
+  //   * (1) appendEvent: re-runs at a NEW seq (since prior succeeded
+  //     and bumped the count). ON CONFLICT (roomId, seq) does NOT
+  //     fire -- so a duplicate `token:recorded` event lands at the
+  //     new seq. Same messageId, different seq.
+  //   * (2) bumpRoomTokenAggregates: NOT idempotent. Re-running it
+  //     INCREMENTS the aggregate a second time. DOUBLE-COUNTED.
+  //
+  // The full fix needs an events-table content-key UNIQUE on
+  // (roomId, type, messageId) so duplicate writes at different seqs
+  // are no-ops, AND aggregates derived as SUM-from-events on read
+  // (or a triggered refresh keyed off the unique constraint). That
+  // schema migration is tracked as 4.5d-2.6.
+  //
+  // For 4.5d-2.5: messageId is now deterministic (so duplicate
+  // events have the same id, queryable for cleanup), and the
+  // aggregate update is the LAST op (so retries triggered by
+  // post-(2) throws don't apply -- there ARE no post-(2) throws).
+  // The remaining hazard is delivery-failure-after-success, which
+  // is documented + bounded.
+  const seq = await getEventCount(roomId)
+  const event: PlatformEvent = {
+    type: 'token:recorded',
+    roomId,
+    agentId,
+    messageId,
+    provider,
+    modelId,
+    usage,
+    cost,
+  }
+  await appendEvent(roomId, seq, event)
+  await bumpRoomTokenAggregates(roomId, usage, cost)
 }
 
 interface EmitRoomEndedInput {
