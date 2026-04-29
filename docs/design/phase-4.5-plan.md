@@ -262,32 +262,44 @@ Proceeds per `docs/design/phase-5-plan.md`. No changes needed to that plan — t
 
 **Exit criterion**: Owner creates 1-human-8-AI werewolf game, sends invite link to human friend (or second tab), friend plays witch seat through two nights, game completes with correct winner.
 
-### 3.5 Phase 4.5d — Multi-human + Supabase Auth layer (~3-4 days)
+### 3.5 Phase 4.5d — Multi-human + Supabase Auth layer (~3-4 days → 9-12 days realized)
 
-**Goal**: 2-human-7-AI werewolf with parallel day-vote fan-in + persistent Supabase Auth identity.
+> **As-built note (2026-04-29)**: Phase 4.5d was split into three sub-phases during execution. The detailed plan with V2 architecture (durability contract, per-room runtime flag, spike gate, mode fallback registry) lives in [`phase-4.5d-plan.md`](./phase-4.5d-plan.md). Effort estimate revised from 3-4 days → 9-12 days for the realistic tier-4 architectural work in 4.5d-2. The list below is preserved as the V1 historical scope; check the V2 doc for the canonical task breakdown.
 
-**Tasks**:
-- [ ] Supabase Auth setup (magic-link + Google OAuth from day 1 since zh users now have WeChat-using-friends who might prefer OAuth)
-- [ ] `auth.users` integration: seat tokens become "attached" to users on first claim for authed users; anon users still work via token alone
-- [ ] `room_memberships` table: `(room_id, user_id, agent_seat_id, role)` — persists identity across rooms for authed users
-- [ ] Presence via Supabase Realtime presence channel per room
-- [ ] Disconnection grace: 30s before timeout applies
-- [ ] Fan-in primitive: `waitForAllInputs(agentIds, eventName, timeoutMs)` helper in room-runtime
-- [ ] Day-vote refactor: wait for all living humans' votes + resolve AI votes in parallel, then tally
-- [ ] Invite panel UI for owner (N seat links)
-- [ ] RLS policies on events/memberships (authed users see their rooms, anon users see via token)
+**Sub-phase status (2026-04-29):**
 
-**Files**:
-- NEW `apps/web/app/login/page.tsx`, `apps/web/app/auth/callback/route.ts`
-- NEW `apps/web/app/lib/supabase-{server,client}.ts`
-- NEW `apps/web/app/room/[id]/components/InvitePanel.tsx`, `PresenceIndicators.tsx`
-- NEW `packages/db/drizzle/migrations/0003_memberships_and_auth.sql`
-- MOD `apps/web/app/lib/room-runtime.ts`: add fan-in helper
-- MOD `packages/modes/src/werewolf/advance.ts`: day-vote + night-vote fan-in
+| Sub-phase | Scope | Status |
+|---|---|---|
+| **Pre-4.5d** | Supabase Auth magic-link + allowlist gate (migration 0007); JWT seat invites + multi-human picker UI; mid-phase replay bugfix | ✅ Shipped (commits `c858213`, `5b73b6d`, `c01119c`) |
+| **4.5d-1** | Presence + disconnection grace: `seat_presence` table + `rooms.runtime` flag (migrations 0008+0009 applied), heartbeat endpoint, `useRoomLive` hook, mode fallback policy registry, `SeatPresenceIndicator` atom | ✅ Backend complete (commits `53abef2` … `c02f5d7`, wrap `a45eb73`). Migrations applied + verified. |
+| **4.5d-3 UI integration** | `GET /api/rooms/[id]/presence` endpoint, `usePresenceMap` hook, `AgentData.isHuman` wire-type exposure, indicator wire-in to `AgentSeat` with i18n, plumbing through both mode views | ✅ Shipped (commits `ef08100`, `bab04e6`, `c17fe7c`, `13542e6`) |
+| **4.5d-3 docs** | `docs/architecture.md` runtime section update | ✅ Done (commit `2bb4e6a`) |
+| **4.5d-2** | Parallel fan-in via WDK (Workflow DevKit): spike gate → durability contract → mode migration → test pyramid. Per-room runtime flag (`http_chain` | `wdk`) | ⏳ Not started — Tier 4 architectural; needs fresh `/big-task` |
+| **4.5d-3 verification** | 2-human-7-AI E2E (Playwright), disconnection recovery test, cross-runtime replay determinism (blocked on 4.5d-2), mobile-suspend tap-tooltip | ⏳ Not started |
 
-**Budget**: 3-4 days.
+**V1 task list (historical — see [`phase-4.5d-plan.md`](./phase-4.5d-plan.md) for V2 canonical breakdown):**
 
-**Exit criterion**: 3 devices (or browser profiles), 2 human seats + 7 AI, werewolf game completes including day vote round with simultaneous human votes and one disconnection recovery.
+- [x] Supabase Auth setup — magic-link + allowlist gate (no OAuth yet; deferred)
+- [x] Seat-token-to-user attachment for authed users; anon flow preserved via token alone
+- [~] `room_memberships` table — **deprecated in V2**: JWT seat tokens encode room+seat scope; `allowed_emails` gate handles signup access. Re-evaluate if presence ever needs persistent membership rows.
+- [x] Presence via Supabase Realtime presence channel per room (UI peer-awareness layer; Postgres `seat_presence` is the source of truth for decisions)
+- [x] Disconnection grace: 30s before timeout applies (`PRESENCE_GRACE_MS`)
+- [ ] Fan-in primitive: lands as WDK `step.run()` bodies in 4.5d-2, NOT a custom helper
+- [ ] Day-vote refactor: deferred to 4.5d-2 (requires WDK substrate for deterministic fan-in)
+- [x] Invite panel UI for owner (N seat links) — `InvitePanel.tsx`
+- [~] RLS policies on events/memberships — `allowed_emails` gate covers signup; per-event RLS deferred (rooms are URL-scoped, not user-scoped)
+
+**Files (as-built):**
+- NEW `apps/web/app/api/rooms/[id]/heartbeat/route.ts`, `apps/web/app/api/rooms/[id]/presence/route.ts`
+- NEW `apps/web/app/lib/presence.ts` (server helpers: `upsertPresence`, `getPresence`, `getRoomPresence`, `isOnline`)
+- NEW `apps/web/app/room/[id]/hooks/useRoomLive.ts`, `usePresenceMap.ts`
+- NEW `apps/web/app/room/[id]/components/SeatPresenceIndicator.tsx`
+- NEW `packages/modes/src/fallback-registry.ts` (+ tests)
+- NEW `packages/db/drizzle/0007_*.sql` (auth/allowlist), `0008_seat_presence_and_runtime.sql`, `0009_seat_presence_last_seen_idx.sql`
+- MOD `apps/web/app/room/[id]/components/{theme.ts,v2/AgentSeat.tsx}`, `modes/{werewolf,roundtable}/*View.tsx`
+- MOD `apps/web/messages/{en,zh}.json` (+ `room.presence.*` keys)
+
+**Exit criterion**: unchanged — 2-human-7-AI werewolf completes including day-vote fan-in + disconnection recovery. Reachable once 4.5d-2 ships.
 
 ---
 

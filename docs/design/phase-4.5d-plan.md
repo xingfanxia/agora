@@ -264,7 +264,7 @@ Commits `ef08100` … `13542e6` (4 atomic commits). Tier 3 review complete (code
 
 ### Docs
 
-- [ ] Update `docs/design/phase-4.5-plan.md` with as-built notes (4.5d superseded by this doc)
+- [x] Update `docs/design/phase-4.5-plan.md` with as-built notes — added "As-built note" pointing to phase-4.5d-plan.md as canonical V2; sub-phase status table; V1 task list reconciled against shipped reality (some items shipped, some deprecated, some deferred to 4.5d-2 WDK substrate); files-as-built section.
 - [x] Update `docs/architecture.md` — added §7.1.x "Phase 4.5d — Liveness + Runtime Flag" covering seat_presence + rooms.runtime + multi-tab semantics + Postgres-truth-not-Realtime reasoning + mode fallback registry. Also added a status note at top of §7 acknowledging schema drift (canonical schema lives in `packages/db/drizzle/`). The original "waitUntil section" item didn't apply — architecture.md never mentioned `waitUntil()`; the runtime evolution is captured in the new subsection instead.
 - [ ] Mark 4.5d ✅ DONE in `docs/implementation-plan.md` (after 4.5d-2 + remaining 4.5d-3 verification items complete)
 
