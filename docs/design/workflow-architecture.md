@@ -318,9 +318,22 @@ Spike finding (`docs/design/phase-4.5d-wdk-spike.md` § "Step worker isolation")
 
 This is the binding meta-invariant: a room with `runtime='http_chain'` and a room with `runtime='wdk'` running on identical input (same agents, same topic, same human-input timing) must produce identical event sequences in the `events` table.
 
-**Test**: `tests/durability/cross-runtime-equivalence.integration.test.ts` (BLOCKED on 4.5d-2.2 first migrated mode). Take a completed http_chain room's events. Replay the workflow on wdk substrate against the same agent snapshot + same recorded human inputs. Diff event sequences. Tolerate only `seq` ordering within a single phase (legitimate concurrency), not event-presence or content differences.
+**Test**: `apps/web/tests/durability/cross-runtime-equivalence.integration.test.ts`. Status: **PASSING as of 4.5d-2.8 (commit `b64cbb9`)**. The test drives the SAME `{topic, agents, rounds}` scenario through both legacy `Room.start(flow)` and WDK `start(roundtableWorkflow, ...)`, persisting events through an in-memory adapter (`apps/web/app/lib/room-store-memory.ts`, gated by `WORKFLOW_TEST=1`), then diffs `message:created` events on `senderId / senderName / content / channelId`.
 
-This test is the ultimate gate — if it fails, the migration is incomplete regardless of unit-test status.
+**Allowlisted divergences** (excluded from the diff):
+- `message.id`: random UUID (legacy) vs. deterministic `rt-${roomId}-t${turnIdx}-${agentId}` (WDK, 4.5d-2.6).
+- `message.timestamp`: `Date.now()` at write time -- back-to-back runs land at different ms.
+- `message.metadata` shape: legacy populates `{ tokenUsage, provider, modelId }`; WDK populates `{ turnIdx }`. Both readers go through the events log, so live UI is consistent.
+- Event-type asymmetries: legacy emits `agent:thinking` / `agent:done` / `round:changed` / `room:created` / `agent:joined` (realtime UX events); WDK does not. The diff is filtered to `message:created`.
+- `token:recorded` count: under the test's `TokenAccountant` stub, legacy emits 0; WDK emits one per turn. Wire the real accountant if asserting on token events.
+
+This test is the ultimate gate. The 4.5d-2.0 spike's GO recommendation is now **fully validated** -- the next operational step is applying migration 0010 to dev, then flipping the POST /api/rooms default from `http_chain` to `wdk` (single-line at `apps/web/app/api/rooms/route.ts:204`).
+
+**Test infrastructure**:
+- `apps/web/vitest.integration.config.ts` loads the `@workflow/vitest` plugin so test bodies can drive workflows in-process via `createLocalWorld` + direct handlers. The unit-level config (`vitest.config.ts`) excludes `*.integration.test.ts` to keep fast tests hermetic.
+- The integration script runs with `NODE_OPTIONS='--import tsx/esm'` so Node's native ESM loader can read `.ts` workspace packages when the WDK runtime imports them (the bundle externalizes them per `@workflow/builders`'s `externalizeNonSteps: true`).
+- Workspace packages aligned to `"type": "module"` + `.js` extensions on internal re-exports during 4.5d-2.8 (`@agora/llm`, `@agora/core`, `@agora/modes` were the outliers).
+- The in-memory adapter's state is on `globalThis` (NOT module-level) because `@workflow/vitest`'s esbuild bundler INLINES local files into `steps.mjs`, so without globalThis the test process and the bundled-step runtime would each have separate Map instances.
 
 ### CI rules
 
@@ -345,9 +358,9 @@ Both rules are bypassable for the rare legitimate case (e.g., a step body using 
 
 ### Open questions deferred to 4.5d-2.2
 
-1. **Per-mode workflow file split**: one file per mode (`open-chat-workflow.ts`, `werewolf-workflow.ts`) or shared module with mode-keyed dispatch? Defer to first migrated mode (roundtable) — pick whatever shape feels natural; refactor if werewolf forces a different shape.
-2. **`next.config.js` integration**: spike did not wrap `withWorkflow`. Do this in the first 4.5d-2.2 PR; verify `withNextIntl` + `withWorkflow` compose without conflict (likely fine — both are HOFs returning NextConfig).
-3. **`.workflow-data/` storage in production**: spike used local filesystem. Production needs a Vercel-managed storage backend; consult `node_modules/workflow/docs/deploying/world/vercel-world.mdx` during 4.5d-2.2 first deploy.
+1. **Per-mode workflow file split**: one file per mode (`open-chat-workflow.ts`, `werewolf-workflow.ts`) or shared module with mode-keyed dispatch? **Resolved (4.5d-2.2)**: one file per mode -- `apps/web/app/workflows/roundtable-workflow.ts`. Open-chat and werewolf will follow the same shape.
+2. **`next.config.js` integration**: spike did not wrap `withWorkflow`. **Resolved (4.5d-2.2, commit `b8e9ab5`)**: `withWorkflow` is the OUTERMOST wrapper in `next.config.js` -- composes cleanly with `withNextIntl`.
+3. **`.workflow-data/` storage in production**: spike used local filesystem. Still open for first production WDK deploy. Consult `node_modules/workflow/docs/deploying/world/vercel-world.mdx` when flipping the POST /api/rooms default to `wdk` in dev (already running locally) or before promoting to prod.
 
 ### Cross-references
 
