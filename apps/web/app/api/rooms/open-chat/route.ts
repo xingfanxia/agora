@@ -8,11 +8,16 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 import { waitUntil } from '@vercel/functions'
-import { createRoom, setGameState } from '../../../lib/room-store'
+import { start } from 'workflow/api'
+import { createRoom, setGameState, updateRoomStatus } from '../../../lib/room-store'
 import { getTeam } from '../../../lib/team-store'
 import { buildTeamSnapshot } from '../../../lib/team-room'
 import { requireAuthUserId } from '../../../lib/auth'
 import { resolveAgentLanguage } from '../../../lib/language'
+import {
+  openChatWorkflow,
+  toOpenChatAgentSnapshot,
+} from '../../../workflows/open-chat-workflow'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +28,12 @@ interface CreateOpenChatBody {
   language?: unknown
   humanSeatId?: unknown      // legacy single-seat; still honored
   humanSeatIds?: unknown     // Phase 4.5d multi-seat
+  // Phase 4.5d-2.10 -- per-room runtime selector. Default 'http_chain'
+  // until cross-runtime equivalence parity for open-chat is proven
+  // (which 4.5d-2.8's test scope didn't yet cover -- only roundtable).
+  // 'wdk' runs the durable openChatWorkflow; client opt-in until ready
+  // to flip the default.
+  runtime?: unknown
 }
 
 export async function POST(request: NextRequest) {
@@ -94,6 +105,30 @@ export async function POST(request: NextRequest) {
   }
   const createdBy = auth.id
 
+  // Default to http_chain for now -- the cross-runtime equivalence
+  // test from 4.5d-2.8 covers roundtable but NOT open-chat (the
+  // human-seat hook resume path needs its own integration test).
+  // Caller can opt into wdk explicitly; flip to default 'wdk' once
+  // open-chat equivalence is proven AND the WDK human-input
+  // endpoint (4.5d-2.10b) is in place.
+  const runtime: 'http_chain' | 'wdk' = body.runtime === 'wdk' ? 'wdk' : 'http_chain'
+
+  // Pre-flight check for WDK humans: WDK supports human seats via
+  // createHook, but the resumeHook caller (the human-input endpoint)
+  // doesn't have a WDK branch yet (4.5d-2.10b). Reject WDK + humans
+  // for now so a misconfigured client doesn't create a room that
+  // appears to start but blocks indefinitely on the first human turn.
+  // AI-only WDK rooms work today.
+  if (runtime === 'wdk' && humanSeatIds.size > 0) {
+    return NextResponse.json(
+      {
+        error:
+          'WDK runtime does not yet support human seats for open-chat. Use http_chain or wait for 4.5d-2.10b.',
+      },
+      { status: 400 },
+    )
+  }
+
   await createRoom({
     id: roomId,
     modeId: 'open-chat',
@@ -103,6 +138,7 @@ export async function POST(request: NextRequest) {
     agents,
     teamId: team.id,
     createdBy,
+    runtime,
   })
 
   await setGameState(roomId, {
@@ -112,7 +148,51 @@ export async function POST(request: NextRequest) {
     leaderAgentId,
   })
 
-  // Fire the first tick asynchronously — durable runtime takes over from here.
+  if (runtime === 'wdk') {
+    // WDK path: skip the legacy tick fetch entirely; the workflow
+    // body owns its own LLM calls + persistence per the durability
+    // contract. Mirrors roundtable's WDK enqueue (apps/web/app/api/
+    // rooms/route.ts).
+    //
+    // Wrapped in try/catch: createRoom already committed by this
+    // point. If snapshot-build or start() throws, the room row would
+    // otherwise stay at status='running' forever (markOrphanedAsError
+    // skips WDK rooms intentionally). Flip to 'error' explicitly so
+    // the row is recoverable + observable.
+    try {
+      const snapshots = agents.map((info) => {
+        if (!info.systemPrompt) {
+          throw new Error(`agent ${info.id} missing systemPrompt for WDK runtime`)
+        }
+        return toOpenChatAgentSnapshot(info, info.systemPrompt)
+      })
+
+      await start(openChatWorkflow, [
+        {
+          roomId,
+          agents: snapshots,
+          topic,
+          rounds,
+        },
+      ])
+
+      return NextResponse.json({ roomId, runtime: 'wdk' })
+    } catch (workflowStartError) {
+      const msg =
+        workflowStartError instanceof Error
+          ? workflowStartError.message
+          : String(workflowStartError)
+      console.error(`[open-chat wdk-start] ${roomId} failed to enqueue:`, workflowStartError)
+      await updateRoomStatus(roomId, 'error', `WDK enqueue failed: ${msg}`)
+      return NextResponse.json(
+        { error: 'Failed to start WDK runtime', roomId },
+        { status: 500 },
+      )
+    }
+  }
+
+  // http_chain path (default): fire the first tick asynchronously —
+  // durable runtime takes over from here.
   const tickUrl = new URL('/api/rooms/tick', request.url)
   tickUrl.searchParams.set('id', roomId)
   waitUntil(
@@ -123,5 +203,5 @@ export async function POST(request: NextRequest) {
     }).catch((err) => console.error(`[open-chat-create] ${roomId} first-tick fetch failed:`, err)),
   )
 
-  return NextResponse.json({ roomId })
+  return NextResponse.json({ roomId, runtime: 'http_chain' })
 }
