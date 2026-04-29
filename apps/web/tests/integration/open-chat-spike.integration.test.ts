@@ -1,22 +1,23 @@
 // ============================================================
-// Phase 4.5d-2.0 SPIKE — Determinism + hook-resume tests
+// Phase 4.5d-2.0 SPIKE — Workflow composition + hook-resume tests
 // ============================================================
 //
-// Validates that the WDK port of open-chat:
-//   1. Runs end-to-end with all-AI agents and produces a stable
-//      message sequence.
-//   2. Pauses at a human seat via createHook and resumes when the
-//      hook token receives data.
-//   3. Re-running the same input produces an identical event
-//      sequence — the determinism property the http_chain pattern
-//      gets via manual rehydrate-from-events.
+// Validates the WDK substrate's contract for our use case:
+//   1. Workflow + step composition runs end-to-end and produces the
+//      expected round-robin output.
+//   2. createHook lets a human seat pause; the workflow PAUSES (not
+//      just registers a hook), and resumeHook unblocks the loop.
+//   3. The workflow function itself is deterministic — given identical
+//      input, it produces identical output. (This is OUR contract;
+//      WDK's step-result caching across retries is WDK's contract,
+//      tested by WDK's own suite. We rely on the contract, not re-test
+//      it from outside.)
 //
-// The vitest plugin from @workflow/vitest compiles `"use workflow"`
-// + `"use step"` and routes them in-process — no live server needed.
+// The @workflow/vitest plugin compiles `"use workflow"` + `"use step"`
+// and routes them in-process — no live server needed.
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { start } from 'workflow/api'
-import { resumeHook } from 'workflow/api'
+import { start, resumeHook } from 'workflow/api'
 import { waitForHook } from '@workflow/vitest'
 
 import {
@@ -87,9 +88,24 @@ describe('open-chat WDK spike', () => {
     const run = await start(openChatSpikeWorkflow, [input])
 
     // Workflow runs Alice (turn 0), then suspends on HumanBob (turn 1).
+    // Strengthened assertion: a workflow that wrongly paused at turn 0
+    // would still register a hook and pass the simple "hook exists"
+    // check. Race the run.returnValue against a short timeout — if it
+    // resolves quickly, the workflow didn't actually pause. If the
+    // timeout fires first (the expected outcome), the hook is genuinely
+    // blocking progress.
     const expectedToken = humanTurnToken('room-with-human', 1)
     const hook = await waitForHook(run, { token: expectedToken })
     expect(hook.token).toBe(expectedToken)
+
+    let raceWinner: 'returnValue' | 'timeout' = 'timeout'
+    await Promise.race([
+      run.returnValue.then(() => {
+        raceWinner = 'returnValue'
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, 200)),
+    ])
+    expect(raceWinner).toBe('timeout')
 
     await resumeHook(expectedToken, { text: '<HUMAN-INPUT>' })
 
@@ -106,11 +122,23 @@ describe('open-chat WDK spike', () => {
     expect(result.messages[2]?.text).toContain('[mock] Carol')
   })
 
-  it('produces deterministic output on identical input (replay determinism)', async () => {
-    // Determinism property: WDK caches step results, so re-running the
-    // same workflow with the same input must produce the same message
-    // sequence. This is the property that lets us rip out the
-    // advanceWerewolfRoom rehydration helper.
+  it('workflow function is deterministic across invocations', async () => {
+    // What this tests: OUR workflow function doesn't introduce
+    // non-determinism (no Math.random / Date.now / mutable globals
+    // inside the workflow body). Same input → same output across
+    // independent runs.
+    //
+    // What this does NOT test: WDK's step-result caching across step
+    // retries. That's WDK's substrate contract, validated by WDK's
+    // own test suite — we rely on it but don't re-validate from
+    // outside (a from-scratch test couldn't tell the difference
+    // between "step ran twice and produced same output" and "step
+    // ran once and result was cached"; only WDK's internal events
+    // log distinguishes those).
+    //
+    // The property below is the one we own: if we accidentally add
+    // a Math.random() call inside the workflow function in a future
+    // refactor, this test fails.
     const input: OpenChatSpikeInput = {
       roomId: 'room-determinism',
       agents: ALL_AI_AGENTS,
@@ -126,10 +154,6 @@ describe('open-chat WDK spike', () => {
     const run2 = await start(openChatSpikeWorkflow, [input])
     const result2 = await run2.returnValue
 
-    // Two independent runs with identical input → identical output.
-    // (Real LLM calls would break this without recording; our mock is
-    // deterministic, which is the property we want once we wrap the
-    // real LLM in a step that records its result.)
     expect(result2.messages).toEqual(result1.messages)
   })
 })

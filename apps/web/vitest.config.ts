@@ -16,8 +16,10 @@ export default defineConfig({
   test: {
     include: ['tests/integration/**/*.test.ts'],
     testTimeout: 60_000,
-    // The vitest plugin compiles step bodies at module-load time, so
-    // each test file gets a fresh module cache — module-level state
-    // in workflow files (e.g. spikeStore) is per-test-process, fine.
+    // @workflow/vitest's setupWorkflowTests clears workflow event log
+    // between test invocations, but NOT user module-level state — so
+    // helpers like `spikeStore` carry over between tests in the same
+    // worker. Always pair with `beforeEach(() => clearSpikeStore())`.
+    // (See workflows-and-steps.mdx → "Module state across tests".)
   },
 })

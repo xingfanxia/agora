@@ -55,9 +55,15 @@ The workflow uses `createHook<{ text: string }>({ token: humanTurnToken(roomId, 
 
 Test #2 drives this with `waitForHook(run, { token: expectedToken })` followed by `resumeHook(token, payload)` from `workflow/api`. The workflow advances exactly to the next turn and resumes deterministically.
 
-### 3. Replay determinism: identical input → identical output
+### 3. Workflow function determinism (our contract) + step caching (WDK's contract)
 
-The whole reason for migrating. Test #3 runs the workflow twice with the same input and asserts `result2.messages` deep-equals `result1.messages`. WDK's step caching means each AI turn's persisted output is replayable verbatim — no `replayMessage` rebuild dance.
+Two distinct properties, only one of which we test from outside.
+
+**OUR contract (tested by spike test #3)**: the workflow function itself contains no non-determinism — no `Math.random()`, no `Date.now()` reads, no mutable globals. Test #3 runs the workflow twice with identical input and asserts byte-equal output. If we accidentally add `Math.random()` to the workflow body in a future refactor, this test fails. **This is the property we own.**
+
+**WDK's contract (trusted, not re-tested)**: when a step's *return delivery* fails after the body executed, WDK retries the body and persists the cached result so subsequent replays see the same value. This is documented in WDK's `workflows-and-steps.mdx` and validated by WDK's own test suite. We rely on it but do not re-validate from outside the framework — a from-scratch test couldn't distinguish "step ran twice, both produced same output" from "step ran once, second invocation hit cache" without inspecting WDK's internal events log, which couples our test to substrate internals we shouldn't depend on.
+
+**Together**, they give us: same input → same output across both fresh runs and retried runs, which is what eliminates the hand-rolled `replayMessage` rebuild dance in `advanceWerewolfRoom`.
 
 ### 4. Code-size win
 
@@ -121,7 +127,7 @@ The spike validates the substrate. It does **not** validate:
 Properties the WDK port must preserve. Some are inherited from the http_chain pattern; some are new constraints WDK imposes on us.
 
 ### Inherited from http_chain (must keep)
-- **Idempotent step bodies**: a step retry must produce the same observable side effects. Today this is `appendEvent` with `ON CONFLICT DO NOTHING`; the WDK port keeps this primitive.
+- **Idempotent step bodies**: a step retry must produce the same observable side effects. Today this is `appendEvent` with `ON CONFLICT DO NOTHING`; the WDK port keeps this primitive. **The spike's `appendToSpikeStore` mirrors this in-memory** (skip-on-duplicate-turnIdx) so the spike artifact teaches the right pattern, not the unsafe shape.
 - **No info-leak across channels**: werewolf night-action messages stay in their role's channel. Step bodies must not write a message to the wrong channel, even on retry.
 - **Deterministic agent IDs**: today, derived from `roomId` seed in the factory. Keep this — workflow function input includes the agent roster, but agent IDs themselves come from the room snapshot, not from `crypto.randomUUID()` inside a step.
 
@@ -130,6 +136,8 @@ Properties the WDK port must preserve. Some are inherited from the http_chain pa
 - **No Realtime reads in step bodies**: presence/peer state from Realtime is UI-only. Step decisions read `seat_presence` from Postgres (already the rule from 4.5d-1).
 - **No wallclock timers in workflow context**: replace `setTimeout(..., ms>0)` with `sleep("Ns")` from `workflow`. CI rule (per parent plan): grep test files for `setTimeout` with positive arg.
 - **`flow.onMessage` as the single mutation point**: ensures replay rebuilds the same `speakerIndex` + `phaseDecisions`. Today's rehydration code enforces this implicitly; the durability contract must spell it out.
+- **Step input shape: pass scalars, not arrays**: per spike pattern (`priorCount: number` rather than `prior: SpikeMessage[]`), step inputs should be small + cheap to log/serialize/replay. WDK serializes step input into the cached step result; passing a growing array bloats cache size linearly with workflow length. When a step needs full history, it should derive history from its small input (e.g. roomId + turnIdx) by reading DB, not by accepting a large input prop.
+- **Hook tokens namespaced by mode**: token format `agora/room/<uuid>/mode/<mode-id>/turn/<turnIdx>` — `mode/<mode-id>` segment ensures werewolf day-vote / night-action phases don't collide with open-chat tokens. Same-room conflict on re-entry is gated at the room-creation layer (don't start a second workflow for an already-running roomId), not by `using hook = ...` syntax (which would only narrow the conflict window within a single run, not eliminate it across runs).
 
 Full contract: `docs/design/workflow-architecture.md` § "Durability Contract" (to add in 4.5d-2.1).
 

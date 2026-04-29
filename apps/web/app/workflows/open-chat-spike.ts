@@ -67,9 +67,15 @@ export interface OpenChatSpikeResult {
 // input UI, or test harness) can compute the token without round-
 // tripping to the workflow run id. Matches the pattern WDK docs
 // recommend for createHook tokens.
+//
+// Format: slash-separated path so 4.5d-2.2 can drop in `mode/werewolf-day-vote`,
+// `mode/werewolf-night-action`, etc. without colliding with this namespace.
+// Tokens must be unique across all RUNNING workflows in the project (per
+// WDK hook-conflict.mdx); collision risk is gated at the room-creation
+// layer (don't start a second workflow for an already-running roomId).
 
 export function humanTurnToken(roomId: string, turnIdx: number): string {
-  return `agora:open-chat:${roomId}:turn-${turnIdx}`
+  return `agora/room/${roomId}/mode/open-chat/turn/${turnIdx}`
 }
 
 // ── Workflow ───────────────────────────────────────────────
@@ -82,11 +88,19 @@ export async function openChatSpikeWorkflow(
   const { roomId, agents, topic, rounds } = input
   const totalTurns = agents.length * rounds
 
-  // Sanity. We throw FatalError-equivalent by letting it surface — the
-  // workflow won't retry input-shape errors, only step-body errors.
+  // Boundary validation (project rule: validate at system boundaries).
+  // Production wraps this in a Zod schema at the API route; spike does
+  // it inline since the workflow is the boundary.
+  if (typeof roomId !== 'string' || roomId.length === 0 || roomId.includes('/')) {
+    // No '/' because the token format uses '/' as the separator —
+    // a roomId containing '/' would silently shift the token shape.
+    throw new Error('roomId must be a non-empty string without "/"')
+  }
   if (agents.length === 0) {
     throw new Error('open-chat workflow requires at least one agent')
   }
+  // Upper bound is the same as createOpenChat in @agora/modes: keeps
+  // step-fan-out bounded (12 * 10 = 120 turn budget per room).
   if (rounds < 1 || rounds > 10) {
     throw new Error('rounds must be 1..10')
   }
@@ -182,6 +196,14 @@ async function persistHumanMessage(input: PersistHumanInput): Promise<void> {
 // Process-local Map. NOT for production. Exposes get/clear so tests
 // can introspect what was persisted without round-tripping through
 // the workflow result.
+//
+// `appendToSpikeStore` is a plain helper, NOT a step. Calling a `'use
+// step'` function from inside another step is a no-op per WDK docs
+// (workflows-and-steps.mdx) — the directive only triggers when invoked
+// from a workflow function. Production replaces the body with an
+// idempotent Postgres write (ON CONFLICT DO NOTHING on (roomId,
+// turnIdx)); the spike mirrors that idempotency in-memory so the
+// pattern is self-documenting.
 
 const spikeStore = new Map<string, SpikeMessage[]>()
 
@@ -189,8 +211,10 @@ async function appendToSpikeStore(
   roomId: string,
   message: SpikeMessage,
 ): Promise<void> {
-  'use step'
   const arr = spikeStore.get(roomId) ?? []
+  // Idempotent on turnIdx — mirrors the appendEvent ON CONFLICT
+  // pattern. A retried step body produces no duplicate row.
+  if (arr.some((m) => m.turnIdx === message.turnIdx)) return
   arr.push(message)
   spikeStore.set(roomId, arr)
 }
