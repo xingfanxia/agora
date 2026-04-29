@@ -4,7 +4,7 @@
 
 export { EventBus } from './events.js'
 
-export { AIAgent, HumanAgent, WaitingForHumanError } from './agent.js'
+export { AIAgent, HumanAgent, WaitingForHumanError, buildSystemPrompt } from './agent.js'
 export type {
   Agent,
   AgentConfig,

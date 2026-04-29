@@ -78,7 +78,24 @@ export interface Agent {
 
 // ── Implementation ──────────────────────────────────────────
 
-function buildSystemPrompt(config: AgentConfig): string {
+/**
+ * Compose the LLM system prompt from an AgentConfig. Joins (in order):
+ *   1. config.systemPrompt           (if set)
+ *   2. config.persona.systemPrompt   (if set)
+ *   3. `You are ${persona.name}. ${persona.description}` (always)
+ *
+ * The `\n\n` separator and the trailing sentinel are load-bearing:
+ * cross-runtime equivalence tests pre-wrap the WDK roundtable
+ * snapshot's systemPrompt with this same composition so identical
+ * effective prompts reach the LLM mock. Exported (4.5d-2.8) so the
+ * integration test can import the function instead of duplicating
+ * the shape -- a hand-rolled replica was a silent-drift hazard.
+ *
+ * If you change the composition, the cross-runtime equivalence test
+ * at apps/web/tests/durability/cross-runtime-equivalence.integration
+ * .test.ts inherits the change automatically (no helper to update).
+ */
+export function buildSystemPrompt(config: AgentConfig): string {
   const parts: string[] = []
 
   if (config.systemPrompt) {

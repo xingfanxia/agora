@@ -2,7 +2,7 @@ import { generateText, generateObject } from 'ai'
 import type { LanguageModel } from 'ai'
 import type { ModelConfig, TokenUsage } from '@agora/shared'
 import type { ZodSchema } from 'zod'
-import { createModel } from './provider'
+import { createModel } from './provider.js'
 
 export interface ChatMessage {
   readonly role: 'system' | 'user' | 'assistant'

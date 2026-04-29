@@ -12,6 +12,38 @@ import type { LLMProvider, Message, PlatformEvent, TokenUsage } from '@agora/sha
 import type { EventRow, RoomRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
+// Phase 4.5d-2.8 -- in-memory seam for cross-runtime equivalence tests.
+// Each writer + the three reads exercised by the WDK roundtable workflow
+// short-circuit to the memory adapter when WORKFLOW_TEST=1. Production
+// never sets this flag (vitest configs set it for the durability suite),
+// so the seam is dead code at runtime in real deployments. Static import
+// is intentional -- matches the llm-factory.ts pattern (always imports
+// the real path, branches on env at call time).
+import {
+  memAppendEvent,
+  memCreateRoom,
+  memGetEventCount,
+  memGetEventsSince,
+  memGetMessagesSince,
+  memGetRoom,
+  memRefreshMessageCount,
+  memRefreshRoomTokenAggregates,
+  memSetCurrentPhase,
+  memSetCurrentRound,
+  memSetGameState,
+  memSetThinkingAgent,
+  memSetWaiting,
+  memUpdateRoomStatus,
+} from './room-store-memory.js'
+
+/**
+ * Test seam: when WORKFLOW_TEST=1, all writers + the four reads
+ * exercised by the WDK roundtable workflow route through the
+ * in-memory adapter (see `room-store-memory.ts`). Per-call env
+ * check (not module-load) so a single test process can flip the
+ * flag mid-run if needed -- matches the llm-factory contract.
+ */
+const inMemoryMode = (): boolean => process.env.WORKFLOW_TEST === '1'
 
 // Lazy accessor: defers Postgres client creation until the first actual
 // query. Prevents Next.js build-time page data collection from crashing
@@ -74,6 +106,7 @@ export interface CreateRoomArgs {
 }
 
 export async function createRoom(args: CreateRoomArgs): Promise<void> {
+  if (inMemoryMode()) return memCreateRoom(args)
   await db.insert(rooms).values({
     id: args.id,
     modeId: args.modeId,
@@ -99,6 +132,7 @@ export async function appendEvent(
   seq: number,
   event: PlatformEvent,
 ): Promise<void> {
+  if (inMemoryMode()) return memAppendEvent(roomId, seq, event)
   // Untargeted ON CONFLICT DO NOTHING -- swallows duplicates from
   // ANY unique constraint, including:
   //
@@ -137,10 +171,12 @@ export async function appendEvent(
 // ── Incremental room updates ────────────────────────────────
 
 export async function setCurrentPhase(roomId: string, phase: string | null): Promise<void> {
+  if (inMemoryMode()) return memSetCurrentPhase(roomId, phase)
   await db.update(rooms).set({ currentPhase: phase }).where(eq(rooms.id, roomId))
 }
 
 export async function setCurrentRound(roomId: string, round: number): Promise<void> {
+  if (inMemoryMode()) return memSetCurrentRound(roomId, round)
   await db.update(rooms).set({ currentRound: round }).where(eq(rooms.id, roomId))
 }
 
@@ -148,6 +184,7 @@ export async function setThinkingAgent(
   roomId: string,
   agentId: string | null,
 ): Promise<void> {
+  if (inMemoryMode()) return memSetThinkingAgent(roomId, agentId)
   await db.update(rooms).set({ thinkingAgentId: agentId }).where(eq(rooms.id, roomId))
 }
 
@@ -155,6 +192,7 @@ export async function setGameState(
   roomId: string,
   gameState: Record<string, unknown>,
 ): Promise<void> {
+  if (inMemoryMode()) return memSetGameState(roomId, gameState)
   await db.update(rooms).set({ gameState: gameState as object }).where(eq(rooms.id, roomId))
 }
 
@@ -163,6 +201,7 @@ export async function updateRoomStatus(
   status: RoomStatus,
   errorMessage?: string,
 ): Promise<void> {
+  if (inMemoryMode()) return memUpdateRoomStatus(roomId, status, errorMessage)
   const now = new Date()
   const patch: Partial<RoomRow> = { status }
   if (status === 'completed' || status === 'error') patch.endedAt = now
@@ -180,6 +219,7 @@ export async function setWaiting(
   waitingFor: WaitingDescriptor,
   waitingUntil: Date | null,
 ): Promise<void> {
+  if (inMemoryMode()) return memSetWaiting(roomId, waitingFor, waitingUntil)
   await db
     .update(rooms)
     .set({
@@ -202,6 +242,7 @@ export async function setWaiting(
  * callers; new code should call this directly.
  */
 export async function refreshMessageCount(roomId: string): Promise<void> {
+  if (inMemoryMode()) return memRefreshMessageCount(roomId)
   await db.execute(sql`
     UPDATE rooms r SET message_count = (
       SELECT count(*) FROM events
@@ -250,6 +291,7 @@ export const incrementMessageCount = refreshMessageCount
  * at typical magnitudes.
  */
 export async function refreshRoomTokenAggregates(roomId: string): Promise<void> {
+  if (inMemoryMode()) return memRefreshRoomTokenAggregates(roomId)
   await db.execute(sql`
     WITH agg AS (
       SELECT
@@ -328,10 +370,26 @@ export interface RoomSnapshot {
 }
 
 export async function getRoom(roomId: string): Promise<RoomRow | null> {
+  if (inMemoryMode()) {
+    // The mem adapter's MemRoomRow is a structural superset of RoomRow
+    // (same column names + types). Cast through unknown is safe per
+    // the shape contract documented in room-store-memory.ts.
+    return (memGetRoom(roomId) as unknown as RoomRow | undefined) ?? null
+  }
   const [row] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1)
   return row ?? null
 }
 
+/**
+ * NOTE on the seam: this read is intentionally NOT routed through the
+ * in-memory adapter. The token-summary aggregation queries (per-agent
+ * + per-model GROUP BY over the events log via Drizzle SQL) would
+ * require a non-trivial reimplementation that the cross-runtime
+ * equivalence test doesn't exercise. Tests asserting room-snapshot
+ * shape should read primitives via `getMemoryRoom` (room state) and
+ * `getMemoryEvents` (events log) directly. Extend the seam here when
+ * the first test needs a snapshot through the public API.
+ */
 export async function getRoomSnapshot(roomId: string): Promise<RoomSnapshot | null> {
   const row = await getRoom(roomId)
   if (!row) return null
@@ -449,6 +507,7 @@ export async function getMessagesSince(
   roomId: string,
   afterTs: number,
 ): Promise<Message[]> {
+  if (inMemoryMode()) return memGetMessagesSince(roomId, afterTs)
   const rows = await db
     .select()
     .from(events)
@@ -473,6 +532,7 @@ export async function getEventsSince(
   roomId: string,
   afterSeq: number,
 ): Promise<{ index: number; timestamp: number; event: PlatformEvent }[]> {
+  if (inMemoryMode()) return memGetEventsSince(roomId, afterSeq)
   const rows = await db
     .select()
     .from(events)
@@ -487,6 +547,7 @@ export async function getEventsSince(
 
 /** Total number of events (for pagination). */
 export async function getEventCount(roomId: string): Promise<number> {
+  if (inMemoryMode()) return memGetEventCount(roomId)
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(events)

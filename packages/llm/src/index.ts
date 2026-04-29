@@ -1,6 +1,6 @@
-export { createModel, getProviderDisplayName, getModelDisplayName } from './provider'
-export { generate, createGenerateFn, createGenerateObjectFn } from './generate'
-export type { ChatMessage, GenerateFn, GenerateObjectFn, GenerateResult, GenerateObjectResult } from './generate'
+export { createModel, getProviderDisplayName, getModelDisplayName } from './provider.js'
+export { generate, createGenerateFn, createGenerateObjectFn } from './generate.js'
+export type { ChatMessage, GenerateFn, GenerateObjectFn, GenerateResult, GenerateObjectResult } from './generate.js'
 export {
   loadPricingRegistry,
   resetPricingRegistry,
@@ -8,4 +8,4 @@ export {
   calculateCost,
   createCostCalculator,
   buildPricingMap,
-} from './pricing'
+} from './pricing.js'

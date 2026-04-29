@@ -1,5 +1,5 @@
 // ============================================================
-// Phase 4.5d-2.3 -- Cross-runtime equivalence test
+// Phase 4.5d-2.3 + 4.5d-2.8 -- Cross-runtime equivalence test
 // ============================================================
 //
 // Binding meta-invariant of the durability contract (4.5d-2.1):
@@ -8,13 +8,19 @@
 // observable behavior. If this invariant breaks, the WDK migration
 // is unsafe to flip on by default.
 //
-// This file deliberately covers what's testable WITHOUT a real
-// database. Each runtime persists via apps/web/app/lib/room-store
-// which is tightly coupled to Postgres. The full event-stream diff
-// is gated on a DB seam (in-memory event log adapter) -- see the
-// it.todo at the bottom for the design.
+// Two complementary surfaces in this file:
 //
-// The PARTIAL equivalence we CAN prove without DB:
+//  (A) LLM-INPUT EQUIVALENCE -- pure unit-style assertions on the
+//      hand-rolled replicas of each runtime's history-to-chat
+//      transformation. Foundation; doesn't need a DB or runtime.
+//
+//  (B) FULL EVENT-STREAM EQUIVALENCE (4.5d-2.8) -- drives the same
+//      scenario through both runtimes via the in-memory room-store
+//      seam (room-store-memory.ts) and diffs message:created events.
+//      Requires @workflow/vitest's in-process runner (configured in
+//      vitest.integration.config.ts at the apps/web root).
+//
+// The PARTIAL equivalence we'd CAN prove without DB:
 //
 //   1. The LLM mock is deterministic on (systemPrompt, history)
 //      [covered in llm-factory.test.ts -- foundation only]
@@ -27,9 +33,39 @@
 //      so both runtimes now produce role:'assistant' for own messages
 //      and role:'user' (with [name] prefix) for others.
 
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { start } from 'workflow/api'
+import {
+  AIAgent,
+  buildSystemPrompt,
+  EventBus,
+  Room,
+  RoundRobinFlow,
+} from '@agora/core'
+import type { TokenAccountant } from '@agora/core'
+import type {
+  Message,
+  ModelConfig,
+  PersonaConfig,
+  PlatformEvent,
+  RoomConfig,
+} from '@agora/shared'
 import { createGenerateFn } from '../../app/lib/llm-factory.js'
-import type { ModelConfig } from '@agora/shared'
+import {
+  roundtableWorkflow,
+  type RoundtableAgentSnapshot,
+} from '../../app/workflows/roundtable-workflow.js'
+import { createRoom, updateRoomStatus, type AgentInfo } from '../../app/lib/room-store.js'
+import {
+  flushRuntimePending,
+  wireEventPersistence,
+} from '../../app/lib/persist-runtime.js'
+import type { RuntimeEntry } from '../../app/lib/runtime-registry.js'
+import {
+  getMemoryEvents,
+  getMemoryRoom,
+  resetMemoryStore,
+} from '../../app/lib/room-store-memory.js'
 
 // ── Fixture ────────────────────────────────────────────────
 
@@ -43,17 +79,21 @@ interface AgentFixture {
   readonly id: string
   readonly name: string
   readonly systemPrompt: string
+  /** Description text the legacy AIAgent's buildSystemPrompt() appends. */
+  readonly personaDescription: string
 }
 
 const ALICE: AgentFixture = {
-  id: 'alice-id',
+  id: '11111111-1111-1111-1111-111111111111',
   name: 'Alice',
   systemPrompt: 'You are Alice. Argue for caution.',
+  personaDescription: 'Argues for caution',
 }
 const BOB: AgentFixture = {
-  id: 'bob-id',
+  id: '22222222-2222-2222-2222-222222222222',
   name: 'Bob',
   systemPrompt: 'You are Bob. Argue for ambition.',
+  personaDescription: 'Argues for ambition',
 }
 
 interface HistoryMessage {
@@ -118,25 +158,62 @@ function wdkChatMessages(
 // ── KNOWN DIVERGENCES (allowlist) ──────────────────────────
 //
 // Cross-runtime equivalence is the binding meta-invariant of the
-// durability contract. After 4.5d-2.7 (role tagging alignment), only
-// ONE intentional divergence remains:
+// durability contract. The (B) integration test diffs only the
+// dimensions that constitute equivalence; the items below are
+// EXPECTED differences, intentionally excluded from the diff.
 //
-// 1. MESSAGE ID FORMAT (4.5d-2.6): legacy AIAgent generates
-//    message.id via crypto.randomUUID() (random UUID); WDK uses
-//    deriveTurnMessageId() -> deterministic 'rt-${roomId}-t${turnIdx}-${agentId}'.
-//    The shapes do NOT match between runtimes by design (legacy
-//    randomness can't be reproduced; WDK determinism is required
-//    for content-key idempotency). The DB-backed equivalence test
-//    (the it.todo at the bottom) MUST exclude `message.id` from
-//    field-level diffs and assert structural equivalence instead
-//    (same number of message:created events, same sender order,
-//    same content per turn given identical mock LLM inputs).
+// 1. MESSAGE-LEVEL field divergences within `message:created` events:
+//
+//    a. `id`: legacy generates via crypto.randomUUID() (random);
+//       WDK uses deriveTurnMessageId() -> deterministic
+//       'rt-${roomId}-t${turnIdx}-${agentId}' (4.5d-2.6).
+//       Random/deterministic by design; shapes never match.
+//
+//    b. `timestamp`: both runtimes set Date.now() at write time;
+//       two back-to-back runs land at different millisecond values.
+//
+//    c. `metadata`: legacy AIAgent populates
+//       `{ tokenUsage, provider, modelId }` (agent.ts ~204);
+//       WDK populates `{ turnIdx }` (roundtable-workflow.ts ~401).
+//       Legacy embeds token attribution in the message; WDK carries
+//       it on a separate `token:recorded` event. Both readers go
+//       through the events log so the live UI is consistent, but
+//       the per-message metadata SHAPE differs.
+//
+//    `comparableMessages` projects only senderId/senderName/
+//    content/channelId so all three are silently excluded.
+//
+// 2. EVENT-STREAM divergences (extra event types one runtime emits
+//    that the other does not):
+//
+//    a. Legacy emits `agent:thinking` / `agent:done` / `round:changed`
+//       / `room:created` / `agent:joined` (realtime UX events).
+//       WDK does not -- only `room:started` / `message:created` /
+//       `token:recorded` / `room:ended` are part of its durable
+//       contract.
+//
+//    b. Legacy under the test's TokenAccountant STUB emits ZERO
+//       `token:recorded` events; WDK emits one per turn. The
+//       test stubs the accountant deliberately because the diff
+//       targets `message:created` only -- if a future test asserts
+//       on token events, swap in the real `TokenAccountant`.
+//
+//    `comparableMessages` filters to `message:created` so all of
+//    these are silently excluded.
 //
 // (Resolved: HISTORY ROLE TAGGING was the previous open divergence;
 // 4.5d-2.7 aligned legacy AIAgent with WDK's own->assistant /
 // other->user pattern. The TURN 2+ tests below now assert toEqual.)
+//
+// (Resolved: SYSTEM PROMPT WRAPPING -- the legacy AIAgent's
+// buildSystemPrompt() composes [systemPrompt, persona.systemPrompt,
+// `You are ${persona.name}. ${persona.description}`] but WDK passes
+// snapshot.systemPrompt verbatim. The (B) test now uses the
+// EXPORTED `buildSystemPrompt` from @agora/core to pre-wrap the WDK
+// snapshot, so a future change to that helper inherits automatically
+// -- the previous hand-rolled replica was a silent-drift hazard.)
 
-// ── Tests ──────────────────────────────────────────────────
+// ── (A) LLM-input shape tests ──────────────────────────────
 
 describe('cross-runtime equivalence (LLM input shape)', () => {
   it('TURN 0: empty history -- both runtimes produce identical LLM input', async () => {
@@ -230,32 +307,214 @@ describe('cross-runtime equivalence (LLM input shape)', () => {
   })
 })
 
-describe('cross-runtime equivalence (full event stream)', () => {
-  // ----------------------------------------------------------
-  // PHASE TAG: 4.5d-2.4 (testing/cost-tracking pass) is the
-  // natural slot to land this. Three blockers must be addressed
-  // first (any order):
-  //
-  // 1. DB seam. apps/web/app/lib/room-store.ts is hard-bound to
-  //    Drizzle + Postgres via getDb(). Both runtimes need to run
-  //    in-process with predictable event state. The cleanest
-  //    seam is an in-memory event-log adapter gated by
-  //    WORKFLOW_TEST=1 (same flag as llm-factory.ts).
-  //
-  // 2. WDK runtime in tests. The WDK path imports `start` from
-  //    'workflow/api' which requires the Next.js workflow runtime
-  //    to be wired up. @workflow/vitest's in-process runner is
-  //    the supported path -- add a vitest.integration.config.ts
-  //    with the workflow() plugin (per node_modules/workflow/docs/).
-  //
-  // (Resolved 4.5d-2.7: role-tagging alignment, formerly blocker #3,
-  // landed in packages/core/src/agent.ts (messageToChatMessage).
-  // Both runtimes now produce identical LLM inputs for multi-round
-  // scenarios -- the TURN 2+ test above asserts toEqual.)
-  //
-  // Until both remaining blockers are addressed, this test stays as
-  // todo.
-  // ----------------------------------------------------------
+// ── (B) Full event-stream equivalence (4.5d-2.8) ───────────
 
-  it.todo('[4.5d-2.4] runs the same scenario through http_chain and WDK, diffs DB events')
+const TOPIC = 'Should we accelerate AI development?'
+const ROUNDS = 2
+const FIXTURES: readonly AgentFixture[] = [ALICE, BOB] as const
+
+/**
+ * Compose the LLM-facing system prompt the way legacy AIAgent.reply()
+ * does, by routing the fixture through the SAME `buildSystemPrompt`
+ * function the production AIAgent uses. The WDK roundtable workflow
+ * passes `snapshot.systemPrompt` verbatim to generateFn, while legacy
+ * wraps the agent's config via buildSystemPrompt before calling
+ * generateFn -- so without this pre-wrap on the WDK snapshot the
+ * mock LLM hashes would diverge between runtimes.
+ *
+ * Sharing the function (rather than a hand-rolled replica) was the
+ * 4.5d-2.8 fix for the silent-drift hazard: any future change to
+ * buildSystemPrompt is inherited automatically here.
+ */
+function effectiveSystemPrompt(fixture: AgentFixture): string {
+  return buildSystemPrompt({
+    id: fixture.id,
+    name: fixture.name,
+    persona: { name: fixture.name, description: fixture.personaDescription },
+    model: MODEL,
+    systemPrompt: fixture.systemPrompt,
+  })
+}
+
+function fixtureToAgentInfo(fixture: AgentFixture): AgentInfo {
+  return {
+    id: fixture.id,
+    name: fixture.name,
+    model: MODEL.modelId,
+    provider: MODEL.provider,
+    persona: fixture.personaDescription,
+    systemPrompt: effectiveSystemPrompt(fixture),
+  }
+}
+
+/**
+ * Drive a roundtable through the legacy http_chain runtime. Mirrors
+ * the http_chain branch of POST /api/rooms (apps/web/app/api/rooms/
+ * route.ts) minus auth, pricing wiring, and the waitUntil() async
+ * dispatch. The TokenAccountant is intentionally stubbed -- this
+ * test diffs message:created events only, and the accountant only
+ * affects token:recorded.
+ */
+async function runLegacyScenario(roomId: string): Promise<void> {
+  const eventBus = new EventBus()
+  const roomConfig: RoomConfig = {
+    id: roomId,
+    name: TOPIC,
+    modeId: 'roundtable',
+    topic: TOPIC,
+    maxAgents: FIXTURES.length,
+  }
+  const room = new Room(roomConfig, eventBus)
+
+  for (const fixture of FIXTURES) {
+    const persona: PersonaConfig = {
+      name: fixture.name,
+      description: fixture.personaDescription,
+    }
+    const agent = new AIAgent(
+      {
+        id: fixture.id,
+        name: fixture.name,
+        persona,
+        model: MODEL,
+        systemPrompt: fixture.systemPrompt,
+      },
+      createGenerateFn(MODEL),
+    )
+    room.addAgent(agent)
+  }
+
+  const flow = new RoundRobinFlow({ rounds: ROUNDS })
+  const runtime: RuntimeEntry = {
+    eventBus,
+    room,
+    flow,
+    accountant: { dispose() {} } as unknown as TokenAccountant,
+    seq: 0,
+    pending: Promise.resolve(),
+  }
+  wireEventPersistence(roomId, eventBus, runtime)
+
+  await createRoom({
+    id: roomId,
+    modeId: 'roundtable',
+    topic: TOPIC,
+    config: { topic: TOPIC, rounds: ROUNDS, agents: FIXTURES, language: 'en' },
+    agents: FIXTURES.map(fixtureToAgentInfo),
+    runtime: 'http_chain',
+  })
+
+  await room.start(flow)
+  await flushRuntimePending(runtime)
+  await updateRoomStatus(roomId, 'completed')
+}
+
+/**
+ * Drive a roundtable through the WDK runtime. Mirrors the wdk
+ * branch of POST /api/rooms minus the createRoom -> start() race
+ * and the API response. `await run.returnValue` blocks until the
+ * workflow completes (in-process via @workflow/vitest's local
+ * world), so by the time it resolves all step events have landed
+ * in the room-store seam.
+ */
+async function runWdkScenario(roomId: string): Promise<void> {
+  await createRoom({
+    id: roomId,
+    modeId: 'roundtable',
+    topic: TOPIC,
+    config: { topic: TOPIC, rounds: ROUNDS, agents: FIXTURES, language: 'en' },
+    agents: FIXTURES.map(fixtureToAgentInfo),
+    runtime: 'wdk',
+  })
+
+  const snapshots: RoundtableAgentSnapshot[] = FIXTURES.map((fixture) => ({
+    id: fixture.id,
+    name: fixture.name,
+    persona: fixture.personaDescription,
+    systemPrompt: effectiveSystemPrompt(fixture),
+    model: MODEL,
+  }))
+
+  const run = await start(roundtableWorkflow, [
+    {
+      roomId,
+      agents: snapshots,
+      topic: TOPIC,
+      rounds: ROUNDS,
+    },
+  ])
+  await run.returnValue
+}
+
+interface ComparableMessage {
+  readonly senderId: string
+  readonly senderName: string
+  readonly content: string
+  readonly channelId: string
+}
+
+/**
+ * Project the in-memory event log to a comparable shape. Excludes
+ * the two known divergences (message.id, timestamp) per the
+ * allowlist comment above. Filters to message:created since legacy
+ * emits agent:thinking / agent:done / round:changed events that
+ * WDK does not (those are realtime UX events, not part of the
+ * durable contract).
+ */
+function comparableMessages(roomId: string): ComparableMessage[] {
+  return getMemoryEvents(roomId)
+    .filter((row) => row.type === 'message:created')
+    .map((row) => {
+      const msg = (row.payload as Extract<PlatformEvent, { type: 'message:created' }>)
+        .message as Message
+      return {
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        content: msg.content,
+        channelId: msg.channelId,
+      }
+    })
+}
+
+describe('cross-runtime equivalence (full event stream)', () => {
+  beforeEach(() => {
+    resetMemoryStore()
+  })
+  afterEach(() => {
+    resetMemoryStore()
+  })
+
+  it('http_chain and WDK produce equivalent message:created sequences', async () => {
+    // Run WDK first to take the workflow runtime cold-start hit
+    // before the legacy path runs in-process. Order doesn't affect
+    // equivalence -- the in-memory store is keyed on roomId so the
+    // two scenarios don't interfere.
+    const wdkRoomId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    await runWdkScenario(wdkRoomId)
+    const wdkMessages = comparableMessages(wdkRoomId)
+
+    const legacyRoomId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    await runLegacyScenario(legacyRoomId)
+    const legacyMessages = comparableMessages(legacyRoomId)
+
+    // Each runtime produced agents.length * rounds messages.
+    expect(legacyMessages).toHaveLength(FIXTURES.length * ROUNDS)
+    expect(wdkMessages).toHaveLength(legacyMessages.length)
+
+    // Element-wise structural equivalence -- senderId/senderName/
+    // content/channelId match per turn. id and timestamp excluded
+    // by `comparableMessages` per the divergence allowlist.
+    expect(wdkMessages).toEqual(legacyMessages)
+  })
+
+  it('WDK marks the room completed after the workflow body returns', async () => {
+    // Quick sanity check that the markRoomComplete step ran end-to-end
+    // -- exercises the in-memory updateRoomStatus seam and proves the
+    // workflow body's terminal-error guard didn't mistakenly catch a
+    // success case as failure. Cheap to add since the runtime is
+    // already cold-started by the previous test.
+    const roomId = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+    await runWdkScenario(roomId)
+    expect(getMemoryRoom(roomId)?.status).toBe('completed')
+  })
 })
