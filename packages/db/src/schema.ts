@@ -183,6 +183,12 @@ export const rooms = pgTable(
     waitingFor: jsonb('waiting_for'),
     waitingUntil: timestamp('waiting_until', { withTimezone: true }),
 
+    // Per-room runtime flag (Phase 4.5d-2). 'http_chain' = legacy
+    // advanceRoom + chained ticks; 'wdk' = Vercel Workflow DevKit
+    // orchestrator. Set at room creation, never mutated mid-game.
+    // Default 'http_chain' until WDK substrate ships in 4.5d-2.
+    runtime: text('runtime').notNull().default('http_chain'),
+
     // Provenance (future-proof for auth)
     createdBy: text('created_by'), // user id when auth lands; nullable for now
 
@@ -225,6 +231,42 @@ export const allowedEmails = pgTable(
 
 export type AllowedEmailRow = typeof allowedEmails.$inferSelect
 export type NewAllowedEmailRow = typeof allowedEmails.$inferInsert
+
+// ── seat_presence (Phase 4.5d-1) ───────────────────────────
+//
+// Postgres-backed liveness signal for human seats. Updated on each
+// client heartbeat (debounced ~5s). Read from WDK step bodies in
+// 4.5d-2 to decide vote-fallback-vs-wait without introducing a
+// Realtime side effect into durable workflow steps (per the
+// durability contract in docs/design/phase-4.5d-plan.md §4.5d-2.1).
+//
+// Realtime is still used for client-side UX (peer awareness,
+// typing indicators) but Postgres is the source of truth for
+// "is this seat connected".
+//
+// Multi-tab semantics: presence is keyed on (room_id, agent_id),
+// not connection. Multiple tabs of the same seat → "connected"
+// if ANY tab heartbeated within the grace window (default 30s).
+//
+// No RLS — service-role-only writes via the heartbeat API route.
+
+export const seatPresence = pgTable(
+  'seat_presence',
+  {
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    // Agent ID matching seat-tokens.ts JWT payload. NOT FK'd to
+    // agents table because room snapshots may include synthetic
+    // HumanAgent IDs that don't have a corresponding agents row.
+    agentId: uuid('agent_id').notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.roomId, table.agentId] })],
+)
+
+export type SeatPresenceRow = typeof seatPresence.$inferSelect
+export type NewSeatPresenceRow = typeof seatPresence.$inferInsert
 
 // ── events ─────────────────────────────────────────────────
 

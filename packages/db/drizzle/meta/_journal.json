@@ -57,6 +57,13 @@
       "when": 1776510000000,
       "tag": "0007_allowed_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777600000000,
+      "tag": "0008_seat_presence_and_runtime",
+      "breakpoints": true
     }
   ]
 }
