@@ -1662,6 +1662,8 @@ interface RoomCostTracker {
 
 ## 7. Data Model
 
+> **Status note (2026-04-29)**: the schema below reflects the V1 design and has drifted from production. The canonical schema is in `packages/db/drizzle/*.sql` (Drizzle migrations) — read those for authoritative DDL. Notable deltas: agents are stored in `rooms.agents` JSONB (no separate `room_agents` table); channels live in-memory (no `channels` / `channel_subscriptions` tables); message persistence is event-sourced through an `events` table rather than a flat `messages` table. A full rewrite of this section is tracked as part of the 4.5d-3 docs subset; see "§ 7.1.x Phase 4.5d — Liveness + Runtime Flag" below for the most recent additions.
+
 ### 7.1 Postgres Schema
 
 ```sql
@@ -1777,6 +1779,35 @@ CREATE TABLE room_snapshots (
 
 CREATE INDEX idx_room_snapshots ON room_snapshots(room_id, created_at DESC);
 ```
+
+### 7.1.x Phase 4.5d — Liveness + Runtime Flag
+
+Two additions land in migrations `0008` + `0009` (applied 2026-04-29) to support multi-human rooms with disconnection handling and to stage the runtime migration to Workflow DevKit (WDK):
+
+```sql
+-- 0008: per-seat liveness (heartbeat target, fallback decision input)
+CREATE TABLE seat_presence (
+  room_id      uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  agent_id     uuid NOT NULL,
+  last_seen_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (room_id, agent_id)
+);
+
+-- 0008: per-room runtime flag — staging WDK migration
+ALTER TABLE rooms ADD COLUMN runtime text NOT NULL DEFAULT 'http_chain'
+  CHECK (runtime IN ('http_chain', 'wdk'));
+
+-- 0009: index for cron sweep of stale presence rows
+CREATE INDEX seat_presence_last_seen_idx ON seat_presence (last_seen_at);
+```
+
+**Why `seat_presence` is Postgres-truth, not Realtime.** WDK step bodies in 4.5d-2 must be deterministic — a step that reads from a Realtime presence channel cannot replay deterministically because Realtime is connection-scoped and ephemeral. The `lib/presence.ts isOnline()` helper takes a `SeatPresenceRow` (Postgres-typed) and decides "alive enough" against `PRESENCE_GRACE_MS` (default 30s). Both the heartbeat write path (`POST /api/rooms/[id]/heartbeat`) and the read paths (`GET /api/rooms/[id]/presence`, future WDK steps) use Postgres exclusively. Realtime is layered on TOP for client-side UX (peer awareness pills, typing affordances) but never for decisions that affect game state.
+
+**Why `rooms.runtime` is per-room, not global.** The WDK migration ships incrementally. Existing rooms continue on the legacy `http_chain` runtime forever (the `tick-all` cron only sweeps `runtime='http_chain'`); newly-created rooms post-spike opt into `'wdk'`. Cross-runtime replay is preserved because both runtimes write the same `events` rows — a replay engine can reconstruct state regardless of which substrate produced it. There is no mid-game runtime switching; the flag is set at room creation.
+
+**Multi-tab semantics.** `seat_presence` is keyed on `(room_id, agent_id)`, NOT on connection. Multiple tabs of the same human seat write to the same row via `INSERT … ON CONFLICT DO UPDATE`. Any tab's heartbeat keeps the seat live; closing one tab while another remains visible does not flip the seat to offline. The DB-level `setWhere now() - interval '1 second'` clause de-dupes write amplification when two tabs tick close together.
+
+**Mode fallback policies** are a registry (`packages/modes/src/fallback-registry.ts`) keyed on turn type: `werewolf:dayVote → abstain`, `werewolf:witch → skip`, `roundtable → skip turn`, etc. The `assertNeverFallback` exhaustiveness helper makes the TypeScript compiler enforce that adding a new turn type forces a fallback decision. Backed by 14 unit tests covering every (mode, turn) pair.
 
 ### 7.2 What is Persisted vs In-Memory
 
