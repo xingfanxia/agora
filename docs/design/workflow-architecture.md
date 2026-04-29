@@ -154,3 +154,70 @@ Another agent proposed Queues/WDK for an **evaluation workflow** with
 11 SMEs in parallel + synthesis + quality gate. That project's shape is
 a DAG — Queues absolutely earn their weight there. Agora's shape is a
 sequential loop. Same tools, wrong fit.
+
+---
+
+## 2026-04-28 update — re-evaluation gate fired
+
+**Trigger**: Phase 4.5d planning surfaced the multi-human day-vote fan-in
+work named in §Re-evaluation triggers item 1. Doing the 2026-04-28 status
+check produced the inversion below.
+
+### What changed since 2026-04-15
+
+- **Vercel WDK reached GA on 2026-04-16** (one day after this doc was
+  written). The "wait for settled API surface" condition stated above
+  is now met.
+- WDK ships as the open-source `workflow` package (MIT). The runtime
+  can execute outside Vercel, defanging the lock-in concern that pushed
+  us toward HTTP chaining as the conservative default.
+- WDK's primitive set is exactly what we deferred building:
+  `createHook<T>()` for external-event suspend (one per human seat),
+  `Promise.race` against `sleep('60s')` for the fan-in timer, and
+  `step.run()` boundaries that the existing per-phase boundaries
+  already line up with.
+- Vercel Queues remains in **public beta**. Even if it were GA, we'd
+  still hand-roll the vote counter on top of it — Queues is the lower
+  primitive; WDK is the higher one we actually want.
+
+### Revised decision
+
+**Phase 4.5d-2 (parallel fan-in) migrates directly to WDK. Skip Queues
+as a stepping stone.**
+
+Implementation contract (preserves the existing replay model):
+
+- WDK runs as the orchestrator: phases become `step.run()` boundaries.
+- WDK **calls** `flow.onMessage` from inside steps — does not replace
+  the events table replay path. The events table stays the source of
+  truth (this is what commit `c01119c` fixed and we don't want to
+  re-break it). WDK's internal step log is a coexisting durability
+  layer, not a replacement for our event sourcing.
+- Feature-flag the WDK code path. Keep the HTTP-chain path live for one
+  week post-deploy as rollback. Retire HTTP-chain only after the
+  2-human-7-AI exit-criteria game runs cleanly through WDK.
+- Roundtable still on legacy `waitUntil` (per 4.5c notes) folds into
+  4.5d-3 once the WDK runtime is in place.
+
+### What to verify before committing
+
+- [ ] WDK pricing model (Events + Data Written + Data Retained) for a
+  10-human room. Pull numbers from the docs page.
+- [ ] WDK GA telemetry from the broader community — 12 days post-GA is
+  fresh. Mitigation: feature flag + one-week dual-path window.
+- [ ] Re-confirm `step.run()` semantics around our deterministic
+  agent-ID seeding (our `createWerewolf(seed=roomId)` should compose
+  cleanly with WDK replay, but verify with a determinism test).
+
+### Open trigger reset
+
+Trigger 2 (Phase 7 long-pauses) is now also covered: WDK's
+`sleep('24h')` is the documented path. Phase 7 will not need a second
+architectural review on this axis — it inherits 4.5d-2's substrate.
+
+### Related sources (2026-04-28)
+
+- https://vercel.com/docs/workflows
+- https://vercel.com/blog/a-new-programming-model-for-durable-execution (GA, 2026-04-16)
+- https://vercel.com/docs/queues
+- https://vercel.com/changelog/vercel-queues-now-in-public-beta (2026-02-27)

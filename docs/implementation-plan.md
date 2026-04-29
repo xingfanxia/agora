@@ -20,15 +20,19 @@
 | **6** | Team Platform (the real Agora) | ✅ **DONE 2026-04-15** | Five primitives (agents · teams · rooms · modes · templates), 4 ship-with templates, open-chat mode, DiceBear avatars, AppShell + Sidebar, team-snapshot room creation, leader directive via prompt-append | Open-chat |
 | **4.5b** | Human-Play UX Design | ✅ **DONE 2026-04-15** | V2 spec: 15 sections, 12 turn panels, visibility matrix, timer/fallback/disconnect UX, component inventory. Self-critiqued + audit-verified (12 issues fixed). | — (doc deliverable: `docs/design/phase-4.5b-human-play-ux.md`) |
 | **4.5c** | Seat Tokens + Human Play | ✅ **DONE 2026-04-16** | HumanAgent, seat token (localStorage for MVP), human-input POST route, 7 werewolf panels (Vote/Witch/Seer/Guard/Hunter/Sheriff election+transfer), "Play as" dropdown, HumanPlayBar with phase dispatch. Open-chat + werewolf supported. E2E verified. Roundtable deferred (still on legacy waitUntil path). | 1-human-N-AI games |
-| **4.5d** | Multi-Human + Supabase Auth | ⏸ After 4.5c | Supabase Auth, room_memberships + RLS, presence, fan-in, disconnection grace. **Triggers workflow-primitive re-eval** per `docs/design/workflow-architecture.md` | N-human rooms |
-| **7** | TRPG | ⏳ **NEXT** (option B) | GM Agent, Dice system, Narrative generation, Character growth. Likely **triggers WDK migration** for durable long pauses | TRPG |
+| **Design migration** | Linear-spec design system | ✅ **DONE 2026-04-17** | Inter typography, Linear-derived dark-mode tokens, Agora mint accent, full UI migration (sidebar, cards, hero, chat bubbles), WCAG contrast pass. Commits `3e0bd0c → 0b1541f`. | — (visual polish) |
+| **AI SDK v6 upgrade** | Dependency baseline | ✅ **DONE 2026-04-17** | `ai@4 → ai@6`, `@ai-sdk/* 1.x → 3.x`, token extraction + fallback pricing fix, `temperature` param strip. Commits `5cfa662 → 0ab76b5`. | — (foundation) |
+| **4.5d** | Multi-Human + Supabase Auth | 🔶 **IN PROGRESS** | Auth foundation + JWT invites + multi-human picker shipped (`c858213`, `5b73b6d`). Presence/disconnection/fan-in remaining. **Triggers workflow-primitive re-eval** per `docs/design/workflow-architecture.md` | N-human rooms |
+| **7** | TRPG | ⏸ After 4.5d | GM Agent, Dice system, Narrative generation, Character growth. Likely **triggers WDK migration** for durable long pauses | TRPG |
 | **8** | Script Kill | ⏸ Later | Long-term Memory (pgvector), Clue/Evidence system, Branching Narrative | Script Kill |
 | **9** | Platform / Custom Mode SDK | ⏸ Later | Custom Mode SDK, Agent Marketplace, Replay sharing, Hierarchical Flow | Custom |
 
 **Plan**: `docs/design/phase-6-team-platform.md` · **Handoff**: `docs/design/phase-6-handoff.md` · **Workflow**: `docs/design/workflow-architecture.md`
 
-**Current session date**: 2026-04-15
+**Current session date**: 2026-04-28
 **Phase 6 shipped in commit**: `f5d71c5` → `https://agora-panpanmao.vercel.app`
+**Active phase**: 4.5d — multi-human runtime (presence + fan-in + disconnect)
+**Architectural decision (2026-04-28)**: 4.5d-2 (parallel fan-in) and Phase 7 long-pauses will migrate to **Vercel Workflow DevKit**. WDK reached GA on 2026-04-16, retiring the "wait for settled API surface" condition from the 2026-04-15 review. See `docs/design/workflow-architecture.md` § 2026-04-28 update.
 
 ---
 
@@ -301,17 +305,41 @@ Runs in parallel-ish with itself, see `docs/design/phase-5-plan.md`. Human seats
 - [ ] Per-mode timeout policies + fallbacks
 - [ ] **Exit**: 1-human-8-AI werewolf game completes end-to-end with human witch
 
-### 4.5d: Multi-human + Supabase Auth layer (~3-4 days)
-- [ ] Supabase Auth (magic-link + Google OAuth)
-- [ ] `room_memberships` table + RLS policies
-- [ ] Seat tokens stay for invite flow; Auth adds persistent identity
-- [ ] Presence detection via Supabase Realtime
-- [ ] Disconnection grace (30s default)
-- [ ] Parallel fan-in helper (day-vote)
-- [ ] Invite panel UI for owner
-- [ ] **Exit**: 2-human-7-AI werewolf completes including day-vote fan-in + disconnection recovery
+### 4.5d: Multi-human + Supabase Auth layer (IN PROGRESS — ~5-7 days remaining)
 
-**Total**: ~27 focused days split across 5 ship-able milestones. UI overhaul ships ~day 16 instead of ~day 28.
+**Shipped (commits `c858213`, `5b73b6d`, `c01119c`):**
+- [x] Supabase Auth — magic-link signup; `/auth/callback` route checks `allowed_emails` allowlist before granting session
+- [x] `allowed_emails` table + RLS (migration `0007_allowed_emails.sql`)
+- [x] JWT seat invites — `POST /api/rooms/[id]/invites`, multi-human picker UI on room creation
+- [x] Mid-phase resume bugfix — replay routes through `flow.onMessage` so chained-tick rehydration is correct after a human turn (commit `c01119c`)
+
+**Remaining (split into shippable sub-phases):**
+
+#### 4.5d-1 — Presence + disconnection grace (~2 days, Tier 3 GSD-lite)
+- [ ] Supabase Realtime presence channel per room (subscribe on room mount, broadcast heartbeat)
+- [ ] `useRoomLive` hook: Realtime subscription with polling fallback
+- [ ] 30s disconnection grace timer per human seat; UI heartbeat indicator
+- [ ] Server-side: on grace expiry, advance via mode's fallback policy (auto-vote, skip, etc.)
+- [ ] **Exit**: human disconnect during day-vote falls back to mode default within 30s; reconnect within grace resumes seat
+
+#### 4.5d-2 — Parallel fan-in via WDK (~3 days, Tier 4 — architectural)
+- [ ] Add `workflow` package, configure WDK runtime in `apps/web`
+- [ ] Wrap `advanceRoom` in a workflow function — phases become `step.run()` boundaries
+- [ ] Day-vote fan-in: `Promise.race([Promise.all(humanVoteHooks), sleep('60s')])` pattern; iterable `createHook<Vote>()` per human seat
+- [ ] Coexistence contract: WDK calls `flow.onMessage` so the `events` table stays source of truth for replay (do NOT replace event-log replay with WDK's internal log)
+- [ ] Feature-flag the WDK path; keep HTTP-chain path for one week as rollback
+- [ ] **Exit**: 2+ humans vote in parallel during werewolf day-phase; timer-only fallback fires correctly when not all humans respond
+
+#### 4.5d-3 — Multi-human exit verification (~1-2 days, Tier 3)
+- [ ] 2-human-7-AI werewolf E2E playthrough (manual + scripted)
+- [ ] Disconnection recovery test: kill one tab mid-game, verify fallback + reconnect
+- [ ] Roundtable durable-runtime migration (still on legacy `waitUntil` per 4.5c notes — fold in here while runtime is being touched)
+- [ ] Update `docs/design/phase-4.5-plan.md` with as-built notes
+- [ ] **Exit**: 2-human-7-AI werewolf completes including day-vote fan-in + disconnection recovery (original 4.5d exit criterion)
+
+**Note on `room_memberships`**: original plan called for a `room_memberships` table + RLS. Current architecture skips this — JWT seat tokens encode room+seat scope and the `allowed_emails` gate handles signup access control. Re-evaluate once 4.5d-1 ships if presence needs persistent membership rows; otherwise leave on tokens.
+
+**Total revised**: ~27 days across 5 ship-able milestones. UI overhaul shipped ~day 16 (on track). 4.5d completion ~day 24 with WDK migration; was ~day 27 with hand-rolled fan-in.
 
 ---
 

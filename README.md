@@ -47,7 +47,8 @@ Infrastructure    Vercel AI SDK | Next.js 15 | (Postgres deferred)
 - **LLM**: Vercel AI SDK (Claude, GPT, Gemini, DeepSeek)
 - **Pricing**: LiteLLM registry (auto-fetched, with offline fallback)
 - **Storage**: Supabase Postgres (events table as source of truth, rooms as denormalized snapshot) via Drizzle
-- **Runtime**: Vercel Functions with `waitUntil()` for long-running game orchestration; Pro plan recommended
+- **Auth**: Supabase Auth (magic-link) + email allowlist gate
+- **Runtime**: Bespoke durable runtime — `advanceRoom()` + chained `/api/rooms/tick` self-invokes, with a 1-min cron sweep as backstop. Replay-deterministic via seeded agent IDs. Vercel Pro recommended. Migrating to **Vercel Workflow DevKit** at Phase 4.5d for multi-human fan-in (see `docs/design/workflow-architecture.md`).
 
 ## Quick Start
 
@@ -81,12 +82,25 @@ npx tsx scripts/token-report.ts                              # LiteLLM pricing s
 
 ## Status
 
+**Phase 4.5d (Multi-Human + Auth) IN PROGRESS** (as of 2026-04-28) —
+Supabase Auth + email allowlist gate (`c858213`), JWT seat invites +
+multi-human picker (`5b73b6d`), and a mid-phase replay bugfix (`c01119c`)
+have shipped. **Remaining**: Realtime presence + 30s disconnection grace
+(4.5d-1), parallel vote fan-in via Vercel Workflow DevKit (4.5d-2), and
+2-human-7-AI exit verification (4.5d-3). The fan-in work triggers a
+migration to WDK (GA 2026-04-16) — see `docs/design/workflow-architecture.md`
+for the architectural decision.
+
 **Phase 4.5c (Human Play) shipped** on 2026-04-16 — HumanAgent runtime pause,
 seat tokens in localStorage, /api/rooms/[id]/human-input endpoint,
 "Play as" dropdown on /rooms/new, HumanPlayBar with phase-based panel
 dispatch, 7 werewolf turn panels (Vote/Witch/Seer/Guard/Hunter/
 Sheriff election+transfer). Supports open-chat + werewolf. Roundtable
-deferred (still on legacy path).
+durable-runtime migration folded into 4.5d-3.
+
+**Design migration shipped** on 2026-04-17 — Linear-spec design system
+(Inter + Linear-derived dark-mode tokens + Agora mint accent), full UI
+migration with WCAG contrast pass.
 
 **Phase 6 (Team Platform) shipped** on 2026-04-15 — five primitives
 (agents · teams · rooms · modes · templates), four ship-with templates,
@@ -97,8 +111,8 @@ open-chat mode, durable runtime (Phase 4.5a), Accio-inspired UI.
 4.5a (AI-only durable runtime) · 4.5b (Human-play UX spec V3) ·
 5 (UI + i18n + chat-default).
 
-**Next on deck**: Phase 4.5d (multi-human + Supabase Auth),
-Phase 7 (TRPG), Phase 8 (Script Kill).
+**Next on deck after 4.5d**: Phase 7 (TRPG — inherits WDK substrate for
+durable long pauses), Phase 8 (Script Kill), Phase 9 (Custom Mode SDK).
 
 See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md),
 [docs/implementation-plan.md](docs/implementation-plan.md), and
