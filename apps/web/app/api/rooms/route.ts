@@ -216,30 +216,46 @@ export async function POST(request: NextRequest) {
       // The workflow body owns its own LLM calls + persistence per the
       // durability contract. Build agent snapshots from AgentInfo and
       // hand them off to the workflow.
-      const snapshots = agentInfos.map((info) => {
-        if (!info.systemPrompt) {
-          // Defensive: should be unreachable since both paths now
-          // populate systemPrompt. If it fires, the room row is already
-          // committed but the workflow won't start — caller sees 500.
-          throw new Error(`agent ${info.id} missing systemPrompt for WDK runtime`)
-        }
-        return toRoundtableAgentSnapshot(info, info.systemPrompt)
-      })
+      //
+      // Wrapped in try/catch: createRoom already committed by this point.
+      // If snapshot-build or start() throws, the room row would otherwise
+      // stay at status='running' forever (markOrphanedAsError now skips
+      // WDK rooms intentionally). Flip to 'error' explicitly so the row
+      // is recoverable and observable.
+      try {
+        const snapshots = agentInfos.map((info) => {
+          if (!info.systemPrompt) {
+            throw new Error(`agent ${info.id} missing systemPrompt for WDK runtime`)
+          }
+          return toRoundtableAgentSnapshot(info, info.systemPrompt)
+        })
 
-      // start() returns immediately. The workflow runs durably in the
-      // WDK runtime; failure handling lives inside the workflow itself
-      // (terminal errors flip room.status to 'error' via a future
-      // step, TBD in 4.5d-2.3 testing pass).
-      await start(roundtableWorkflow, [
-        {
-          roomId,
-          agents: snapshots,
-          topic: body.topic,
-          rounds: body.rounds,
-        },
-      ])
+        // start() returns immediately after enqueueing. The workflow
+        // runs durably in the WDK runtime; in-flight step failures
+        // surface inside the workflow (terminal-error step TBD in
+        // 4.5d-2.3 testing pass). This await ONLY blocks on enqueue.
+        await start(roundtableWorkflow, [
+          {
+            roomId,
+            agents: snapshots,
+            topic: body.topic,
+            rounds: body.rounds,
+          },
+        ])
 
-      return NextResponse.json({ roomId, runtime: 'wdk' })
+        return NextResponse.json({ roomId, runtime: 'wdk' })
+      } catch (workflowStartError) {
+        const msg =
+          workflowStartError instanceof Error
+            ? workflowStartError.message
+            : String(workflowStartError)
+        console.error(`[wdk-start] ${roomId} failed to enqueue:`, workflowStartError)
+        await updateRoomStatus(roomId, 'error', `WDK enqueue failed: ${msg}`)
+        return NextResponse.json(
+          { error: 'Failed to start WDK runtime', roomId },
+          { status: 500 },
+        )
+      }
     }
 
     // http_chain path (legacy, default until cross-runtime parity proven).

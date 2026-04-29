@@ -97,6 +97,20 @@ export async function advanceRoom(roomId: string): Promise<AdvanceResult> {
   const roomRow = await getRoom(roomId)
   if (!roomRow) return { kind: 'error', message: `Room not found: ${roomId}` }
 
+  // Defense-in-depth: WDK rooms must NEVER be advanced via http_chain.
+  // The cron sweeper (getStuckRooms) already filters to runtime='http_chain';
+  // this guard catches direct invocations of /api/rooms/tick?id=<wdkRoom>
+  // (manual debug calls, replay scripts, future inadvertent code paths).
+  // Per durability contract: WDK rooms own their lifecycle inside the
+  // workflow runtime; dual-driving them through advanceRoom would
+  // produce duplicate events + corrupted state.
+  if (roomRow.runtime === 'wdk') {
+    return {
+      kind: 'error',
+      message: `cannot advance WDK room ${roomId} via http_chain — WDK runtime owns its own lifecycle`,
+    }
+  }
+
   if (roomRow.status === 'completed') {
     const winResult =
       (roomRow.gameState as { winResult?: 'village_wins' | 'werewolves_win' | null } | null)

@@ -428,7 +428,13 @@ export async function listCompletedRooms(limit = 100): Promise<RoomRow[]> {
 /** Rooms whose durable runtime may be stuck — pg_cron / Vercel Cron sweeper
  * uses this to re-fire ticks for rooms that haven't been updated recently.
  * Returns at most `limit` rooms in either 'running' or 'waiting' state whose
- * updated_at is older than `olderThanSeconds`. */
+ * updated_at is older than `olderThanSeconds`.
+ *
+ * Filters to runtime='http_chain' only. WDK rooms have their own retry
+ * semantics inside the workflow runtime; the cron must NOT tick-fire them
+ * (would re-enter advanceRoom which has no WDK handler and dual-drive
+ * for matching modes). Per durability contract Phase 4.5d-2.1.
+ */
 export async function getStuckRooms(
   olderThanSeconds = 30,
   limit = 20,
@@ -441,6 +447,7 @@ export async function getStuckRooms(
       and(
         sql`${rooms.status} IN ('running', 'waiting')`,
         sql`${rooms.updatedAt} < ${cutoff}`,
+        eq(rooms.runtime, 'http_chain'),
       ),
     )
     .limit(limit)
@@ -451,7 +458,13 @@ export async function getStuckRooms(
   }))
 }
 
-/** Flag any rooms that were running but now orphaned (e.g. crashed on deploy). */
+/** Flag any rooms that were running but now orphaned (e.g. crashed on deploy).
+ *
+ * Filters to runtime='http_chain' only. WDK rooms can legitimately run
+ * longer than 15 minutes (8 agents × 5 rounds × ~25s ≈ 17 min); they have
+ * their own failure semantics inside the workflow runtime. Marking a
+ * healthy WDK room as 'error' would corrupt active games.
+ */
 export async function markOrphanedAsError(maxAgeMinutes = 15): Promise<number> {
   const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000)
   const rowsAffected = await db
@@ -461,6 +474,12 @@ export async function markOrphanedAsError(maxAgeMinutes = 15): Promise<number> {
       errorMessage: 'Runtime orphaned (likely deploy or crash)',
       endedAt: new Date(),
     })
-    .where(and(eq(rooms.status, 'running'), sql`${rooms.startedAt} < ${cutoff}`))
+    .where(
+      and(
+        eq(rooms.status, 'running'),
+        sql`${rooms.startedAt} < ${cutoff}`,
+        eq(rooms.runtime, 'http_chain'),
+      ),
+    )
   return Array.isArray(rowsAffected) ? rowsAffected.length : 0
 }
