@@ -9,7 +9,12 @@ import { start } from 'workflow/api'
 import { AIAgent, Room, RoundRobinFlow, EventBus, TokenAccountant } from '@agora/core'
 
 export const dynamic = 'force-dynamic'
-import { createGenerateFn, buildPricingMap, createCostCalculator } from '@agora/llm'
+// Phase 4.5d-2.3: createGenerateFn now sourced from local factory so
+// the http_chain path uses the same deterministic-mock seam the WDK
+// workflow uses under WORKFLOW_TEST=1 (cross-runtime equivalence).
+// Pricing helpers stay on @agora/llm -- they don't touch the LLM.
+import { createGenerateFn } from '../../lib/llm-factory'
+import { buildPricingMap, createCostCalculator } from '@agora/llm'
 import type { LLMProvider, ModelConfig, PersonaConfig } from '@agora/shared'
 import {
   createRoom,

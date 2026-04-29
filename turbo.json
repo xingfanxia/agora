@@ -28,7 +28,8 @@
     "VERCEL_OIDC_TOKEN",
     "CRON_SECRET",
     "AGORA_ADMIN_SECRET",
-    "AGORA_SEAT_SECRET"
+    "AGORA_SEAT_SECRET",
+    "WORKFLOW_TEST"
   ],
   "tasks": {
     "build": {

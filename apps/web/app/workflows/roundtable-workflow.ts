@@ -61,7 +61,11 @@ import {
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
-import { createGenerateFn } from '@agora/llm'
+// Phase 4.5d-2.3: route through the local factory so integration
+// tests can swap in a deterministic mock via WORKFLOW_TEST=1. The
+// factory's GenerateFn signature is identical to @agora/llm's;
+// production behavior is unchanged when WORKFLOW_TEST is unset.
+import { createGenerateFn } from '../lib/llm-factory.js'
 import type { LLMProvider, Message, ModelConfig, PlatformEvent } from '@agora/shared'
 
 // ── Public types ───────────────────────────────────────────
@@ -239,12 +243,20 @@ async function generateAgentReply(
   // state, NOT passed in. Prevents quadratic step-input cache growth.
   const priorMessages: Message[] = await getMessagesSince(roomId, 0)
 
-  // History role tagging matches the legacy AIAgent path
-  // (packages/core/src/agent.ts:90-99): own messages → 'assistant',
-  // others' messages → 'user' with `[name]:` prefix. This preserves
-  // the agent's self-vs-other distinction the LLM needs to use first-
-  // person consistently. Cross-runtime equivalence depends on this
-  // matching the legacy path.
+  // History role tagging: own messages -> 'assistant' (raw, no
+  // prefix), others' messages -> 'user' with `[name]:` prefix. This
+  // preserves the self-vs-other distinction the LLM needs to use
+  // first-person consistently.
+  //
+  // NOTE: this DIVERGES from the legacy AIAgent path
+  // (packages/core/src/agent.ts:98-99 messageToChatMessage), which
+  // tags ALL messages as 'user' with `[name]:` prefix and provides
+  // no own-vs-other signal. Alignment is tracked in
+  // apps/web/tests/durability/cross-runtime-equivalence.integration.test.ts
+  // (the .skip'd "TURN 2+" test + the .not.toEqual regression marker).
+  // Until the legacy path is updated, content-level cross-runtime
+  // equivalence cannot hold for multi-round runs starting at the
+  // turn where an agent first sees its own past message.
   const history = priorMessages.map((m: Message) => {
     if (m.senderId === agentId) {
       return { role: 'assistant' as const, content: m.content }
