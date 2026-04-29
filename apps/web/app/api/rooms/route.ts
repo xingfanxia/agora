@@ -237,8 +237,9 @@ export async function POST(request: NextRequest) {
 
         // start() returns immediately after enqueueing. The workflow
         // runs durably in the WDK runtime; in-flight step failures
-        // surface inside the workflow (terminal-error step TBD in
-        // 4.5d-2.3 testing pass). This await ONLY blocks on enqueue.
+        // surface inside the workflow and are caught by its outer
+        // try/catch (see roundtableWorkflow's terminal-error guard
+        // landed in 4.5d-2.4). This await ONLY blocks on enqueue.
         await start(roundtableWorkflow, [
           {
             roomId,

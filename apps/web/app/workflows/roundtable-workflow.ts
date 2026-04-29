@@ -53,6 +53,7 @@
 // scratch with seeded state), but the retry-window cost claim now
 // rests on WDK's step-result cache, not on a DB-poll race.
 
+import { FatalError } from 'workflow'
 import {
   appendEvent,
   getEventCount,
@@ -101,76 +102,136 @@ export async function roundtableWorkflow(
 ): Promise<RoundtableWorkflowResult> {
   'use workflow'
 
+  // Destructure outside the try: TypeScript's call-site contract on
+  // start() prevents null/undefined input; if it somehow happens, the
+  // API route's try/catch around start() (apps/web/app/api/rooms/route.ts
+  // -- the WDK enqueue catch) flips the room to 'error' before the
+  // workflow runtime ever sees the bad input. No belt-and-suspenders
+  // needed at this layer.
   const { roomId, agents, rounds } = input
 
-  // Boundary validation at the workflow boundary. Errors surface as
-  // workflow failure, NOT step retries (which would burn money on
-  // shape problems). Validate everything once, up front.
-  if (typeof roomId !== 'string' || roomId.length === 0) {
-    throw new Error('roomId must be a non-empty UUID string')
-  }
-  if (agents.length < 2 || agents.length > 8) {
-    throw new Error('roundtable requires 2..8 agents')
-  }
-  if (rounds < 1 || rounds > 10) {
-    throw new Error('rounds must be 1..10')
-  }
-  for (const a of agents) {
-    if (!a.id || a.id.length === 0) throw new Error('agent.id required')
-    if (!a.name || a.name.length === 0) throw new Error(`agent ${a.id}: name required`)
-    if (!a.systemPrompt || a.systemPrompt.length === 0) {
-      throw new Error(`agent ${a.id}: systemPrompt required`)
+  // Outer try/catch is the terminal-error guard (4.5d-2.4). Any
+  // throw from inside the body -- validation, step exhaustion,
+  // invariant violation -- runs through `markRoomError` so the
+  // room row leaves 'running' and gets a recoverable error message.
+  // Without this, a step's permanent failure leaves the row at
+  // 'running' forever (markOrphanedAsError now skips WDK rooms by
+  // design, so the cron sweeper won't rescue it either).
+  //
+  // Re-throw at the end preserves WDK's failure recording -- the run
+  // is still marked failed in the workflow runtime's run log even
+  // after we marked the room.
+  try {
+    // Boundary validation at the workflow boundary. NOTE: FatalError
+    // vs plain Error is mechanically identical at the workflow-body
+    // level -- WDK only honors the fatal flag inside step bodies
+    // (where it skips retries). Used here as a signal-of-intent:
+    // "this error category should never be retried at any layer."
+    // Validation outcomes are deterministic on input, so retry is
+    // never useful regardless of the type used.
+    if (typeof roomId !== 'string' || roomId.length === 0) {
+      throw new FatalError('roomId must be a non-empty UUID string')
     }
-    if (!ALLOWED_PROVIDERS.includes(a.model.provider)) {
-      throw new Error(`agent ${a.id}: bad provider "${a.model.provider}"`)
+    if (agents.length < 2 || agents.length > 8) {
+      throw new FatalError('roundtable requires 2..8 agents')
     }
-    if (!a.model.modelId || a.model.modelId.length === 0) {
-      throw new Error(`agent ${a.id}: model.modelId required`)
+    if (rounds < 1 || rounds > 10) {
+      throw new FatalError('rounds must be 1..10')
     }
+    for (const a of agents) {
+      if (!a.id || a.id.length === 0) throw new FatalError('agent.id required')
+      if (!a.name || a.name.length === 0) {
+        throw new FatalError(`agent ${a.id}: name required`)
+      }
+      if (!a.systemPrompt || a.systemPrompt.length === 0) {
+        throw new FatalError(`agent ${a.id}: systemPrompt required`)
+      }
+      if (!ALLOWED_PROVIDERS.includes(a.model.provider)) {
+        throw new FatalError(`agent ${a.id}: bad provider "${a.model.provider}"`)
+      }
+      if (!a.model.modelId || a.model.modelId.length === 0) {
+        throw new FatalError(`agent ${a.id}: model.modelId required`)
+      }
+    }
+
+    await emitRoomStarted({ roomId })
+
+    const totalTurns = agents.length * rounds
+    for (let turnIdx = 0; turnIdx < totalTurns; turnIdx++) {
+      const agentIdx = turnIdx % agents.length
+      const agent = agents[agentIdx]
+      if (!agent) {
+        // Invariant: agentIdx is always in [0, agents.length).
+        // FatalError used as signal-of-intent (see body-level
+        // validation comment above) -- mechanically identical to
+        // plain Error at workflow-body level, but signals "code bug,
+        // not transient" to anyone reading the file.
+        throw new FatalError(`invariant: missing agent at idx ${agentIdx}`)
+      }
+
+      // Pre-flight DB short-circuit: if a prior workflow run already
+      // wrote this turn's message (e.g. crash + restart from seeded
+      // state), skip both steps. This is OUTSIDE the steps so it
+      // doesn't bloat any step-input cache; the workflow function
+      // re-runs cheaply on replay.
+      const alreadyDone = await isTurnAlreadyPersisted({ roomId, turnIdx })
+      if (alreadyDone) continue
+
+      // Step 1 (cached by WDK): generate the LLM reply. Retry of step 2
+      // does NOT re-invoke step 1 — WDK serves step 1's cached result.
+      const reply = await generateAgentReply({
+        roomId,
+        turnIdx,
+        agentId: agent.id,
+        systemPrompt: agent.systemPrompt,
+        provider: agent.model.provider,
+        modelId: agent.model.modelId,
+        maxTokens: agent.model.maxTokens ?? 1024,
+      })
+
+      // Step 2: persist. Cheap; ON CONFLICT-safe; can retry freely.
+      await persistAgentMessage({
+        roomId,
+        turnIdx,
+        agentId: agent.id,
+        agentName: agent.name,
+        content: reply.content,
+      })
+    }
+
+    await emitRoomEnded({ roomId })
+    await markRoomComplete({ roomId })
+
+    return { roomId, totalTurns }
+  } catch (error) {
+    // markRoomError is itself a step -- WDK retries on transient DB
+    // failure. Inner try/catch preserves the ORIGINAL error in the
+    // re-throw: if markRoomError exhausts retries (sustained DB
+    // outage), we don't want WDK's run_failed event to record the
+    // markRoomError exception as the run cause -- the user cares
+    // about WHY the workflow failed (LLM provider down, timeout,
+    // etc.), not about a downstream side-effect failure. Attach
+    // markErr as Error.cause for forensics.
+    //
+    // Row-state semantics on sustained DB outage: stays 'running'
+    // (since markRoomError didn't succeed). This is the same
+    // failure mode as today -- nothing new is broken at the row
+    // level, but the run-log attribution is now correct.
+    const message = error instanceof Error ? error.message : String(error)
+    try {
+      await markRoomError({ roomId, message })
+    } catch (markErr) {
+      console.error(
+        `[roundtableWorkflow] markRoomError failed for room ${roomId}; ` +
+          `room row stays at 'running'. Original error: ${message}`,
+        markErr,
+      )
+      if (error instanceof Error) {
+        ;(error as Error & { cause?: unknown }).cause = markErr
+      }
+    }
+    throw error
   }
-
-  await emitRoomStarted({ roomId })
-
-  const totalTurns = agents.length * rounds
-  for (let turnIdx = 0; turnIdx < totalTurns; turnIdx++) {
-    const agentIdx = turnIdx % agents.length
-    const agent = agents[agentIdx]
-    if (!agent) throw new Error(`invariant: missing agent at idx ${agentIdx}`)
-
-    // Pre-flight DB short-circuit: if a prior workflow run already
-    // wrote this turn's message (e.g. crash + restart from seeded
-    // state), skip both steps. This is OUTSIDE the steps so it
-    // doesn't bloat any step-input cache; the workflow function
-    // re-runs cheaply on replay.
-    const alreadyDone = await isTurnAlreadyPersisted({ roomId, turnIdx })
-    if (alreadyDone) continue
-
-    // Step 1 (cached by WDK): generate the LLM reply. Retry of step 2
-    // does NOT re-invoke step 1 — WDK serves step 1's cached result.
-    const reply = await generateAgentReply({
-      roomId,
-      turnIdx,
-      agentId: agent.id,
-      systemPrompt: agent.systemPrompt,
-      provider: agent.model.provider,
-      modelId: agent.model.modelId,
-      maxTokens: agent.model.maxTokens ?? 1024,
-    })
-
-    // Step 2: persist. Cheap; ON CONFLICT-safe; can retry freely.
-    await persistAgentMessage({
-      roomId,
-      turnIdx,
-      agentId: agent.id,
-      agentName: agent.name,
-      content: reply.content,
-    })
-  }
-
-  await emitRoomEnded({ roomId })
-  await markRoomComplete({ roomId })
-
-  return { roomId, totalTurns }
 }
 
 const ALLOWED_PROVIDERS: readonly LLMProvider[] = [
@@ -342,6 +403,43 @@ async function markRoomComplete(input: MarkRoomCompleteInput): Promise<void> {
   // updateRoomStatus also sets endedAt; idempotent because setting
   // status='completed' twice writes the same value.
   await updateRoomStatus(input.roomId, 'completed')
+}
+
+interface MarkRoomErrorInput {
+  readonly roomId: string
+  readonly message: string
+}
+
+async function markRoomError(input: MarkRoomErrorInput): Promise<void> {
+  'use step'
+  // Idempotent: setting status='error' twice writes the same value.
+  // updateRoomStatus also sets endedAt + clears waiting-state fields
+  // (waitingFor/waitingUntil), so a partially-paused room is left
+  // in a clean terminal state.
+  //
+  // NOTE for future modes (werewolf/open-chat): this drops
+  // waitingFor/waitingUntil -- same behavior as completed runs but
+  // loses the debug breadcrumb of where exactly the error happened.
+  // When porting werewolf, decide whether to copy this step (and
+  // optionally preserve waiting fields in a new errorContext JSONB)
+  // vs. share this implementation.
+  //
+  // EVENTS-LOG GAP: this step does NOT emit a 'room:failed' event.
+  // The live UI reads `snapshot.status + snapshot.error` from the
+  // row directly so it shows the error correctly. The replay UI
+  // (apps/web/app/replay/[id]/page.tsx) reconstructs status purely
+  // from events and currently has no 'room:failed' to consume --
+  // failed rooms render as 'running' in replay. Pre-existing issue
+  // (http_chain has the same gap), tracked separately for future
+  // reconciliation: introduce a 'room:failed' PlatformEvent variant
+  // and emit it here alongside the row update.
+  //
+  // Step retries handle transient DB blips. If the DB is sustained-
+  // unreachable, the step exhausts retries and the workflow's catch
+  // block re-throws -- the room stays at 'running' (the failure mode
+  // we're trying to fix), but that's exactly today's behavior, not
+  // a regression.
+  await updateRoomStatus(input.roomId, 'error', input.message)
 }
 
 // ── Helpers (compile-time consumers) ───────────────────────

@@ -156,7 +156,7 @@ export const rooms = pgTable(
     config: jsonb('config').notNull(),
 
     // Lifecycle
-    status: text('status').notNull(), // 'running' | 'completed' | 'error'
+    status: text('status').notNull(), // 'running' | 'waiting' | 'completed' | 'error'
     currentPhase: text('current_phase'),
     currentRound: integer('current_round').default(1).notNull(),
     thinkingAgentId: text('thinking_agent_id'),
