@@ -216,6 +216,13 @@
       "cost": "花费",
       "calls": "次调用",
       "tokens": "tokens"
+    },
+    "presence": {
+      "online": "在线",
+      "reconnecting": "正在重新连接…",
+      "disconnected": "已断开 — 将自动按默认行动",
+      "neverSeen": "尚未连接",
+      "aiSeat": "AI 座位"
     }
   },
   "replays": {

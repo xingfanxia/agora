@@ -8,8 +8,11 @@
 
 'use client'
 
+import { useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import { AgentAvatar } from './AgentAvatar'
 import { Bubble, type BubbleMode } from './Bubble'
+import { SeatPresenceIndicator } from '../SeatPresenceIndicator'
 import type { AgentColor } from '../theme'
 
 export interface AgentSeatProps {
@@ -27,6 +30,15 @@ export interface AgentSeatProps {
   role?: string
   /** Is this agent dead/eliminated? */
   eliminated?: boolean
+  /**
+   * Phase 4.5d-3 — Postgres-truth liveness timestamp for this seat.
+   * Wired in by `WerewolfView` / `RoundtableView` from `usePresenceMap`.
+   * `null`/absent → never heartbeated. AI seats pass `isHuman={false}`
+   * and the indicator renders as a muted dot regardless of timestamp.
+   */
+  lastSeenAt?: string | null
+  /** Phase 4.5d-3 — true for human-controlled seats (multi-human rooms). */
+  isHuman?: boolean
   avatarSize?: number
   onClick?: (agentId: string) => void
 }
@@ -51,9 +63,27 @@ export function AgentSeat({
   speaking,
   role,
   eliminated,
+  lastSeenAt,
+  isHuman = false,
   avatarSize = 56,
   onClick,
 }: AgentSeatProps) {
+  const tPresence = useTranslations('room.presence')
+  // Stabilize the labels bag — `tPresence` is stable per-locale, so this
+  // memoizes once. Otherwise SeatPresenceIndicator would see a new
+  // `labels` object on every parent render (e.g. every 5s as
+  // presenceMap updates), defeating its prop-equality fast paths.
+  const presenceLabels = useMemo(
+    () => ({
+      online: tPresence('online'),
+      reconnecting: tPresence('reconnecting'),
+      disconnected: tPresence('disconnected'),
+      neverSeen: tPresence('neverSeen'),
+      aiSeat: tPresence('aiSeat'),
+    }),
+    [tPresence],
+  )
+
   const bubbleMode: BubbleMode = thinking
     ? 'thinking'
     : latestMessage
@@ -110,18 +140,38 @@ export function AgentSeat({
           maxWidth: avatarSize + 40,
         }}
       >
+        {/* Phase 4.5d-3: presence dot inline-left of the name. Only
+            rendered for human seats — AI seats are always "available" so
+            the muted dot would just be visual noise on a 7-AI lineup.
+            Hidden once a seat is eliminated (the strikethrough already
+            communicates "out of game" — a status dot is misleading). */}
         <span
           style={{
-            fontSize: 12,
-            fontWeight: 590,
-            color: color.name,
-            fontFamily: 'system-ui, -apple-system, sans-serif',
-            textAlign: 'center',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
             lineHeight: 1.2,
-            textDecoration: eliminated ? 'line-through' : 'none',
           }}
         >
-          {name}
+          {isHuman && !eliminated && (
+            <SeatPresenceIndicator
+              lastSeenAt={lastSeenAt ?? null}
+              isHuman
+              labels={presenceLabels}
+            />
+          )}
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 590,
+              color: color.name,
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              textAlign: 'center',
+              textDecoration: eliminated ? 'line-through' : 'none',
+            }}
+          >
+            {name}
+          </span>
         </span>
         {role && (
           <span

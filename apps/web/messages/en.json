@@ -216,6 +216,13 @@
       "cost": "Cost",
       "calls": "calls",
       "tokens": "tokens"
+    },
+    "presence": {
+      "online": "Online",
+      "reconnecting": "Reconnecting…",
+      "disconnected": "Disconnected — taking action with default",
+      "neverSeen": "Not yet connected",
+      "aiSeat": "AI seat"
     }
   },
   "replays": {
