@@ -75,6 +75,14 @@ export interface AgentData {
   name: string
   model: string
   provider: string
+  /**
+   * True for seats backed by a human player (multi-human rooms,
+   * play-as-this-seat invites). Absent / false for AI-controlled seats.
+   * Phase 4.5d: flows from `room-store.ts AgentInfo.isHuman` through the
+   * poll response untouched. Used by `SeatPresenceIndicator` to decide
+   * between active liveness coloring vs. the muted "AI seat" dot.
+   */
+  isHuman?: boolean
 }
 
 export interface AgentTotals {
