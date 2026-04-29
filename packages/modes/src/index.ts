@@ -47,5 +47,5 @@ export type {
 } from './open-chat/index.js'
 
 // Phase 4.5d-1 — fallback policy registry
-export { getFallback, listFallbacks } from './fallback-policies.js'
+export { getFallback, listFallbacks, assertNeverFallback } from './fallback-policies.js'
 export type { FallbackAction } from './fallback-policies.js'

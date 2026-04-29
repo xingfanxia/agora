@@ -16,7 +16,7 @@
 
 import type { SeatPresenceRow } from '@agora/db'
 import { getDb, seatPresence } from '@agora/db'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 
 const db = new Proxy({} as ReturnType<typeof getDb>, {
   get(_target, prop) {
@@ -32,14 +32,21 @@ export const PRESENCE_GRACE_MS = 30_000
 /**
  * Update last_seen_at to now for (roomId, agentId). Upsert — creates
  * the row on first heartbeat. Idempotent.
+ *
+ * Server-side rate limit: the conditional `setWhere` makes the UPDATE
+ * a no-op if a heartbeat landed within the last 1s. Saves write
+ * amplification when a misbehaving client (or two tabs) tick faster
+ * than the documented 5s interval.
  */
 export async function upsertPresence(roomId: string, agentId: string): Promise<void> {
+  const now = new Date()
   await db
     .insert(seatPresence)
-    .values({ roomId, agentId, lastSeenAt: new Date() })
+    .values({ roomId, agentId, lastSeenAt: now })
     .onConflictDoUpdate({
       target: [seatPresence.roomId, seatPresence.agentId],
-      set: { lastSeenAt: new Date() },
+      set: { lastSeenAt: now },
+      setWhere: sql`${seatPresence.lastSeenAt} < now() - interval '1 second'`,
     })
 }
 

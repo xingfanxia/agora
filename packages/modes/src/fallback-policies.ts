@@ -98,3 +98,25 @@ export function listFallbacks(): Array<{ modeId: string; turnId: string; action:
   }
   return out
 }
+
+/**
+ * Exhaustiveness assertion for `FallbackAction` consumers. Use in
+ * the `default:` arm of a `switch (action.kind)` to get a compile-
+ * time error when a new action kind is added without updating
+ * the consumer:
+ *
+ *   switch (action.kind) {
+ *     case 'abstain': ...
+ *     case 'skip': ...
+ *     case 'withdraw': ...
+ *     case 'drop-badge': ...
+ *     case 'pass-turn': ...
+ *     default: assertNeverFallback(action)
+ *   }
+ *
+ * Defends the comment-enforced "every consumer must handle every
+ * kind" invariant with an actual type-level guarantee.
+ */
+export function assertNeverFallback(x: never): never {
+  throw new Error(`Unhandled FallbackAction: ${JSON.stringify(x)}`)
+}

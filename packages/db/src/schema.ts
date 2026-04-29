@@ -262,7 +262,12 @@ export const seatPresence = pgTable(
     agentId: uuid('agent_id').notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.roomId, table.agentId] })],
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.agentId] }),
+    // Supports eventual GC sweeps ("delete rows older than N days")
+    // without a full table scan; cheap to add now.
+    index('seat_presence_last_seen_idx').on(table.lastSeenAt),
+  ],
 )
 
 export type SeatPresenceRow = typeof seatPresence.$inferSelect
