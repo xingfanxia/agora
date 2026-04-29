@@ -221,3 +221,137 @@ architectural review on this axis — it inherits 4.5d-2's substrate.
 - https://vercel.com/blog/a-new-programming-model-for-durable-execution (GA, 2026-04-16)
 - https://vercel.com/docs/queues
 - https://vercel.com/changelog/vercel-queues-now-in-public-beta (2026-02-27)
+
+---
+
+## 2026-04-29 — Durability Contract for WDK substrate (Phase 4.5d-2.1)
+
+> **Status**: Contract finalized. 4.5d-2.0 spike validated the substrate (`spike/4.5d-2.0-wdk-port`, GO recommendation in `docs/design/phase-4.5d-wdk-spike.md`). This section is the production-ready spec that 4.5d-2.2 mode migration must build against.
+
+### Purpose
+
+The WDK port replaces the hand-rolled http_chain advance loop (`advanceRoom` → `advanceOpenChatRoom` / `advanceWerewolfRoom` + `rehydrateWerewolfFromDb`) with `"use workflow"` orchestration plus `"use step"` bodies. The substrate is more powerful — workflow-level pause/resume via `createHook`, automatic step result caching, durable execution across function timeouts — but the power is conditional on every step body obeying a small set of invariants. This contract spells them out.
+
+The cross-runtime invariant is the one the contract exists to protect: a `runtime='http_chain'` room and a `runtime='wdk'` room with identical inputs must produce identical event sequences. This is what makes `tick-all` cron + per-room runtime flag safe — old rooms continue on http_chain, new rooms start on wdk, replay/observability/audit code paths are runtime-agnostic.
+
+### The contract
+
+Every WDK step body in `apps/web/app/workflows/` must satisfy all eight rules. Violations are caught at three layers: (1) review of the step body, (2) the test in `tests/durability/`, (3) a CI grep rule. Specific test names noted per rule.
+
+#### Rule 1 — Idempotent step bodies
+
+A step body executed N times for the same input must produce identical observable side effects (DB rows, external API calls, log lines that another system reads). This is non-negotiable: WDK retries the body when the *return value delivery* fails, so a body that completed successfully but failed to deliver its return will re-execute end-to-end.
+
+The lever is **always** an idempotency key on the side-effect target:
+- DB writes: `INSERT … ON CONFLICT (room_id, seq) DO NOTHING`. Existing in `appendEvent`. Continue.
+- External LLM calls: not idempotent at the provider, so wrap them in a step with cached return value. Step caching makes the second invocation a no-op even though the LLM call would otherwise re-charge. **This is the cost-savings claim the migration depends on.**
+- Logging: structured logs are idempotent if downstream is keyed on `(roomId, seq)`. Don't log `Date.now()` — it differs across retries and noise-pollutes log queries.
+
+**Test**: `tests/durability/idempotent-step-retry.integration.test.ts` — drive a single workflow with `@workflow/vitest`, force a step retry by killing the in-process worker mid-step, assert post-retry DB state has no duplicate rows for `(roomId, seq)`.
+
+#### Rule 2 — `seq` computed inside the step, never passed in
+
+Today's `runtime.seq = eventCount` (room-runtime.ts:202) sets the next-event sequence number from the DB count at the start of a tick. This works because each tick is a single function invocation that owns its sequence range.
+
+WDK breaks this: a workflow function may suspend for a hook + resume hours later, by which time other workflows may have written events for the same room (humans joining, external triggers, repair scripts). The `seq` value at workflow entry is stale by the time a step needing it actually runs.
+
+**The rule**: every step that writes an event must compute `seq` inside the step body using `(SELECT COALESCE(MAX(seq), -1) + 1 FROM events WHERE room_id = $1)`, evaluated against current DB state. Never pass `seq` into the step from the workflow function. Combined with Rule 1's idempotency key, retried writes become safe no-ops.
+
+**Test**: `tests/durability/seq-recomputed-on-retry.integration.test.ts` — inject a manual event between a step's first run and its retry, assert the retry's recomputed seq doesn't collide.
+
+#### Rule 3 — No Realtime reads inside step bodies
+
+`seat_presence.last_seen_at` (Postgres) is the source of truth for liveness in any step's decision logic. The Realtime channel's peer list is a UI-only convenience.
+
+The reason: Realtime presence is non-deterministic from the workflow's perspective — a step that reads it on first run vs. retry can see different peer sets, breaking replay. `seat_presence.last_seen_at` is updated synchronously by the heartbeat endpoint and is queryable as Postgres truth.
+
+This rule was already adopted in 4.5d-1 (`lib/presence.ts` takes a `SeatPresenceRow` Postgres row, never a Realtime payload). 4.5d-2 inherits.
+
+**Test**: grep step bodies for `supabase.channel(` or `getRoomLive` — none should appear in `apps/web/app/workflows/`. Lint rule via ESLint's `no-restricted-imports` on `@/lib/realtime` from `app/workflows/`.
+
+#### Rule 4 — No wallclock timers inside workflow context
+
+`setTimeout(fn, ms)` with `ms > 0` and `setInterval` are forbidden in workflow function bodies. Step bodies CAN use them for sub-step throttling (the step's overall semantics remain idempotent), but the workflow body must use `sleep("Ns")` from the `workflow` package — a durable suspension primitive that doesn't accrue Active CPU and survives function-instance recycling.
+
+**Why**: a workflow function that uses `setTimeout(..., 5000)` to wait 5 seconds keeps the function instance alive (or, worse, returns and loses the in-flight timer). `sleep` is the WDK primitive that "wait without spending."
+
+**CI rule**: grep test files + `apps/web/app/workflows/` for `setTimeout(` with positive numeric arg — fail CI on match. Allowed: `setTimeout(fn, 0)` for microtask scheduling (rare), `setTimeout` inside step bodies for retry backoff.
+
+**Test**: `tests/durability/workflow-no-setTimeout.test.ts` — AST-walk every file in `app/workflows/`, fail on any `setTimeout(_, n)` where `n > 0`.
+
+#### Rule 5 — `flow.onMessage` is the single mutation entrypoint for game state
+
+Today's invariant from commit `c01119c` (Phase 4.5a): every message that mutates game state goes through `flow.onMessage()`. The reason was symmetry between live runs (where `room.runOneTurn` calls `flow.onMessage` synchronously) and rehydration (where `rehydrateWerewolfFromDb` re-applies events through `flow.onMessage`). Without this single entrypoint, rebuilt state diverged from live state.
+
+WDK eliminates the rehydration helper (step caching gives us replay for free), but the rule still applies for a different reason: when a step processes a message, the resulting state mutation must be deterministic and confined to `flow`'s controlled state machine. Steps must NOT directly mutate the game-state JSONB column or any other shared state outside `flow`. Doing so would split state authority and reintroduce the rehydration divergence.
+
+**Test**: `tests/durability/flow-onMessage-single-entrypoint.test.ts` — semgrep / AST rule that any step writing to `roomState`, `gameState`, or `eventBus.emit({ type: ...mutation })` directly is flagged. The legal pattern is `await flow.onMessage(roomId, event)`, period.
+
+#### Rule 6 — Step inputs are scalars, not growing arrays
+
+Pass `priorCount: number`, not `prior: Message[]`. WDK serializes step inputs into the cached step result; passing a growing array bloats the cache linearly with workflow length. A 50-turn werewolf game with `prior: Message[]` would pay quadratic cache cost.
+
+When a step needs full history, it derives history inside the step body by reading DB given the small input (e.g. `roomId + maxSeq`), not by accepting a large input prop.
+
+**Test**: not enforceable mechanically; review during 4.5d-2.2 mode migration. Add to per-mode PR checklist.
+
+#### Rule 7 — Hook tokens namespaced by mode + room
+
+Format: `agora/room/<uuid>/mode/<mode-id>/turn/<turnIdx>` (or analogous slot — `phase/<phase>/decision/<n>` for werewolf). Slash-separated, mode-segmented, room-scoped. This:
+- Prevents collision between modes (open-chat turn-3 ≠ werewolf-day-vote phase-decision-3).
+- Allows external resumers (UIs, repair scripts) to compute tokens deterministically without round-tripping a workflow run id.
+- Keeps logs greppable.
+
+Same-room conflict on workflow re-entry is gated at the room-creation layer (don't start a second workflow for an already-running roomId), NOT by `using hook = ...` syntax. `using` only narrows the conflict window within a single run; it does nothing for cross-run collision.
+
+**Test**: room-creation API route (open-chat, werewolf, etc.) checks `rooms.status` before starting a new workflow; rejects with 409 if status is `running` or `waiting`.
+
+#### Rule 8 — Module-level state in step files is process-local; persist via shared backing store
+
+Spike finding (`docs/design/phase-4.5d-wdk-spike.md` § "Step worker isolation"): WDK runs steps in isolated worker contexts. A `Map` mutation inside a step does not propagate to other workers, the workflow runtime, or the test process. This is the property that makes step result caching safe.
+
+**The rule**: any state that must be visible across step invocations or to consumers outside the step's worker MUST live in shared backing state (Postgres, Vercel KV, etc.). In-memory caches inside step modules are acceptable only as per-invocation scratch (e.g., in-step memoization within a single function call), never as cross-invocation memory.
+
+**Test**: structurally enforced by Rules 1 + 2 — step bodies that need persistence already write to Postgres via `appendEvent`. This rule formalizes the "why don't we just use a Map" question that will come up during 4.5d-2.2.
+
+### Cross-runtime equivalence
+
+This is the binding meta-invariant: a room with `runtime='http_chain'` and a room with `runtime='wdk'` running on identical input (same agents, same topic, same human-input timing) must produce identical event sequences in the `events` table.
+
+**Test**: `tests/durability/cross-runtime-equivalence.integration.test.ts` (BLOCKED on 4.5d-2.2 first migrated mode). Take a completed http_chain room's events. Replay the workflow on wdk substrate against the same agent snapshot + same recorded human inputs. Diff event sequences. Tolerate only `seq` ordering within a single phase (legitimate concurrency), not event-presence or content differences.
+
+This test is the ultimate gate — if it fails, the migration is incomplete regardless of unit-test status.
+
+### CI rules
+
+```yaml
+# .github/workflows/ci.yml — add to existing test job
+- name: Forbid setTimeout in workflow bodies
+  run: |
+    if grep -rn "setTimeout(.*[1-9]" apps/web/app/workflows/ --include="*.ts" --include="*.tsx"; then
+      echo "::error::setTimeout with positive timeout found in workflow body. Use sleep() from 'workflow'."
+      exit 1
+    fi
+
+- name: Forbid Realtime imports in workflow bodies
+  run: |
+    if grep -rln "@/lib/realtime\|supabase.channel" apps/web/app/workflows/ --include="*.ts" --include="*.tsx"; then
+      echo "::error::Realtime import in workflow body. Read presence from Postgres via lib/presence.ts."
+      exit 1
+    fi
+```
+
+Both rules are bypassable for the rare legitimate case (e.g., a step body using `setTimeout(..., 0)` for microtask scheduling) by inline `// ci-allow-setTimeout: <reason>` comment.
+
+### Open questions deferred to 4.5d-2.2
+
+1. **Per-mode workflow file split**: one file per mode (`open-chat-workflow.ts`, `werewolf-workflow.ts`) or shared module with mode-keyed dispatch? Defer to first migrated mode (roundtable) — pick whatever shape feels natural; refactor if werewolf forces a different shape.
+2. **`next.config.js` integration**: spike did not wrap `withWorkflow`. Do this in the first 4.5d-2.2 PR; verify `withNextIntl` + `withWorkflow` compose without conflict (likely fine — both are HOFs returning NextConfig).
+3. **`.workflow-data/` storage in production**: spike used local filesystem. Production needs a Vercel-managed storage backend; consult `node_modules/workflow/docs/deploying/world/vercel-world.mdx` during 4.5d-2.2 first deploy.
+
+### Cross-references
+
+- Decision record (this document, top): why we chose WDK over Queues
+- Spike findings: `docs/design/phase-4.5d-wdk-spike.md`
+- Phase plan: `docs/design/phase-4.5d-plan.md` § 4.5d-2.1, § 4.5d-2.2
+- Spike branch: `origin/spike/4.5d-2.0-wdk-port` (5 commits, GO recommendation)

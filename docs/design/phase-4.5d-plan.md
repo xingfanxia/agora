@@ -110,18 +110,11 @@ Purpose: validate WDK API surface + cost + determinism before committing to the 
 - ✅ Determinism property as stated holds (with honest scope split — see spike doc)
 - ✅ WDK + Next.js 16 + Turborepo: type-check green across all 6 packages with WDK installed
 
-### 4.5d-2.1 — Durability contract (~0.5 day, design only)
+### 4.5d-2.1 — Durability contract ✅ COMPLETE (2026-04-29)
 
-Append to `docs/design/workflow-architecture.md` (after the 2026-04-28 update). Defines the invariants every WDK step must obey.
+**Status**: Appendix published in `docs/design/workflow-architecture.md` § "2026-04-29 — Durability Contract for WDK substrate". 8 rules covering idempotency, seq computation, no-realtime, no-wallclock-timers, single-mutation-entrypoint, scalar step inputs, mode-namespaced hook tokens, and module-state isolation. Cross-runtime equivalence is the binding meta-invariant. CI rules + per-rule tests specified.
 
-**Contract:**
-
-1. **Idempotent step bodies.** Every `step.run()` body must produce the same effects whether called once or N times. Side effects: only events-table writes (idempotent via `(room_id, seq) ON CONFLICT DO NOTHING`).
-2. **Seq computed inside the step.** The new `seq` for an event is `(SELECT COALESCE(MAX(seq), -1) + 1 FROM events WHERE room_id = $1)` evaluated INSIDE the step body, never passed in. WDK retry recomputes seq against current DB state, so a successful write replayed becomes a no-op.
-3. **No Realtime reads inside steps.** Steps read presence from `seat_presence.last_seen_at` (Postgres). Realtime is for client-side UX only.
-4. **No wallclock timers inside steps.** Use WDK's `sleep()` primitive. Bare `setTimeout` is forbidden (non-deterministic on retry).
-5. **`flow.onMessage` is the single mutation entrypoint.** Steps call `flow.onMessage(roomId, event)`; never write events directly. This preserves the invariant fixed in commit `c01119c`.
-6. **Cross-runtime invariant.** Replay a `runtime='http_chain'` game on the legacy code path; replay a `runtime='wdk'` game through WDK. Both produce identical event sequences. Tested in `tests/durability/`.
+Original 6 bullets expanded to 8 in the appendix — added Rules 6 (scalar step inputs) and 8 (module-state isolation) based on findings from the 4.5d-2.0 spike. Rule 7 (hook tokens) was also lifted from spike findings into the contract.
 
 ### 4.5d-2.2 — Migrate modes (~3-4 days, in this order)
 
