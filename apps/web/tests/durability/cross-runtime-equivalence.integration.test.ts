@@ -106,6 +106,28 @@ function wdkChatMessages(
   )
 }
 
+// ── KNOWN DIVERGENCES (allowlist) ──────────────────────────
+//
+// Cross-runtime equivalence is the binding meta-invariant of the
+// durability contract, but two specific divergences are accepted
+// today:
+//
+// 1. HISTORY ROLE TAGGING (see TURN 2+ test below): legacy AIAgent
+//    tags every message as role:'user' with [name] prefix; WDK
+//    distinguishes own (assistant) from other (user). Resolution
+//    tracked alongside the .skip + regression marker.
+//
+// 2. MESSAGE ID FORMAT (4.5d-2.6): legacy AIAgent generates
+//    message.id via crypto.randomUUID() (random UUID); WDK uses
+//    deriveTurnMessageId() -> deterministic 'rt-${roomId}-t${turnIdx}-${agentId}'.
+//    The shapes do NOT match between runtimes by design (legacy
+//    randomness can't be reproduced; WDK determinism is required
+//    for content-key idempotency). The DB-backed equivalence test
+//    (the it.todo at the bottom) MUST exclude `message.id` from
+//    field-level diffs and assert structural equivalence instead
+//    (same number of message:created events, same sender order,
+//    same content per turn given identical mock LLM inputs).
+
 // ── Tests ──────────────────────────────────────────────────
 
 describe('cross-runtime equivalence (LLM input shape)', () => {

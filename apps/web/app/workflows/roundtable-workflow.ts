@@ -59,10 +59,11 @@ import {
   getEventCount,
   getEventsSince,
   getMessagesSince,
+  refreshMessageCount,
   // Renamed locally to disambiguate from this file's recordTurnUsage
-  // step. The room-store helper is a SQL aggregate increment; the
-  // step is a workflow-level event-write + aggregate-bump pair.
-  recordTokenUsage as bumpRoomTokenAggregates,
+  // step. The room-store helper recomputes aggregates from events;
+  // the workflow step is the event-write + aggregate-refresh pair.
+  refreshRoomTokenAggregates as bumpRoomTokenAggregates,
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
@@ -389,17 +390,14 @@ async function persistAgentMessage(input: PersistAgentMessageInput): Promise<str
   const seq = await getEventCount(roomId)
 
   // Deterministic messageId derived from (roomId, turnIdx, agentId).
-  // Was random crypto.randomUUID() before 4.5d-2.5 -- on a step-
-  // internal retry triggered by `step_completed` delivery failure,
-  // a fresh UUID would have been generated, leaving the previous
-  // attempt's row as a ghost message that no `token:recorded` event
-  // references. Deterministic ID + the planned event-table content-
-  // key idempotency (4.5d-2.6 schema work) closes the gap end-to-end.
-  // Until that DDL lands, two `message:created` events with the SAME
-  // messageId can still appear at DIFFERENT seq values; a content-
-  // key UNIQUE on (roomId, type, payload->>'message'->>'id') will
-  // make the second insert a no-op.
-  const messageId = `rt-${roomId}-t${turnIdx}-${agentId}`
+  // Was random crypto.randomUUID() before 4.5d-2.5; combined with
+  // the events_message_id_uq partial UNIQUE index added in 4.5d-2.6
+  // (packages/db/drizzle/0010_event_content_key_idempotency.sql),
+  // step retries triggered by `step_completed` delivery failure
+  // re-execute the body, recompute the same id, and the duplicate
+  // INSERT is swallowed by ON CONFLICT in appendEvent. End-to-end
+  // idempotency without the previous "ghost message" failure mode.
+  const messageId = deriveTurnMessageId(roomId, turnIdx, agentId)
   const message: Message = {
     id: messageId,
     roomId,
@@ -425,6 +423,13 @@ async function persistAgentMessage(input: PersistAgentMessageInput): Promise<str
 
   const event: PlatformEvent = { type: 'message:created', message }
   await appendEvent(roomId, seq, event)
+
+  // 4.5d-2.6: refresh rooms.messageCount from events log. WDK path
+  // didn't bump this column at all in 4.5d-2.5, leaving WDK rooms
+  // with messageCount=0 in the UI. refreshMessageCount is idempotent
+  // (recomputes from events), so retries don't double-count.
+  await refreshMessageCount(roomId)
+
   // Return messageId so the workflow body can wire it into the
   // subsequent recordTurnUsage step. The ID is deterministic on
   // input, so workflow replays + step retries see the same value
@@ -465,31 +470,24 @@ async function recordTurnUsage(input: RecordTurnUsageInput): Promise<void> {
   const pricing = await resolvePricing(provider, modelId)
   const cost = calculateCost(usage, pricing)
 
-  // RETRY-IDEMPOTENCY (partial): operations are ordered to be safe
-  // under WDK's standard retry triggers (step throws, transient
-  // failure). The harder case -- step body completes but the
-  // `step_completed` event delivery fails, triggering a step retry
-  // that re-runs from the top -- is NOT fully idempotent here:
+  // RETRY-IDEMPOTENCY (full, after 4.5d-2.6 schema migration):
   //
-  //   * (1) appendEvent: re-runs at a NEW seq (since prior succeeded
-  //     and bumped the count). ON CONFLICT (roomId, seq) does NOT
-  //     fire -- so a duplicate `token:recorded` event lands at the
-  //     new seq. Same messageId, different seq.
-  //   * (2) bumpRoomTokenAggregates: NOT idempotent. Re-running it
-  //     INCREMENTS the aggregate a second time. DOUBLE-COUNTED.
+  //   * appendEvent: idempotent at TWO levels:
+  //       - PK (roomId, seq) catches concurrent-tick collisions.
+  //       - events_token_message_id_uq partial UNIQUE catches
+  //         delivery-failure-after-success retries (where the prior
+  //         attempt succeeded at seq=N and the retry recomputes
+  //         seq=N+1). Both indexes are swallowed by the untargeted
+  //         ON CONFLICT DO NOTHING in appendEvent.
   //
-  // The full fix needs an events-table content-key UNIQUE on
-  // (roomId, type, messageId) so duplicate writes at different seqs
-  // are no-ops, AND aggregates derived as SUM-from-events on read
-  // (or a triggered refresh keyed off the unique constraint). That
-  // schema migration is tracked as 4.5d-2.6.
+  //   * refreshRoomTokenAggregates (renamed from recordTokenUsage):
+  //     idempotent by construction. Recomputes totalCost / totalTokens
+  //     / callCount as SUM/COUNT over the events log. Multiple
+  //     invocations for the same room produce the same result.
   //
-  // For 4.5d-2.5: messageId is now deterministic (so duplicate
-  // events have the same id, queryable for cleanup), and the
-  // aggregate update is the LAST op (so retries triggered by
-  // post-(2) throws don't apply -- there ARE no post-(2) throws).
-  // The remaining hazard is delivery-failure-after-success, which
-  // is documented + bounded.
+  // Operation order no longer matters for idempotency (both ops are
+  // independently idempotent), but kept event-write-first for clean
+  // semantics: the aggregate refresh sees the just-written event.
   const seq = await getEventCount(roomId)
   const event: PlatformEvent = {
     type: 'token:recorded',
@@ -502,7 +500,7 @@ async function recordTurnUsage(input: RecordTurnUsageInput): Promise<void> {
     cost,
   }
   await appendEvent(roomId, seq, event)
-  await bumpRoomTokenAggregates(roomId, usage, cost)
+  await bumpRoomTokenAggregates(roomId)
 }
 
 interface EmitRoomEndedInput {
@@ -573,6 +571,42 @@ async function markRoomError(input: MarkRoomErrorInput): Promise<void> {
 }
 
 // ── Helpers (compile-time consumers) ───────────────────────
+
+/**
+ * Derive a deterministic messageId for a turn.
+ *
+ * Format: `rt-${roomId}-t${turnIdx}-${agentId}`. The format itself
+ * is load-bearing for retry idempotency -- combined with the partial
+ * UNIQUE index `events_message_id_uq` (packages/db/drizzle/0010_*),
+ * a step-internal retry that re-runs persistAgentMessage at a NEW
+ * seq is silently no-op'd by ON CONFLICT.
+ *
+ * INPUT DOMAIN (callers must satisfy):
+ * - `roomId` and `agentId` MUST be UUIDs (`gen_random_uuid()`-format).
+ *   UUIDs are hex characters + `-`; they cannot contain the letter
+ *   't' that precedes turnIdx in the format. This guarantees the
+ *   format is unambiguous: `rt-X-t5-Y` cannot collide with `rt-X-t-t5-Y`
+ *   because UUIDs never contain a substring like `-t-`.
+ * - `turnIdx` MUST be a non-negative integer.
+ *
+ * Synthetic / test inputs that break these constraints (e.g. roomId
+ * 'r-t5', agentId 't0-a') CAN collide. The test fixture in
+ * `apps/web/tests/durability/roundtable-workflow.test.ts` includes
+ * a boundary case that documents the trade-off; production-bound
+ * callers are safe by construction.
+ *
+ * If the format ever changes, you MUST also reconcile any existing
+ * data that may have legacy ids -- and update the format-pinning
+ * test. Pinning prevents an accidental rename from quietly breaking
+ * idempotency for in-flight rooms.
+ */
+export function deriveTurnMessageId(
+  roomId: string,
+  turnIdx: number,
+  agentId: string,
+): string {
+  return `rt-${roomId}-t${turnIdx}-${agentId}`
+}
 
 /**
  * Build a snapshot from an `AgentInfo` row + composed system prompt.

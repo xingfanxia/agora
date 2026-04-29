@@ -71,6 +71,13 @@
       "when": 1777601000000,
       "tag": "0009_seat_presence_last_seen_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0010_event_content_key_idempotency",
+      "breakpoints": true
     }
   ]
 }

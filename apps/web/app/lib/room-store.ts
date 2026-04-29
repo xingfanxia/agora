@@ -99,11 +99,30 @@ export async function appendEvent(
   seq: number,
   event: PlatformEvent,
 ): Promise<void> {
-  // ON CONFLICT DO NOTHING — under concurrent ticks (inline self-invoke
-  // overlapping pg_cron), two invocations may compute the same seq. The
-  // PK (roomId, seq) rejects duplicates; we silently swallow so the loser
-  // doesn't crash. Determinism guarantees both would have inserted the
-  // identical event payload.
+  // Untargeted ON CONFLICT DO NOTHING -- swallows duplicates from
+  // ANY unique constraint, including:
+  //
+  //   1. PK (roomId, seq): under concurrent ticks (inline self-invoke
+  //      overlapping pg_cron), two invocations may compute the same seq.
+  //      Determinism guarantees both would write the identical payload.
+  //
+  //   2. events_message_id_uq (4.5d-2.6, type='message:created'):
+  //      WDK step retries triggered by step_completed delivery failure
+  //      may re-execute persistAgentMessage at a NEW seq. The PK doesn't
+  //      catch this -- but the partial UNIQUE on (roomId, message.id)
+  //      does, because messageId is deterministic on (roomId, turnIdx,
+  //      agentId). Duplicate at new seq -> silent no-op.
+  //
+  //   3. events_token_message_id_uq (4.5d-2.6, type='token:recorded'):
+  //      Same hazard for recordTurnUsage. Caught by partial UNIQUE on
+  //      (roomId, payload->>'messageId').
+  //
+  // Untargeted is correct here -- the table has multiple unique
+  // constraints and we want to swallow any of them. Targeted ON
+  // CONFLICT requires Postgres to identify a specific index; expression
+  // indexes with WHERE predicates are awkward to specify via Drizzle's
+  // typed builder. Untargeted side-steps that and is semantically what
+  // we want.
   await db
     .insert(events)
     .values({
@@ -112,7 +131,7 @@ export async function appendEvent(
       type: event.type,
       payload: event as unknown as object,
     })
-    .onConflictDoNothing({ target: [events.roomId, events.seq] })
+    .onConflictDoNothing()
 }
 
 // ── Incremental room updates ────────────────────────────────
@@ -171,29 +190,89 @@ export async function setWaiting(
     .where(eq(rooms.id, roomId))
 }
 
-// Running aggregate bumps (hot-read columns maintained incrementally)
+// Aggregate refreshes (hot-read columns recomputed from events log)
 
-export async function incrementMessageCount(roomId: string): Promise<void> {
-  await db
-    .update(rooms)
-    .set({ messageCount: sql`${rooms.messageCount} + 1` })
-    .where(eq(rooms.id, roomId))
+/**
+ * Refresh `rooms.messageCount` by recomputing from the events log.
+ * 4.5d-2.6: replaces the prior `+= 1` increment pattern, which was
+ * non-idempotent under WDK step retries (delivery-failure case).
+ *
+ * Idempotent by construction. Backwards-compatible alias
+ * `incrementMessageCount` is exported below for any existing
+ * callers; new code should call this directly.
+ */
+export async function refreshMessageCount(roomId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE rooms r SET message_count = (
+      SELECT count(*) FROM events
+      WHERE room_id = r.id AND type = 'message:created'
+    )
+    WHERE r.id = ${roomId}
+  `)
 }
 
-export async function recordTokenUsage(
-  roomId: string,
-  usage: TokenUsage,
-  cost: number,
-): Promise<void> {
-  await db
-    .update(rooms)
-    .set({
-      callCount: sql`${rooms.callCount} + 1`,
-      totalTokens: sql`${rooms.totalTokens} + ${usage.totalTokens}`,
-      totalCost: sql`${rooms.totalCost} + ${cost}`,
-    })
-    .where(eq(rooms.id, roomId))
+/**
+ * @deprecated Use `refreshMessageCount` -- the increment behavior was
+ * a 4.5d-2.5-and-earlier pattern that was non-idempotent. This alias
+ * preserves the import name during the migration; remove when no
+ * call sites reference it.
+ */
+export const incrementMessageCount = refreshMessageCount
+
+/**
+ * Refresh room token aggregates (totalCost, totalTokens, callCount)
+ * by recomputing from the authoritative events log. Phase 4.5d-2.6
+ * replaces the prior `+= N` increment pattern, which was non-idempotent
+ * under WDK step retries triggered by `step_completed` delivery failure.
+ *
+ * Idempotent: multiple invocations for the same room produce the
+ * same result. The events log is the single source of truth; the
+ * denormalized aggregate columns are a read-cache that this refreshes.
+ *
+ * The legacy `(roomId, usage, cost)` signature is gone -- callers no
+ * longer pass per-call deltas. Just `(roomId)` triggers a full refresh.
+ *
+ * Performance: roundtable max ~80 events, werewolf max ~150, both
+ * easily SUM'd inline via the existing `events_room_type_idx` index
+ * on (room_id, type). The 3 sub-SELECTs are fused into a single CTE
+ * for one index lookup instead of three.
+ *
+ * NOTE: this recomputes regardless of room status. Callers that want
+ * to avoid touching finalized aggregates should gate the call on
+ * status. Today's only caller (the WDK recordTurnUsage step + the
+ * legacy http_chain persist hook) only fires for live rooms, so the
+ * gating is implicit.
+ *
+ * BIGINT cast on totalTokens: per-call usage is bounded but the SUM
+ * across thousands of calls in long-running open-chat sessions can
+ * approach INT_MAX (2^31). Cast to bigint defensively; the destination
+ * column is integer and JS handles the bigint->number conversion fine
+ * at typical magnitudes.
+ */
+export async function refreshRoomTokenAggregates(roomId: string): Promise<void> {
+  await db.execute(sql`
+    WITH agg AS (
+      SELECT
+        SUM((payload->>'cost')::float8)                       AS total_cost,
+        SUM((payload->'usage'->>'totalTokens')::bigint)       AS total_tokens,
+        COUNT(*)                                              AS call_count
+      FROM events
+      WHERE room_id = ${roomId} AND type = 'token:recorded'
+    )
+    UPDATE rooms SET
+      total_cost   = COALESCE((SELECT total_cost FROM agg), 0),
+      total_tokens = COALESCE((SELECT total_tokens FROM agg), 0),
+      call_count   = (SELECT call_count FROM agg)
+    WHERE id = ${roomId}
+  `)
 }
+
+/**
+ * @deprecated Renamed to `refreshRoomTokenAggregates` (the function is
+ * a refresh, not an additive record). Old name kept as alias during
+ * caller migration; remove once no code uses it.
+ */
+export const recordTokenUsage = refreshRoomTokenAggregates
 
 // ── Reads ───────────────────────────────────────────────────
 

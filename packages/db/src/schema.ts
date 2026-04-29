@@ -19,6 +19,7 @@
 // Single file to sidestep drizzle-kit's CJS loader not handling
 // NodeNext `.js` imports during `db:generate`.
 
+import { sql } from 'drizzle-orm'
 import {
   boolean,
   doublePrecision,
@@ -29,6 +30,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 
@@ -289,6 +291,19 @@ export const events = pgTable(
   (table) => [
     primaryKey({ columns: [table.roomId, table.seq] }),
     index('events_room_type_idx').on(table.roomId, table.type),
+    // Phase 4.5d-2.6 — content-key idempotency for WDK retries.
+    // Partial unique indexes dedupe duplicate writes at any seq:
+    // a step retry that recomputes a NEW seq still gets caught
+    // because the message identity is the same. Combined with the
+    // deterministic message-id pattern in roundtable-workflow.ts
+    // (`rt-${roomId}-t${turnIdx}-${agentId}`), retries silently
+    // no-op via ON CONFLICT DO NOTHING (untargeted in appendEvent).
+    uniqueIndex('events_message_id_uq')
+      .on(table.roomId, sql`(payload->'message'->>'id')`)
+      .where(sql`type = 'message:created'`),
+    uniqueIndex('events_token_message_id_uq')
+      .on(table.roomId, sql`(payload->>'messageId')`)
+      .where(sql`type = 'token:recorded'`),
   ],
 )
 

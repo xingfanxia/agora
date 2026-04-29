@@ -74,7 +74,12 @@ export function wireEventPersistence(
 
   eventBus.on('token:recorded', (event) => {
     persist(event)
-    enqueue(() => recordTokenUsage(roomId, event.usage, event.cost))
+    // 4.5d-2.6: recordTokenUsage now refreshes from the events log
+    // rather than incrementing. The token:recorded event has been
+    // enqueued for append above; this refresh chains AFTER the
+    // append (runtime.pending serializes writes), so the SUM picks
+    // up the just-appended event.
+    enqueue(() => recordTokenUsage(roomId))
   })
 
   eventBus.on('room:started', (event) => {
