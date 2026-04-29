@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
 import type { AgentData, MessageData, PollResponse } from '../../components/theme'
 import { createAgentColorMap, prefersDark } from '../../components/theme'
+import { usePresenceMap } from '../../hooks/usePresenceMap'
 import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
 import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
 import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
@@ -80,6 +81,11 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
     [snapshot.agents, isDark],
   )
 
+  // Phase 4.5d-3 — per-seat liveness map polled from /presence. Drives
+  // SeatPresenceIndicator in AgentSeat. Hook is visibility-aware and
+  // non-fatal on transient errors; safe to call even for spectators.
+  const presenceMap = usePresenceMap(roomId)
+
   const {
     agents,
     status,
@@ -132,9 +138,11 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
           speaking: !!latest && thinkingAgentId !== a.id && !dead,
           role,
           eliminated: dead,
+          isHuman: a.isHuman ?? false,
+          lastSeenAt: presenceMap[a.id] ?? null,
         }
       }),
-    [agents, latestByAgent, colorFor, thinkingAgentId, roleAssignments, eliminatedIds],
+    [agents, latestByAgent, colorFor, thinkingAgentId, roleAssignments, eliminatedIds, presenceMap],
   )
 
   const chatMessages: ChatViewMessage[] = useMemo(

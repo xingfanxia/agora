@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { TokenCostPanel } from '../../components/TokenCostPanel'
 import type { AgentData, MessageData, PollResponse } from '../../components/theme'
 import { createAgentColorMap, prefersDark } from '../../components/theme'
+import { usePresenceMap } from '../../hooks/usePresenceMap'
 import { RoundTable, type RoundTableAgent } from '../../components/v2/RoundTable'
 import { ChatSidebar, type ChatSidebarMessage } from '../../components/v2/ChatSidebar'
 import { ChatView, type ChatViewMessage } from '../../components/v2/ChatView'
@@ -42,6 +43,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
     [snapshot.agents, isDark],
   )
 
+  // Phase 4.5d-3 — per-seat liveness map polled from /presence. See
+  // WerewolfView for full rationale.
+  const presenceMap = usePresenceMap(roomId)
+
   const {
     agents,
     topic,
@@ -73,9 +78,11 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           latestMessage: latest ? { id: latest.id, content: latest.content } : undefined,
           thinking: thinkingAgentId === a.id,
           speaking: !!latest && thinkingAgentId !== a.id,
+          isHuman: a.isHuman ?? false,
+          lastSeenAt: presenceMap[a.id] ?? null,
         }
       }),
-    [agents, latestByAgent, colorFor, thinkingAgentId],
+    [agents, latestByAgent, colorFor, thinkingAgentId, presenceMap],
   )
 
   const chatMessages: ChatViewMessage[] = useMemo(
