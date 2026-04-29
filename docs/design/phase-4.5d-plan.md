@@ -120,18 +120,18 @@ Original 6 bullets expanded to 8 in the appendix — added Rules 6 (scalar step 
 
 **Order rationale**: simplest substrate first, fan-in last. Each mode validates a property the next depends on.
 
-1. **Roundtable** (~0.5 day) — single-phase, no fan-in, currently on legacy `waitUntil`. Migrating to WDK simultaneously fixes the 4.5c "Roundtable still on legacy path" debt. Substrate sanity check #1. **🟡 Workflow scaffold landed 2026-04-29** (`apps/web/app/workflows/roundtable-workflow.ts`, build + types green). Compile-clean, real `createGenerateFn` + `appendEvent` integration, durability-contract-compliant. **Remaining**: API route integration (branch in `POST /api/rooms` on `runtime` flag), runtime flag wiring on new rooms, integration test against test DB.
-2. **Open-chat** (~0.5 day, formalize from spike) — multi-turn round-robin, no fan-in. Substrate sanity check #2.
+1. **Roundtable** (~0.5 day) — single-phase, no fan-in, currently on legacy `waitUntil`. Migrating to WDK simultaneously fixes the 4.5c "Roundtable still on legacy path" debt. Substrate sanity check #1. **✅ COMPLETE 2026-04-29** (sub-phases 4.5d-2.2 → 2.8): workflow scaffold, terminal-error guard, token-cost tracking, schema-level idempotency, role-tagging alignment, DB seam + cross-runtime equivalence integration test. Cross-runtime equivalence test PASSING. Default still `http_chain` -- final flip gated on dev DB applying migration 0010.
+2. **Open-chat** (~0.5 day, formalize from spike) — multi-turn round-robin, no fan-in. Substrate sanity check #2. **✅ WORKFLOW COMPLETE 2026-04-29** (4.5d-2.9): `apps/web/app/workflows/open-chat-workflow.ts` ports the spike to production with `using` for hook disposal, defense-in-depth payload validation, mode-namespaced token (`mode/open-chat/`) + message id (`oc-` prefix). API route's WDK runtime branch landed 2026-04-29 (4.5d-2.10a). **Remaining**: human-input endpoint WDK branch + cross-runtime equivalence test for open-chat (4.5d-2.10b).
 3. **Werewolf day-vote** (~1.5 days) — the actual feature. Hybrid AI+human fan-in. Pseudocode below.
 4. **Werewolf night actions** (~0.5 day) — witch / seer / guard / hunter. Mostly sequential; opens hooks one seat at a time, not parallel. Easier than day-vote.
 
-### 4.5d-2.3 — Test pyramid (~1 day)
+### 4.5d-2.3 — Test pyramid (~1 day) **✅ FOUNDATION COMPLETE 2026-04-29**
 
 Three layers, **no real timers anywhere**:
 
-- **Unit (`tests/runtime/`)**: fan-in helper with mocked WDK hooks. Inject hook resolutions and timeout signal at controlled points. Test all combinations: all-humans-vote, all-timeout, mixed, AI-only, etc.
-- **Integration (`tests/integration/`)**: insert synthetic `human:input` events into the events table at controlled `created_at` timestamps; run advanceRoom; verify state. No `setTimeout`, no real `sleep()`. Use Drizzle test transactions for isolation.
-- **E2E (`tests/e2e/playwright/`)**: one Playwright multi-context test (two browser contexts = two humans). Smoke only — verifies the wiring is connected, NOT timing properties. Mark with `@smoke`.
+- **Unit (`tests/durability/`)**: ✅ 25 passing tests across `llm-factory.test.ts` (10), `roundtable-workflow.test.ts` (5), `open-chat-workflow.test.ts` (10). Cover the LLM factory determinism contract, the deriveTurnMessageId / deriveOpenChatMessageId / humanTurnToken format pins. Future fan-in helper goes here when werewolf day-vote arrives (~2.10c).
+- **Integration (`tests/durability/*.integration.test.ts`)**: ✅ 6 passing tests in `cross-runtime-equivalence.integration.test.ts`. Drives both legacy (Room.start(flow)) and WDK (start(roundtableWorkflow, ...)) through the same in-memory event log via the WORKFLOW_TEST=1 seam in `room-store-memory.ts`. Asserts message:created equivalence after allowlisting message.id, timestamp, metadata shape, and event-type asymmetries. Open-chat equivalence test deferred to 4.5d-2.10b (needs the human-seat resume path).
+- **E2E (`tests/e2e/playwright/`)**: NOT YET STARTED. One Playwright multi-context test (two browser contexts = two humans). Smoke only — verifies the wiring is connected, NOT timing properties. Mark with `@smoke`. Tracked separately under 4.5d-3.
 
 Exit checklist additions:
 - [ ] No `setTimeout(..., ms)` with `ms > 0` in test files (grep-checked in CI)
