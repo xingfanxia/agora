@@ -120,7 +120,7 @@ Original 6 bullets expanded to 8 in the appendix — added Rules 6 (scalar step 
 
 **Order rationale**: simplest substrate first, fan-in last. Each mode validates a property the next depends on.
 
-1. **Roundtable** (~0.5 day) — single-phase, no fan-in, currently on legacy `waitUntil`. Migrating to WDK simultaneously fixes the 4.5c "Roundtable still on legacy path" debt. Substrate sanity check #1.
+1. **Roundtable** (~0.5 day) — single-phase, no fan-in, currently on legacy `waitUntil`. Migrating to WDK simultaneously fixes the 4.5c "Roundtable still on legacy path" debt. Substrate sanity check #1. **🟡 Workflow scaffold landed 2026-04-29** (`apps/web/app/workflows/roundtable-workflow.ts`, build + types green). Compile-clean, real `createGenerateFn` + `appendEvent` integration, durability-contract-compliant. **Remaining**: API route integration (branch in `POST /api/rooms` on `runtime` flag), runtime flag wiring on new rooms, integration test against test DB.
 2. **Open-chat** (~0.5 day, formalize from spike) — multi-turn round-robin, no fan-in. Substrate sanity check #2.
 3. **Werewolf day-vote** (~1.5 days) — the actual feature. Hybrid AI+human fan-in. Pseudocode below.
 4. **Werewolf night actions** (~0.5 day) — witch / seer / guard / hunter. Mostly sequential; opens hooks one seat at a time, not parallel. Easier than day-vote.
