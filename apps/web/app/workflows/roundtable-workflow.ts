@@ -338,17 +338,9 @@ async function generateAgentReply(
   // History role tagging: own messages -> 'assistant' (raw, no
   // prefix), others' messages -> 'user' with `[name]:` prefix. This
   // preserves the self-vs-other distinction the LLM needs to use
-  // first-person consistently.
-  //
-  // NOTE: this DIVERGES from the legacy AIAgent path
-  // (packages/core/src/agent.ts:98-99 messageToChatMessage), which
-  // tags ALL messages as 'user' with `[name]:` prefix and provides
-  // no own-vs-other signal. Alignment is tracked in
-  // apps/web/tests/durability/cross-runtime-equivalence.integration.test.ts
-  // (the .skip'd "TURN 2+" test + the .not.toEqual regression marker).
-  // Until the legacy path is updated, content-level cross-runtime
-  // equivalence cannot hold for multi-round runs starting at the
-  // turn where an agent first sees its own past message.
+  // first-person consistently. Matches the legacy AIAgent path
+  // post-4.5d-2.7 (packages/core/src/agent.ts:messageToChatMessage)
+  // for cross-runtime content equivalence.
   const history = priorMessages.map((m: Message) => {
     if (m.senderId === agentId) {
       return { role: 'assistant' as const, content: m.content }

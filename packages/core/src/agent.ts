@@ -95,7 +95,27 @@ function buildSystemPrompt(config: AgentConfig): string {
   return parts.join('\n\n')
 }
 
-function messageToChatMessage(msg: Message): ChatMessage {
+/**
+ * Convert a room message into LLM chat-history format from the
+ * perspective of `ownAgentId`. Own messages get role:'assistant'
+ * (no name prefix, since the LLM produced them as itself); others'
+ * messages get role:'user' with a `[name]:` prefix so the LLM can
+ * attribute them.
+ *
+ * Phase 4.5d-2.7: previously this function ignored `ownAgentId` and
+ * tagged everything as role:'user'. The own-vs-other distinction
+ * matches the WDK roundtable workflow's transformation (which had
+ * the correct semantics from the start) and lets the LLM maintain
+ * first-person consistency across multi-round conversations. The
+ * binding regression test is at:
+ *   apps/web/tests/durability/cross-runtime-equivalence.integration.test.ts
+ *   ("TURN 2+ alignment regression marker") -- if either runtime's
+ * transformation changes without the other, that test fails.
+ */
+function messageToChatMessage(msg: Message, ownAgentId: string): ChatMessage {
+  if (msg.senderId === ownAgentId) {
+    return { role: 'assistant', content: msg.content }
+  }
   return { role: 'user', content: `[${msg.senderName}]: ${msg.content}` }
 }
 
@@ -141,7 +161,7 @@ export class AIAgent implements Agent {
       }
     }
 
-    const chatMessages = allMessages.map(messageToChatMessage)
+    const chatMessages = allMessages.map((msg) => messageToChatMessage(msg, this.id))
     const { provider, modelId } = this.config.model
 
     // Structured output path — constrained decision via schema
