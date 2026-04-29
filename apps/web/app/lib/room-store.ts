@@ -65,6 +65,12 @@ export interface CreateRoomArgs {
   // Phase 6 — structured mode config (rounds, topic, leader, etc.).
   modeConfig?: Record<string, unknown> | null
   createdBy?: string | null
+  // Phase 4.5d-2 — durable runtime. Default 'http_chain' (legacy
+  // advanceRoom + chained ticks). Set to 'wdk' for new rooms that
+  // should run on Vercel Workflow DevKit. Immutable per-room: a
+  // room's runtime is fixed at creation. Schema CHECK constraint
+  // enforces values; default in DDL is 'http_chain'.
+  runtime?: 'http_chain' | 'wdk'
 }
 
 export async function createRoom(args: CreateRoomArgs): Promise<void> {
@@ -81,6 +87,7 @@ export async function createRoom(args: CreateRoomArgs): Promise<void> {
     teamId: args.teamId ?? null,
     modeConfig: (args.modeConfig as object) ?? null,
     createdBy: args.createdBy ?? null,
+    runtime: args.runtime ?? 'http_chain',
     startedAt: new Date(),
   })
 }

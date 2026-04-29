@@ -5,6 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
+import { start } from 'workflow/api'
 import { AIAgent, Room, RoundRobinFlow, EventBus, TokenAccountant } from '@agora/core'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +29,10 @@ import { buildLanguageDirective, resolveAgentLanguage } from '../../lib/language
 import { getTeam } from '../../lib/team-store'
 import { buildTeamSnapshot } from '../../lib/team-room'
 import { requireAuthUserId } from '../../lib/auth'
+import {
+  roundtableWorkflow,
+  toRoundtableAgentSnapshot,
+} from '../../workflows/roundtable-workflow'
 import type { NextRequest } from 'next/server'
 
 interface AgentInput {
@@ -43,6 +48,27 @@ interface CreateRoomBody {
   agents?: AgentInput[]
   teamId?: string
   language?: 'en' | 'zh'
+  // Phase 4.5d-2.2 — durable runtime. Default 'http_chain' (legacy).
+  // Set to 'wdk' for new rooms that should run on Workflow DevKit.
+  // Per the durability contract, runtime is fixed at creation.
+  runtime?: 'http_chain' | 'wdk'
+}
+
+function composeAdHocSystemPrompt(
+  agentName: string,
+  persona: string,
+  topic: string,
+  languageDirective: string,
+): string {
+  return [
+    `You are participating in a structured debate on the topic: "${topic}".`,
+    `Your role is ${agentName}: ${persona}`,
+    'Keep your responses focused and concise (2-4 paragraphs).',
+    'Engage with what other participants have said. Build on, challenge, or nuance their points.',
+    'Be substantive and specific. Avoid generic platitudes.',
+    '',
+    languageDirective,
+  ].join('\n')
 }
 
 function resolveProvider(modelId: string): LLMProvider {
@@ -133,6 +159,16 @@ export async function POST(request: NextRequest) {
           maxTokens: 1024,
         }
         const persona: PersonaConfig = { name: agentInput.name, description: agentInput.persona }
+        // Compose once, use in both places (AIAgent for legacy http_chain
+        // and AgentInfo for WDK roundtable workflow). Previously the
+        // ad-hoc path inlined this into AIAgent and never persisted; the
+        // WDK workflow needs it from AgentInfo.
+        const systemPrompt = composeAdHocSystemPrompt(
+          agentInput.name,
+          agentInput.persona,
+          body.topic,
+          languageDirective,
+        )
 
         const agent = new AIAgent(
           {
@@ -140,23 +176,27 @@ export async function POST(request: NextRequest) {
             name: agentInput.name,
             persona,
             model: modelConfig,
-            systemPrompt: [
-              `You are participating in a structured debate on the topic: "${body.topic}".`,
-              `Your role is ${agentInput.name}: ${agentInput.persona}`,
-              'Keep your responses focused and concise (2-4 paragraphs).',
-              'Engage with what other participants have said. Build on, challenge, or nuance their points.',
-              'Be substantive and specific. Avoid generic platitudes.',
-              '',
-              languageDirective,
-            ].join('\n'),
+            systemPrompt,
           },
           createGenerateFn(modelConfig),
         )
 
         aiAgents.push(agent)
-        agentInfos.push({ id: agentId, name: agentInput.name, model: agentInput.model, provider })
+        agentInfos.push({
+          id: agentId,
+          name: agentInput.name,
+          model: agentInput.model,
+          provider,
+          persona: agentInput.persona,
+          systemPrompt,
+        })
       }
     }
+
+    // Default to http_chain to match historical behavior. Toggle to
+    // 'wdk' explicitly via body. New default may flip to 'wdk' for
+    // roundtable once 4.5d-2.3 cross-runtime equivalence test passes.
+    const runtime: 'http_chain' | 'wdk' = body.runtime === 'wdk' ? 'wdk' : 'http_chain'
 
     await createRoom({
       id: roomId,
@@ -168,8 +208,41 @@ export async function POST(request: NextRequest) {
       currentRound: 1,
       teamId,
       createdBy,
+      runtime,
     })
 
+    if (runtime === 'wdk') {
+      // WDK path: skip in-memory Room/AIAgent/Flow/Accountant entirely.
+      // The workflow body owns its own LLM calls + persistence per the
+      // durability contract. Build agent snapshots from AgentInfo and
+      // hand them off to the workflow.
+      const snapshots = agentInfos.map((info) => {
+        if (!info.systemPrompt) {
+          // Defensive: should be unreachable since both paths now
+          // populate systemPrompt. If it fires, the room row is already
+          // committed but the workflow won't start — caller sees 500.
+          throw new Error(`agent ${info.id} missing systemPrompt for WDK runtime`)
+        }
+        return toRoundtableAgentSnapshot(info, info.systemPrompt)
+      })
+
+      // start() returns immediately. The workflow runs durably in the
+      // WDK runtime; failure handling lives inside the workflow itself
+      // (terminal errors flip room.status to 'error' via a future
+      // step, TBD in 4.5d-2.3 testing pass).
+      await start(roundtableWorkflow, [
+        {
+          roomId,
+          agents: snapshots,
+          topic: body.topic,
+          rounds: body.rounds,
+        },
+      ])
+
+      return NextResponse.json({ roomId, runtime: 'wdk' })
+    }
+
+    // http_chain path (legacy, default until cross-runtime parity proven).
     const room = new Room(
       { id: roomId, name: body.topic, modeId: 'roundtable', topic: body.topic, maxAgents: 8 },
       eventBus,
@@ -182,20 +255,20 @@ export async function POST(request: NextRequest) {
     const accountant = new TokenAccountant(eventBus, createCostCalculator(pricingMap))
 
     const flow = new RoundRobinFlow({ rounds: body.rounds })
-    const runtime = registerRuntime(roomId, { eventBus, room, flow, accountant })
-    wireEventPersistence(roomId, eventBus, runtime)
+    const httpChainRuntime = registerRuntime(roomId, { eventBus, room, flow, accountant })
+    wireEventPersistence(roomId, eventBus, httpChainRuntime)
 
     waitUntil(
       room
         .start(flow)
         .then(async () => {
-          await flushRuntimePending(runtime)
+          await flushRuntimePending(httpChainRuntime)
           await updateRoomStatus(roomId, 'completed')
           disposeRuntime(roomId)
         })
         .catch(async (error) => {
           console.error(`Room ${roomId} failed:`, error)
-          await flushRuntimePending(runtime)
+          await flushRuntimePending(httpChainRuntime)
           await updateRoomStatus(
             roomId,
             'error',
@@ -205,7 +278,7 @@ export async function POST(request: NextRequest) {
         }),
     )
 
-    return NextResponse.json({ roomId })
+    return NextResponse.json({ roomId, runtime: 'http_chain' })
   } catch (error) {
     console.error('Failed to create room:', error)
     return NextResponse.json(
