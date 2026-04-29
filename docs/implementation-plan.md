@@ -305,41 +305,42 @@ Runs in parallel-ish with itself, see `docs/design/phase-5-plan.md`. Human seats
 - [ ] Per-mode timeout policies + fallbacks
 - [ ] **Exit**: 1-human-8-AI werewolf game completes end-to-end with human witch
 
-### 4.5d: Multi-human + Supabase Auth layer (IN PROGRESS — ~5-7 days remaining)
+### 4.5d: Multi-human + Supabase Auth layer (IN PROGRESS — ~9-12 days remaining)
+
+**Plan**: `docs/design/phase-4.5d-plan.md` (V2, audited 2026-04-28 via `/mtc` — architect review + self-critique synthesis)
 
 **Shipped (commits `c858213`, `5b73b6d`, `c01119c`):**
-- [x] Supabase Auth — magic-link signup; `/auth/callback` route checks `allowed_emails` allowlist before granting session
-- [x] `allowed_emails` table + RLS (migration `0007_allowed_emails.sql`)
-- [x] JWT seat invites — `POST /api/rooms/[id]/invites`, multi-human picker UI on room creation
-- [x] Mid-phase resume bugfix — replay routes through `flow.onMessage` so chained-tick rehydration is correct after a human turn (commit `c01119c`)
+- [x] Supabase Auth — magic-link signup; `allowed_emails` allowlist gate (migration `0007`)
+- [x] JWT seat invites — `POST /api/rooms/[id]/invites`, multi-human picker UI
+- [x] Mid-phase replay bugfix routing through `flow.onMessage`
 
-**Remaining (split into shippable sub-phases):**
+**Remaining (sub-phases — see plan doc for full spec, durability contract, and worked pseudocode):**
 
-#### 4.5d-1 — Presence + disconnection grace (~2 days, Tier 3 GSD-lite)
-- [ ] Supabase Realtime presence channel per room (subscribe on room mount, broadcast heartbeat)
-- [ ] `useRoomLive` hook: Realtime subscription with polling fallback
-- [ ] 30s disconnection grace timer per human seat; UI heartbeat indicator
-- [ ] Server-side: on grace expiry, advance via mode's fallback policy (auto-vote, skip, etc.)
-- [ ] **Exit**: human disconnect during day-vote falls back to mode default within 30s; reconnect within grace resumes seat
+#### 4.5d-1 — Presence + disconnection grace (~2-3 days, Tier 3)
+- [ ] `seat_presence` table + `rooms.runtime` column (migration `0008`)
+- [ ] Heartbeat endpoint + Realtime presence channel + `useRoomLive` hook
+- [ ] 30s grace timer; mode fallback policies enumerated per turn type (werewolf day-vote / witch / seer / guard / hunter / last-words / sheriff; open-chat; roundtable)
+- [ ] Multi-tab + iOS mobile-suspend semantics specified
+- [ ] **Exit**: human disconnect → mode default within 30s; reconnect within grace resumes seat
 
-#### 4.5d-2 — Parallel fan-in via WDK (~3 days, Tier 4 — architectural)
-- [ ] Add `workflow` package, configure WDK runtime in `apps/web`
-- [ ] Wrap `advanceRoom` in a workflow function — phases become `step.run()` boundaries
-- [ ] Day-vote fan-in: `Promise.race([Promise.all(humanVoteHooks), sleep('60s')])` pattern; iterable `createHook<Vote>()` per human seat
-- [ ] Coexistence contract: WDK calls `flow.onMessage` so the `events` table stays source of truth for replay (do NOT replace event-log replay with WDK's internal log)
-- [ ] Feature-flag the WDK path; keep HTTP-chain path for one week as rollback
-- [ ] **Exit**: 2+ humans vote in parallel during werewolf day-phase; timer-only fallback fires correctly when not all humans respond
+#### 4.5d-2 — Parallel fan-in via WDK (~5-7 days, Tier 4)
+- [ ] **4.5d-2.0 — WDK spike (GATE)**: port open-chat to WDK, run determinism test, model pricing. Hard exit conditions trigger Vercel Queues fallback.
+- [ ] **4.5d-2.1 — Durability contract** appendix: idempotency rules, seq computed inside step (prevents WDK-retry seq collision), no Realtime reads in steps, `flow.onMessage` as single mutation point
+- [ ] **4.5d-2.2 — Migrate modes in order**: roundtable → open-chat → werewolf day-vote (hybrid AI+human, no info-leak) → werewolf night actions
+- [ ] **4.5d-2.3 — Test pyramid**: unit (mocked hooks) + integration (event injection, no real timers) + E2E (Playwright multi-context smoke). CI rule: no `setTimeout(..., ms>0)` in test files.
+- [ ] **Per-room runtime flag** (`rooms.runtime`): NEW rooms = `'wdk'`; OLD rooms = `'http_chain'` forever. No mid-game switching. `tick-all` cron only sweeps `http_chain` rooms.
+- [ ] **Exit**: 2+ humans vote in parallel on `runtime=wdk` room; `runtime=http_chain` rooms still play+replay; cross-runtime determinism test green
 
 #### 4.5d-3 — Multi-human exit verification (~1-2 days, Tier 3)
-- [ ] 2-human-7-AI werewolf E2E playthrough (manual + scripted)
-- [ ] Disconnection recovery test: kill one tab mid-game, verify fallback + reconnect
-- [ ] Roundtable durable-runtime migration (still on legacy `waitUntil` per 4.5c notes — fold in here while runtime is being touched)
-- [ ] Update `docs/design/phase-4.5-plan.md` with as-built notes
-- [ ] **Exit**: 2-human-7-AI werewolf completes including day-vote fan-in + disconnection recovery (original 4.5d exit criterion)
+- [ ] 2-human-7-AI werewolf E2E on `runtime=wdk` room (manual + Playwright smoke)
+- [ ] Disconnection recovery: kill tab during day-vote → fallback fires → reconnect resumes
+- [ ] Cross-runtime replay determinism test (one HTTP-chain game + one WDK game → identical event sequences)
+- [ ] Update `docs/architecture.md` runtime section (waitUntil → WDK + per-room flag)
+- [ ] **Exit**: original 4.5d criterion (2-human-7-AI werewolf completes) + cross-runtime determinism
 
 **Note on `room_memberships`**: original plan called for a `room_memberships` table + RLS. Current architecture skips this — JWT seat tokens encode room+seat scope and the `allowed_emails` gate handles signup access control. Re-evaluate once 4.5d-1 ships if presence needs persistent membership rows; otherwise leave on tokens.
 
-**Total revised**: ~27 days across 5 ship-able milestones. UI overhaul shipped ~day 16 (on track). 4.5d completion ~day 24 with WDK migration; was ~day 27 with hand-rolled fan-in.
+**V1 → V2 audit summary**: V2 addresses 10 architect-identified gaps + 6 self-critique items via durability contract (fixes WDK retry seq-collision), hybrid AI+human worked pseudocode (locks the contract before code), test pyramid with no-real-timers rule, per-room runtime flag (replaces env-wide feature flag — cleanly handles pre-migration replay too), spike gate (de-risks WDK adoption in <1 day), enumerated mode fallback policies. V1 estimate of 6-7 days revised to 9-12 days for realism. Full audit trail in `phase-4.5d-plan.md`.
 
 ---
 
