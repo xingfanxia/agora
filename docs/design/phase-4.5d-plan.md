@@ -242,16 +242,19 @@ export async function dayVoteStep(roomId: string, alivePlayers: Seat[]) {
 
 **Note (2026-04-28)**: estimate revised from 1-2 days → 2-3 days to absorb the SeatPresenceIndicator wire-in that turned out to be infeasible inside 4.5d-1's scope (see "Deferred to 4.5d-3" note in 4.5d-1 section above for the architectural reason — handoff incorrectly assumed `AgentList`/`renderExtra` integration but mode views use `RoundTable`/`AgentSeat` instead).
 
-### UI integration (carried from 4.5d-1)
+### UI integration (carried from 4.5d-1) ✅ Shipped 2026-04-29
 
-- [ ] Expose `isHuman` on `AgentData` wire type (`apps/web/app/room/[id]/components/theme.ts`) — currently dropped between `room-store` (DB) and `PollResponse` (client)
-- [ ] Update `/api/rooms/[id]/messages` poll response to pass `isHuman` through (likely a one-line spread in the `agents.map` already in `useRoomPoll`)
-- [ ] New `GET /api/rooms/[id]/presence` endpoint — uses existing `getRoomPresence(roomId)` from `lib/presence.ts`; returns `{ [agentId]: ISO8601-string }`
-- [ ] New `usePresenceMap(roomId)` client hook (or extension of `useRoomLive`) — polls `/presence` every 5-10s; merges with existing Realtime `peers` for sub-second perceived liveness
-- [ ] Add `lastSeenAt?: string | null` and `isHuman?: boolean` to `RoundTableAgent` + `AgentSeatProps`
-- [ ] Render `<SeatPresenceIndicator>` in `AgentSeat` next to the name label (positioned so the dot is visible without overlapping the role chip in werewolf mode)
-- [ ] Plumb `presenceMap` through `WerewolfView` + `RoundtableView` → `RoundTable agents={...}` → `AgentSeat`
-- [ ] Mobile-suspend microcopy: "Reconnecting…" → "Disconnected" copy on the indicator hover/tooltip when grace exceeded — string in `messages/{en,zh}.json` under `room.presence`
+Commits `ef08100` … `13542e6` (4 atomic commits). Tier 3 review complete (code-reviewer agent: APPROVE; two SUGGESTIONs applied — `useMemo` on labels bag, identity-preserving `setPresence`). Typecheck green across all 6 packages; 43/43 modes tests pass.
+
+- [x] Expose `isHuman` on `AgentData` wire type (`apps/web/app/room/[id]/components/theme.ts`) — `room-store AgentInfo.isHuman` already flowed through the messages route untouched at runtime; only the TS surface needed declaring (commit `ef08100`)
+- [x] Update `/api/rooms/[id]/messages` poll response to pass `isHuman` through — verified no-op: route already returns `snapshot.agents` directly via `getRoomSnapshot`
+- [x] New `GET /api/rooms/[id]/presence` endpoint — thin shim over `getRoomPresence`; access model matches `/messages` (no auth — room URL is the boundary; documented inline) (commit `ef08100`)
+- [x] New `usePresenceMap(roomId)` client hook — polls 5s, visibility-aware, identity-preserving setState short-circuit. Deliberately separate from `useRoomLive` (write-as-seat vs read-all-seats lifecycles) (commit `bab04e6`)
+- [x] Add `lastSeenAt?: string | null` and `isHuman?: boolean` to `AgentSeatProps`. `RoundTableAgent extends Omit<AgentSeatProps, 'onClick'>` so the props propagate to `RoundTable` automatically (commit `c17fe7c`)
+- [x] Render `<SeatPresenceIndicator>` in `AgentSeat` inline-left of the name. Hidden for AI seats and eliminated seats — strikethrough already communicates "out of game"; a status dot would be misleading (commit `c17fe7c`)
+- [x] Plumb `presenceMap` through `WerewolfView` + `RoundtableView` → `tableAgents` memo → `RoundTable` → `AgentSeat` (commit `13542e6`)
+- [x] i18n strings — `room.presence.{online,reconnecting,disconnected,neverSeen,aiSeat}` in en.json + zh.json. `SeatPresenceIndicator` accepts a `labels` prop bag; `AgentSeat` resolves via `useTranslations('room.presence')` once and memoizes (commit `c17fe7c`)
+- [~] Mobile-suspend microcopy — i18n strings shipped (above). Mobile-specific tooltip toggling (e.g. show on tap/long-press) deferred — touch interactions on `title` attribute are platform-dependent; a dedicated tooltip component is its own scope.
 
 ### Verification (original 4.5d-3 scope)
 
