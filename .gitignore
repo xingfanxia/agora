@@ -29,6 +29,10 @@ dist/
 # vercel
 .vercel
 
+# workflow devkit local runtime + vitest plugin bundles
+.workflow-data/
+.workflow-vitest/
+
 # turbo
 .turbo
 
