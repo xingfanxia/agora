@@ -1,4 +1,5 @@
 import createNextIntlPlugin from 'next-intl/plugin'
+import { withWorkflow } from 'workflow/next'
 
 const withNextIntl = createNextIntlPlugin('./i18n/request.ts')
 
@@ -17,4 +18,10 @@ const nextConfig = {
   },
 }
 
-export default withNextIntl(nextConfig)
+// Phase 4.5d-2.2 — WDK substrate. withWorkflow enables the
+// "use workflow" + "use step" directives at compile time. Order
+// matters: withWorkflow returns an async function, so it must be
+// the outermost wrapper. withNextIntl returns a sync NextConfig.
+// Each wrapper preserves the inner webpack callback by chaining;
+// our `extensionAlias` callback survives both.
+export default withWorkflow(withNextIntl(nextConfig))
