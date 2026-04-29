@@ -316,12 +316,14 @@ Runs in parallel-ish with itself, see `docs/design/phase-5-plan.md`. Human seats
 
 **Remaining (sub-phases — see plan doc for full spec, durability contract, and worked pseudocode):**
 
-#### 4.5d-1 — Presence + disconnection grace (~2-3 days, Tier 3)
-- [ ] `seat_presence` table + `rooms.runtime` column (migration `0008`)
-- [ ] Heartbeat endpoint + Realtime presence channel + `useRoomLive` hook
-- [ ] 30s grace timer; mode fallback policies enumerated per turn type (werewolf day-vote / witch / seer / guard / hunter / last-words / sheriff; open-chat; roundtable)
-- [ ] Multi-tab + iOS mobile-suspend semantics specified
-- [ ] **Exit**: human disconnect → mode default within 30s; reconnect within grace resumes seat
+#### 4.5d-1 — Presence + disconnection grace (~2-3 days, Tier 3) ✅ Backend complete 2026-04-29
+Commits `53abef2` … `c02f5d7`. Migrations `0008` + `0009` applied 2026-04-29 via `pnpm --filter @agora/db db:migrate`; schema verified (PK, FK CASCADE, CHECK constraint, both indexes).
+- [x] `seat_presence` table + `rooms.runtime` column (migrations `0008` + `0009` — partial index on `last_seen_at` for cron sweep). Applied + verified.
+- [x] Heartbeat endpoint (UUID-validated, agent-in-snapshot-checked, structured-logged, rate-limited at DB layer via `setWhere now() - 1s`) + Realtime presence channel + `useRoomLive` hook
+- [x] Mode fallback policies enumerated per turn type as a registry: werewolf (day-vote / witch / seer / guard / hunter / last-words / sheriff election / sheriff transfer) + open-chat + roundtable. 14 unit tests, 43/43 modes pass. `assertNeverFallback` exhaustiveness helper.
+- [x] Multi-tab semantics: presence keyed on `(room_id, agent_id)`; any tab keeps the seat live
+- [~] **Partial — UI indicator wire-in deferred to 4.5d-3**: `SeatPresenceIndicator` atom shipped, but `AgentData` wire type lacks `isHuman` and there's no client→Postgres presence read path; full wire-in is ~100-150 LOC of plumbing across ≥5 files. Backend exit criterion does NOT depend on visible indicator (fallbacks fire from `isOnline()`).
+- [x] **Backend exit met**: `lib/presence.ts isOnline()` reads only Postgres → WDK steps in 4.5d-2 will be deterministic. Mode default fires within `PRESENCE_GRACE_MS` (30s) of last heartbeat.
 
 #### 4.5d-2 — Parallel fan-in via WDK (~5-7 days, Tier 4)
 - [ ] **4.5d-2.0 — WDK spike (GATE)**: port open-chat to WDK, run determinism test, model pricing. Hard exit conditions trigger Vercel Queues fallback.

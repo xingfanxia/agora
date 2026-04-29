@@ -43,15 +43,26 @@ ALTER TABLE rooms ADD COLUMN runtime text NOT NULL DEFAULT 'http_chain'
 
 ### Tasks
 
-- [ ] Migration: `0008_seat_presence_and_runtime.sql` — `seat_presence` table + `rooms.runtime` column
-- [ ] Heartbeat endpoint: `POST /api/rooms/[id]/heartbeat` — token-gated, debounced 5s on client, updates `seat_presence.last_seen_at` (UPSERT)
-- [ ] Supabase Realtime presence channel per room — used for UI fan-out only (peer awareness, typing indicators); NOT the source of truth
-- [ ] `useRoomLive` hook: Realtime subscription + heartbeat ticker + polling fallback
-- [ ] UI heartbeat indicator: per-seat dot color — green (`last_seen` <30s), amber (30-60s), red (>60s)
-- [ ] Mode fallback policies (one per turn type) — see table below
-- [ ] Multi-tab semantics: presence keyed on `(room_id, seat_id)`, not connection. Multiple tabs of same seat → "connected" if ANY tab heartbeated within 30s.
-- [ ] Mobile suspend microcopy: "Reconnecting…" → "Disconnected — taking action with default" if grace expires
-- [ ] Determinism: `flow.onMessage` and any 4.5d-2 step that needs liveness reads `seat_presence.last_seen_at` from Postgres, NEVER from Realtime
+- [x] Migration: `0008_seat_presence_and_runtime.sql` — `seat_presence` table + `rooms.runtime` column (commit `53abef2`; **applied to Supabase 2026-04-29** via `pnpm --filter @agora/db db:migrate`; verified: PK `(room_id, agent_id)`, FK `seat_presence_room_id_rooms_id_fk` ON DELETE CASCADE, CHECK constraint `rooms_runtime_check` ∈ {http_chain, wdk}, default `'http_chain'`).
+- [x] Migration: `0009_seat_presence_last_seen_idx.sql` — partial index on `last_seen_at` for cron sweep efficiency (added during implementation, not in original spec). Applied 2026-04-29 in the same migrate run; verified `seat_presence_last_seen_idx` btree present.
+- [x] Heartbeat endpoint: `POST /api/rooms/[id]/heartbeat` — token-gated, debounced 5s on client, updates `seat_presence.last_seen_at` (UPSERT) (commit `4d5bd43`, hardened in `591652a`)
+- [x] Supabase Realtime presence channel per room — used for UI fan-out only (peer awareness, typing indicators); NOT the source of truth (commit `1fd997a`, in `useRoomLive`)
+- [x] `useRoomLive` hook: Realtime subscription + heartbeat ticker (visibility-aware; no polling fallback needed because the heartbeat itself runs on a 5s interval) (commit `1fd997a`)
+- [~] UI heartbeat indicator component — **partial**: `SeatPresenceIndicator` atom shipped (commit `c02f5d7`) but **NOT wired into mode views**. Reclassified to **4.5d-3** — see "Deferred to 4.5d-3" note below.
+- [x] Mode fallback policies (one per turn type) — see table below. Implemented as a registry: `packages/modes/src/fallback-registry.ts` with `assertNeverFallback` exhaustiveness helper (commit `a108267`, 14 unit tests, 43/43 modes pass).
+- [x] Multi-tab semantics: presence keyed on `(room_id, agent_id)`. Multiple tabs of the same seat → connected if ANY tab heartbeated within grace. Implemented via `ON CONFLICT (room_id, agent_id) DO UPDATE` in `lib/presence.ts` (commit `4d5bd43`).
+- [ ] Mobile suspend microcopy: "Reconnecting…" → "Disconnected — taking action with default" if grace expires — **deferred to 4.5d-3** (needs UI surface).
+- [x] Determinism: `flow.onMessage` and any 4.5d-2 step that needs liveness reads `seat_presence.last_seen_at` from Postgres, NEVER from Realtime. Enforced by `lib/presence.ts isOnline()` taking a `SeatPresenceRow` (Postgres-typed); no Realtime imports in `lib/`.
+
+### Deferred to 4.5d-3 — UI integration
+
+Wire-in of `SeatPresenceIndicator` into the mode views was deferred during implementation when the previous handoff's wire-in plan ("via `AgentList` `renderExtra`") proved structurally incorrect:
+
+- **`AgentList` is unused by mode views.** Both `WerewolfView.tsx` and `RoundtableView.tsx` render seats through the v2 `RoundTable` → `AgentSeat` component pair (ellipse layout). `AgentList` (horizontal pill strip) only appears in the older v1 components.
+- **`AgentData` wire type carries no `isHuman`.** The DB seat row stores `isHuman` (e.g. open-chat marks seats human via `humanSeatIds`, room-runtime sets `agent.config.isHuman`), but the `PollResponse.agents` shape is just `{id, name, model, provider}` — `isHuman` is stripped before reaching the client. The indicator's "AI seats render muted dot" branch needs this flag to be exposed.
+- **No client-side data path from `seat_presence.last_seen_at` to the UI.** `useRoomLive` exposes a Realtime `peers: PeerPresence[]` set (binary in-channel/not-in-channel signal), not the timestamp-based green/amber/red state the indicator was designed to render. A new `GET /api/rooms/[id]/presence` endpoint + a polling client hook (or extension of `useRoomLive`) is required.
+
+These together represent ~100-150 LOC of plumbing across ≥5 files (`theme.ts`, `room-runtime.ts`, new presence-route, new hook, `RoundTable`/`AgentSeat`, both views) — squarely 4.5d-3 scope, not 4.5d-1 wrap. The 4.5d-1 *exit criteria* do not depend on the visible indicator: backend fallbacks fire from `lib/presence.ts isOnline()` reading Postgres, regardless of UI state.
 
 ### Mode fallback policies
 
@@ -227,11 +238,29 @@ export async function dayVoteStep(roomId: string, alivePlayers: Seat[]) {
 
 ---
 
-## 4.5d-3 — Multi-human exit verification + cross-runtime determinism (~1-2 days, Tier 3)
+## 4.5d-3 — Multi-human exit verification + cross-runtime determinism + UI integration (~2-3 days, Tier 3)
+
+**Note (2026-04-28)**: estimate revised from 1-2 days → 2-3 days to absorb the SeatPresenceIndicator wire-in that turned out to be infeasible inside 4.5d-1's scope (see "Deferred to 4.5d-3" note in 4.5d-1 section above for the architectural reason — handoff incorrectly assumed `AgentList`/`renderExtra` integration but mode views use `RoundTable`/`AgentSeat` instead).
+
+### UI integration (carried from 4.5d-1)
+
+- [ ] Expose `isHuman` on `AgentData` wire type (`apps/web/app/room/[id]/components/theme.ts`) — currently dropped between `room-store` (DB) and `PollResponse` (client)
+- [ ] Update `/api/rooms/[id]/messages` poll response to pass `isHuman` through (likely a one-line spread in the `agents.map` already in `useRoomPoll`)
+- [ ] New `GET /api/rooms/[id]/presence` endpoint — uses existing `getRoomPresence(roomId)` from `lib/presence.ts`; returns `{ [agentId]: ISO8601-string }`
+- [ ] New `usePresenceMap(roomId)` client hook (or extension of `useRoomLive`) — polls `/presence` every 5-10s; merges with existing Realtime `peers` for sub-second perceived liveness
+- [ ] Add `lastSeenAt?: string | null` and `isHuman?: boolean` to `RoundTableAgent` + `AgentSeatProps`
+- [ ] Render `<SeatPresenceIndicator>` in `AgentSeat` next to the name label (positioned so the dot is visible without overlapping the role chip in werewolf mode)
+- [ ] Plumb `presenceMap` through `WerewolfView` + `RoundtableView` → `RoundTable agents={...}` → `AgentSeat`
+- [ ] Mobile-suspend microcopy: "Reconnecting…" → "Disconnected" copy on the indicator hover/tooltip when grace exceeded — string in `messages/{en,zh}.json` under `room.presence`
+
+### Verification (original 4.5d-3 scope)
 
 - [ ] **2-human-7-AI werewolf E2E** on `runtime=wdk` room: full game, manual playthrough + Playwright multi-context smoke
 - [ ] **Disconnection recovery**: kill one human's tab during day-vote → fallback fires → reconnect within grace → seat resumes mid-game (or correctly applies default if grace expired)
 - [ ] **Cross-runtime replay determinism test**: take one HTTP-chain-era completed game (any from prod) + one WDK-era completed game; replay both; assert identical event sequences
+
+### Docs
+
 - [ ] Update `docs/design/phase-4.5-plan.md` with as-built notes (4.5d superseded by this doc)
 - [ ] Update `docs/architecture.md` runtime section (currently mentions `waitUntil()` — needs WDK section)
 - [ ] Mark 4.5d ✅ DONE in `docs/implementation-plan.md`
@@ -246,10 +275,10 @@ The original 4.5d exit criterion stands: **2-human-7-AI werewolf completes inclu
 
 | Sub-phase | V1 estimate | V2 estimate | Delta reason |
 |---|---|---|---|
-| 4.5d-1 | 2 days | 2-3 days | + multi-tab/mobile spec, + seat_presence schema |
+| 4.5d-1 | 2 days | 2-3 days (shipped) | + multi-tab/mobile spec, + seat_presence schema; UI indicator wire-in reclassified to 4.5d-3 mid-flight |
 | 4.5d-2 | 3 days | 5-7 days | + spike gate, + durability contract, + per-room flag, + 4 modes vs 1, + test pyramid |
-| 4.5d-3 | 1-2 days | 1-2 days | unchanged (Roundtable migration moved into 4.5d-2.2 first) |
-| **Total remaining** | **6-7 days** | **9-12 days** | More realistic for tier-4 architectural migration |
+| 4.5d-3 | 1-2 days | 2-3 days | + UI indicator wire-in (`AgentData.isHuman` exposure, GET `/presence` endpoint, polling hook, RoundTable/AgentSeat plumbing) inherited from 4.5d-1 |
+| **Total remaining (after 4.5d-1)** | **5-6 days** | **7-10 days** | More realistic for tier-4 architectural migration |
 
 ---
 
