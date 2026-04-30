@@ -453,7 +453,15 @@ function NewRoomPage() {
 
         {/* Phase 4.5d — multi-human seat picker. Check any seats that
             should be played by humans. Your own seat gets auto-claimed;
-            others become invite URLs in the room's invite panel. */}
+            others become invite URLs in the room's invite panel.
+
+            Hidden for roundtable: the workflow has no human-seat support
+            (RoundtableAgentSnapshot has no isHuman flag, the per-turn
+            loop fires LLM unconditionally), and the POST route silently
+            drops humanSeatIds. Re-enable when roundtable adds humans —
+            tracked alongside P2 (multi-human ready-up gate). See
+            docs/design/session-7-cross-mode-audit.md. */}
+        {mode !== 'roundtable' && (
         <Field label={language === 'zh' ? '由你（人类）来玩的座位' : 'Seats you (humans) will play'}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
             {language === 'zh'
@@ -545,6 +553,7 @@ function NewRoomPage() {
             </div>
           )}
         </Field>
+        )}
       </div>
 
       {error && (
