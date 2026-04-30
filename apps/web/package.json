@@ -36,7 +36,8 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "workflow": "^4.2.4"
+    "workflow": "^4.2.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@agora/eslint-config": "workspace:*",
