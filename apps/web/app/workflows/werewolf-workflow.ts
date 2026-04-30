@@ -123,6 +123,12 @@ import {
   runWolfDiscuss,
   runWolfVote,
 } from './werewolf-night-phases.js'
+import {
+  runCheckWinAfterNight,
+  runCheckWinAfterVote,
+  runDayDiscuss,
+  runDayVote,
+} from './werewolf-day-phases.js'
 
 // ── Public types ───────────────────────────────────────────
 
@@ -418,27 +424,34 @@ export async function werewolfWorkflow(
         case 'dawn':
           await runDawn(roomId, agents, persistedState)
           break
-        // Remaining phases — implementations land in 2.15 (day:
-        // sheriffGate/sheriffElection/dayDiscuss/dayVote/lastWords*),
-        // 2.16 (triggered: hunterShoot*/sheriffTransfer*/checkWin*).
+        case 'dayDiscuss':
+          await runDayDiscuss(roomId, agents, persistedState)
+          break
+        case 'dayVote':
+          await runDayVote(roomId, agents, persistedState)
+          break
+        case 'checkWinAfterNight':
+          await runCheckWinAfterNight(roomId, agents, persistedState)
+          break
+        case 'checkWinAfterVote':
+          await runCheckWinAfterVote(roomId, agents, persistedState)
+          break
+        // Remaining phases — implementations land in 2.16 (triggered:
+        // hunterShoot*/sheriffTransfer*/sheriffElection/lastWords*).
         case 'sheriffGate':
         case 'sheriffElection':
-        case 'dayDiscuss':
-        case 'dayVote':
         case 'lastWordsDawn':
         case 'lastWordsVote':
         case 'hunterShoot':
         case 'hunterShootAfterVote':
         case 'sheriffTransferNight':
         case 'sheriffTransferVote':
-        case 'checkWinAfterNight':
-        case 'checkWinAfterVote':
           // FatalError because phase logic is deterministic on game
           // state — retry won't change the outcome. Signals "code
           // not yet shipped, not transient".
           throw new FatalError(
             `werewolfWorkflow: phase "${currentPhase}" not yet implemented. ` +
-              'Implementations land in 4.5d-2.15 (day), 2.16 (triggered).',
+              'Implementations land in 4.5d-2.16 (triggered/advanced phases).',
           )
         case null:
           throw new FatalError(
