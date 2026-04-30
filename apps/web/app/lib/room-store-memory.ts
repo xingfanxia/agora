@@ -30,7 +30,13 @@
 // restart. In tests this Map IS the database -- by design.
 
 import type { Message, PlatformEvent } from '@agora/shared'
-import type { CreateRoomArgs, RoomStatus, WaitingDescriptor } from './room-store.js'
+import type {
+  AgentInfo,
+  CreateRoomArgs,
+  MarkSeatReadyResult,
+  RoomStatus,
+  WaitingDescriptor,
+} from './room-store.js'
 
 // ── Shapes ────────────────────────────────────────────────
 
@@ -304,6 +310,49 @@ export async function memSetGameState(
   if (!room) return
   room.gameState = gameState
   room.updatedAt = new Date()
+}
+
+// ── P2 lobby gate helpers ────────────────────────────────
+
+/**
+ * Mirror of `markSeatReady` (room-store.ts). Atomic in production via
+ * `jsonb_set` UPDATE; here it's a synchronous in-process Map mutation
+ * because the test runtime is single-threaded. The status='lobby'
+ * predicate is mirrored too — returns null when the room moved on.
+ */
+export async function memMarkSeatReady(
+  roomId: string,
+  agentId: string,
+): Promise<MarkSeatReadyResult | null> {
+  const room = roomsById.get(roomId)
+  if (!room) return null
+  if (room.status !== 'lobby') return null
+  const gs = (room.gameState as Record<string, unknown> | null) ?? {}
+  const seatReady =
+    typeof gs['seatReady'] === 'object' && gs['seatReady'] !== null
+      ? { ...(gs['seatReady'] as Record<string, boolean>) }
+      : {}
+  seatReady[agentId] = true
+  const newGs = { ...gs, seatReady }
+  room.gameState = newGs
+  room.updatedAt = new Date()
+  return {
+    gameState: newGs,
+    agents: (room.agents as unknown as AgentInfo[]) ?? [],
+  }
+}
+
+/**
+ * Mirror of `flipLobbyToRunning` (room-store.ts). CAS via Map check —
+ * only the first call to find status='lobby' wins.
+ */
+export async function memFlipLobbyToRunning(roomId: string): Promise<boolean> {
+  const room = roomsById.get(roomId)
+  if (!room) return false
+  if (room.status !== 'lobby') return false
+  room.status = 'running'
+  room.updatedAt = new Date()
+  return true
 }
 
 export async function memSetWaiting(

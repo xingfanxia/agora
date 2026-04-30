@@ -22,10 +22,12 @@ import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
 import {
   memAppendEvent,
   memCreateRoom,
+  memFlipLobbyToRunning,
   memGetEventCount,
   memGetEventsSince,
   memGetMessagesSince,
   memGetRoom,
+  memMarkSeatReady,
   memRefreshMessageCount,
   memRefreshRoomTokenAggregates,
   memSetCurrentPhase,
@@ -56,7 +58,22 @@ const db = new Proxy({} as ReturnType<typeof getDb>, {
   },
 })
 
-export type RoomStatus = 'running' | 'waiting' | 'completed' | 'error'
+/**
+ * Room lifecycle status.
+ *
+ * - `lobby`: pre-start gate when the room has at least one human seat.
+ *   The workflow has NOT been started yet; createRoom skipped `start()`
+ *   and is waiting for all human seats to flip ready (via the
+ *   `/seats/[agentId]/ready` endpoint) before resolveLobby() fires
+ *   `start(workflow, ...)`. Owner can also force-start. Rooms with no
+ *   human seats skip 'lobby' entirely and start at 'running'.
+ * - `running`: workflow is active (AI turns proceeding).
+ * - `waiting`: workflow paused on a human input (open-chat/werewolf
+ *   day-vote, etc.). NOT used during lobby — the lobby gate predates
+ *   workflow start.
+ * - `completed` / `error`: terminal.
+ */
+export type RoomStatus = 'lobby' | 'running' | 'waiting' | 'completed' | 'error'
 
 export interface WaitingDescriptor {
   /** Event type the runtime is waiting on (e.g. 'human:input'). */
@@ -103,6 +120,15 @@ export interface CreateRoomArgs {
   // room's runtime is fixed at creation. Schema CHECK constraint
   // enforces values; default in DDL is 'http_chain'.
   runtime?: 'http_chain' | 'wdk'
+  /**
+   * P2 lobby gate. Default 'running' preserves the old behavior:
+   * createRoom commits a row that's immediately ready for the
+   * workflow to run. Pass 'lobby' when humans are present and the
+   * caller wants to defer `start(workflow, ...)` until all human
+   * seats flip ready (or the owner force-starts). Lobby resolution
+   * lives in apps/web/app/lib/lobby.ts:resolveLobby.
+   */
+  initialStatus?: 'lobby' | 'running'
 }
 
 export async function createRoom(args: CreateRoomArgs): Promise<void> {
@@ -114,7 +140,7 @@ export async function createRoom(args: CreateRoomArgs): Promise<void> {
     config: args.config as object,
     agents: args.agents as unknown as object,
     currentRound: args.currentRound ?? 1,
-    status: 'running',
+    status: args.initialStatus ?? 'running',
     roleAssignments: (args.roleAssignments as object) ?? null,
     advancedRules: (args.advancedRules as object) ?? null,
     teamId: args.teamId ?? null,
@@ -194,6 +220,71 @@ export async function setGameState(
 ): Promise<void> {
   if (inMemoryMode()) return memSetGameState(roomId, gameState)
   await db.update(rooms).set({ gameState: gameState as object }).where(eq(rooms.id, roomId))
+}
+
+// ── P2 lobby gate helpers ───────────────────────────────────
+
+/**
+ * Atomically mark a seat as ready inside `gameState.seatReady[agentId]`.
+ *
+ * Implemented as a single-statement `jsonb_set` UPDATE so two humans
+ * toggling ready concurrently can't race each other (the equivalent
+ * read-modify-write in TS would lose updates). The `WHERE status =
+ * 'lobby'` predicate guarantees the call no-ops once the gate has
+ * resolved (someone hit force-start, or another seat's ready flip
+ * already triggered the running-flip). Returns the new gameState +
+ * agents snapshot for the caller's all-ready check, or `null` when
+ * the room isn't in 'lobby' anymore.
+ *
+ * Returning `null` is the "you're too late" signal — the caller
+ * should NOT then call resolveLobby; the room has already moved on.
+ */
+export interface MarkSeatReadyResult {
+  gameState: Record<string, unknown>
+  agents: AgentInfo[]
+}
+export async function markSeatReady(
+  roomId: string,
+  agentId: string,
+): Promise<MarkSeatReadyResult | null> {
+  if (inMemoryMode()) return memMarkSeatReady(roomId, agentId)
+  // jsonb_set(target, path, new_value, create_missing). create_missing=true
+  // creates `seatReady` and the agent key if they don't exist yet.
+  const result = await db
+    .update(rooms)
+    .set({
+      gameState: sql`jsonb_set(coalesce(${rooms.gameState}, '{}'::jsonb), ARRAY['seatReady', ${agentId}]::text[], 'true'::jsonb, true)`,
+    })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ gameState: rooms.gameState, agents: rooms.agents })
+  if (result.length === 0) return null
+  const row = result[0]!
+  return {
+    gameState: (row.gameState as Record<string, unknown>) ?? {},
+    agents: (row.agents as unknown as AgentInfo[]) ?? [],
+  }
+}
+
+/**
+ * Compare-and-swap flip from 'lobby' to 'running'. Returns true if
+ * THIS call won the race (the caller should now fire start(workflow,
+ * ...)). Returns false if another caller already won — workflow has
+ * been started or is being started by them, do nothing.
+ *
+ * Uses a single UPDATE ... WHERE status='lobby' RETURNING id so the
+ * predicate + write are one atomic statement. No transaction needed.
+ *
+ * Naturally idempotent against duplicate calls: only the first one
+ * gets the row back.
+ */
+export async function flipLobbyToRunning(roomId: string): Promise<boolean> {
+  if (inMemoryMode()) return memFlipLobbyToRunning(roomId)
+  const result = await db
+    .update(rooms)
+    .set({ status: 'running' })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ id: rooms.id })
+  return result.length === 1
 }
 
 export async function updateRoomStatus(
