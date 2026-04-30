@@ -307,7 +307,7 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
       )}
 
       {status === 'running' && latestByAgent.size === 0 && (
-        <WorkflowWarmupBanner agents={agents} thinkingAgentId={thinkingAgentId ?? null} />
+        <WorkflowWarmupBanner agents={agents} thinkingAgentId={thinkingAgentId} />
       )}
 
       {winResult && (

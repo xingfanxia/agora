@@ -1,12 +1,18 @@
 'use client'
 
-// Warmup banner — shown after `start` is clicked but before the first
-// agent message lands. Workflow startup (initializeGameState + first
-// phase's first LLM call) takes 30-90s in production; without a hint
-// the user sees a blank room and assumes it's broken. Filters out
-// system messages so it stays visible while the workflow has only
-// emitted scaffolding (room:started, dawn announcement, etc.) but no
-// agent content yet.
+// Warmup banner — shown after `start` is clicked but before any agent
+// has emitted a message. Workflow startup (initializeGameState + first
+// phase's first LLM call) takes 30-60s in production; without a hint
+// the user sees a blank room and assumes it's broken.
+//
+// Caller predicate (in both views): `latestByAgent.size === 0`. That
+// Map is keyed by senderId and built from the full cumulative message
+// log filtering out system messages. Once any agent has ever spoken,
+// their key is in the map permanently — so size > 0 from then on.
+// The banner therefore renders only during the initial warmup window,
+// not at every phase transition. Subsequent system-only stretches
+// (dawn announcement, vote tally) keep the banner hidden because at
+// least one agent has already populated the map.
 //
 // Cross-mode: same shape works for werewolf (initializeGameState +
 // first night step), roundtable (first agent's reply), and open-chat
