@@ -36,6 +36,11 @@ import {
   humanTurnToken as openChatHumanTurnToken,
   type HumanTurnPayload,
 } from '../../../../workflows/open-chat-workflow'
+import {
+  werewolfDayVoteToken,
+  type WerewolfPersistedState,
+} from '../../../../workflows/werewolf-workflow'
+import type { HumanDayVotePayload } from '../../../../workflows/werewolf-day-phases'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,19 +114,31 @@ export async function POST(
   if (!roomRow) {
     return NextResponse.json({ error: 'Room not found' }, { status: 404 })
   }
-  if (roomRow.status !== 'waiting') {
-    return NextResponse.json(
-      { error: `Room is not waiting for input (status: ${roomRow.status})` },
-      { status: 409 },
-    )
-  }
 
-  const gameState = roomRow.gameState as { waitingForHuman?: string } | null
-  if (gameState?.waitingForHuman !== agentId) {
-    return NextResponse.json(
-      { error: `Room is not waiting for agent ${agentId}` },
-      { status: 403 },
-    )
+  // Werewolf-WDK has different room-lock semantics: status stays
+  // 'running' across dayVote because runDayVote collects votes from
+  // all human seats in parallel via Promise.all over independent
+  // hooks (no single waitingForHuman marker). Skip the lock checks
+  // here; the werewolf branch below validates phase + voter
+  // eligibility instead.
+  const isWerewolfWdk =
+    roomRow.runtime === 'wdk' && roomRow.modeId === 'werewolf'
+
+  if (!isWerewolfWdk) {
+    if (roomRow.status !== 'waiting') {
+      return NextResponse.json(
+        { error: `Room is not waiting for input (status: ${roomRow.status})` },
+        { status: 409 },
+      )
+    }
+
+    const gameState = roomRow.gameState as { waitingForHuman?: string } | null
+    if (gameState?.waitingForHuman !== agentId) {
+      return NextResponse.json(
+        { error: `Room is not waiting for agent ${agentId}` },
+        { status: 403 },
+      )
+    }
   }
 
   // AuthZ — bearer seat-token or owner session.
@@ -143,70 +160,163 @@ export async function POST(
   // This branch runs AFTER state-validation and authZ. Same checks as
   // legacy: status='waiting', gameState.waitingForHuman===agentId.
   if (roomRow.runtime === 'wdk') {
-    // Mode dispatch: only open-chat ships WDK + human-seat support
-    // today. Werewolf and future modes will register their own token
-    // namespace under `mode/<mode-name>/` and gain a dispatch arm.
-    if (roomRow.modeId !== 'open-chat') {
-      return NextResponse.json(
-        {
-          error:
-            `WDK runtime + human seats not yet supported for mode '${roomRow.modeId}'`,
-        },
-        { status: 501 },
-      )
+    if (roomRow.modeId === 'open-chat') {
+      // Defense-in-depth: validate text BEFORE calling resumeHook so a
+      // bad payload doesn't push the workflow into FatalError → room
+      // 'error' state. The workflow body has its own non-empty check
+      // for resumes triggered by other tooling (Vercel dashboard,
+      // scripts), but we should fail cleanly here for endpoint callers.
+      const text = typeof payload.content === 'string' ? payload.content.trim() : ''
+      if (text.length === 0) {
+        return NextResponse.json(
+          { error: 'WDK human-input requires non-empty payload.content' },
+          { status: 400 },
+        )
+      }
+
+      // turnIdx is the workflow loop index, written by the workflow's
+      // markWaitingForHuman step into gameState.waitingForTurnIdx
+      // alongside waitingForHuman. The endpoint cannot derive it
+      // independently (would have to parse events to count turns),
+      // so the workflow → endpoint contract is: workflow writes the
+      // breadcrumb, endpoint reads it. A missing field means the
+      // workflow paused without setting state correctly -- 500, not
+      // 400, since this is a server-side invariant violation.
+      const gs = roomRow.gameState as { waitingForTurnIdx?: unknown } | null
+      const turnIdx = gs?.waitingForTurnIdx
+      if (typeof turnIdx !== 'number' || !Number.isInteger(turnIdx) || turnIdx < 0) {
+        return NextResponse.json(
+          { error: 'gameState.waitingForTurnIdx missing or invalid' },
+          { status: 500 },
+        )
+      }
+
+      const token = openChatHumanTurnToken(roomId, turnIdx)
+      const hookPayload: HumanTurnPayload = { text }
+
+      try {
+        await resumeHook(token, hookPayload)
+      } catch (resumeErr) {
+        // resumeHook throws if the hook isn't currently registered
+        // (workflow not paused at this token, or already resumed).
+        // Don't leak the WDK error message verbatim -- it can include
+        // run ids that aren't useful to clients.
+        console.error(
+          `[human-input wdk] resumeHook failed for ${token}:`,
+          resumeErr,
+        )
+        return NextResponse.json(
+          { error: 'Failed to resume workflow at this turn' },
+          { status: 500 },
+        )
+      }
+
+      return NextResponse.json({ ok: true, runtime: 'wdk' })
     }
 
-    // Defense-in-depth: validate text BEFORE calling resumeHook so a
-    // bad payload doesn't push the workflow into FatalError → room
-    // 'error' state. The workflow body has its own non-empty check
-    // for resumes triggered by other tooling (Vercel dashboard,
-    // scripts), but we should fail cleanly here for endpoint callers.
-    const text = typeof payload.content === 'string' ? payload.content.trim() : ''
-    if (text.length === 0) {
-      return NextResponse.json(
-        { error: 'WDK human-input requires non-empty payload.content' },
-        { status: 400 },
-      )
+    if (roomRow.modeId === 'werewolf') {
+      // Werewolf differs from open-chat: runDayVote collects votes
+      // from all human seats in parallel (each seat has its own
+      // hook), so the room stays at status='running' throughout and
+      // there's no single waitingForHuman marker. Eligibility is
+      // computed from gameState.currentPhase + agents snapshot.
+      //
+      // Only dayVote accepts human input today. lastWords / hunter
+      // / sheriff phases land in 4.5d-2.16 with their own tokens.
+      const gs = roomRow.gameState as Partial<WerewolfPersistedState> | null
+      if (gs?.currentPhase !== 'dayVote') {
+        return NextResponse.json(
+          {
+            error:
+              `Werewolf room not accepting human input (phase: ${gs?.currentPhase ?? 'unknown'})`,
+          },
+          { status: 409 },
+        )
+      }
+
+      // Voter must be in the snapshot, marked human, and alive.
+      const agents = (roomRow.agents as unknown as Array<{
+        id: string
+        name: string
+        isHuman?: boolean
+      }>) ?? []
+      const voter = agents.find((a) => a.id === agentId)
+      if (!voter) {
+        return NextResponse.json(
+          { error: `Agent ${agentId} not in this room` },
+          { status: 403 },
+        )
+      }
+      if (!voter.isHuman) {
+        return NextResponse.json(
+          { error: `Agent ${agentId} is not a human seat` },
+          { status: 403 },
+        )
+      }
+      const eliminated = (gs.eliminatedIds ?? []) as readonly string[]
+      if (eliminated.includes(agentId)) {
+        return NextResponse.json(
+          { error: `Agent ${agentId} has been eliminated` },
+          { status: 409 },
+        )
+      }
+
+      // Validate payload shape. The workflow's collectHumanDayVote
+      // has its own defensive normalization (empty target → abstain),
+      // but reject obviously bad shapes here so callers get a clean
+      // 400 rather than a silent abstain on the workflow side.
+      const target = typeof payload.target === 'string' ? payload.target.trim() : ''
+      if (target.length === 0) {
+        return NextResponse.json(
+          { error: 'Werewolf day-vote requires payload.target (a player name or "skip")' },
+          { status: 400 },
+        )
+      }
+      const reason =
+        typeof payload.reason === 'string' && payload.reason.trim().length > 0
+          ? payload.reason.trim()
+          : undefined
+
+      // nightNumber is the cycle index in the persisted state. It's
+      // load-bearing for token reconstruction — the workflow's
+      // collectHumanDayVote built the hook with this exact value,
+      // and we have to match.
+      const nightNumber = typeof gs.nightNumber === 'number' ? gs.nightNumber : null
+      if (nightNumber === null || !Number.isInteger(nightNumber) || nightNumber < 0) {
+        return NextResponse.json(
+          { error: 'gameState.nightNumber missing or invalid' },
+          { status: 500 },
+        )
+      }
+
+      const token = werewolfDayVoteToken(roomId, nightNumber, agentId)
+      const hookPayload: HumanDayVotePayload = reason
+        ? { target, reason }
+        : { target }
+
+      try {
+        await resumeHook(token, hookPayload)
+      } catch (resumeErr) {
+        console.error(
+          `[human-input wdk werewolf] resumeHook failed for ${token}:`,
+          resumeErr,
+        )
+        return NextResponse.json(
+          { error: 'Failed to resume workflow at this vote' },
+          { status: 500 },
+        )
+      }
+
+      return NextResponse.json({ ok: true, runtime: 'wdk', mode: 'werewolf' })
     }
 
-    // turnIdx is the workflow loop index, written by the workflow's
-    // markWaitingForHuman step into gameState.waitingForTurnIdx
-    // alongside waitingForHuman. The endpoint cannot derive it
-    // independently (would have to parse events to count turns),
-    // so the workflow → endpoint contract is: workflow writes the
-    // breadcrumb, endpoint reads it. A missing field means the
-    // workflow paused without setting state correctly -- 500, not
-    // 400, since this is a server-side invariant violation.
-    const gs = roomRow.gameState as { waitingForTurnIdx?: unknown } | null
-    const turnIdx = gs?.waitingForTurnIdx
-    if (typeof turnIdx !== 'number' || !Number.isInteger(turnIdx) || turnIdx < 0) {
-      return NextResponse.json(
-        { error: 'gameState.waitingForTurnIdx missing or invalid' },
-        { status: 500 },
-      )
-    }
-
-    const token = openChatHumanTurnToken(roomId, turnIdx)
-    const hookPayload: HumanTurnPayload = { text }
-
-    try {
-      await resumeHook(token, hookPayload)
-    } catch (resumeErr) {
-      // resumeHook throws if the hook isn't currently registered
-      // (workflow not paused at this token, or already resumed).
-      // Don't leak the WDK error message verbatim -- it can include
-      // run ids that aren't useful to clients.
-      console.error(
-        `[human-input wdk] resumeHook failed for ${token}:`,
-        resumeErr,
-      )
-      return NextResponse.json(
-        { error: 'Failed to resume workflow at this turn' },
-        { status: 500 },
-      )
-    }
-
-    return NextResponse.json({ ok: true, runtime: 'wdk' })
+    return NextResponse.json(
+      {
+        error:
+          `WDK runtime + human seats not yet supported for mode '${roomRow.modeId}'`,
+      },
+      { status: 501 },
+    )
   }
 
   // ── Legacy http_chain branch (default) ───────────────────────

@@ -1,38 +1,45 @@
 // ============================================================
-// POST /api/rooms/werewolf — Create a werewolf game (Phase 4.5a)
+// POST /api/rooms/werewolf — Create a werewolf game (Phase 4.5d-2.17)
 // ============================================================
 //
-// Creates the DB row, pre-computes deterministic roleAssignments, and
-// fires the first /api/rooms/tick invocation in the background. The
-// durable runtime (room-runtime.ts) then walks the game to completion
-// via chained ticks, each bounded to ~60s.
+// Creates the DB row, computes role assignments, builds role-specific
+// systemPrompts, and enqueues a durable WDK workflow run. The workflow
+// (`werewolfWorkflow`) drives the game to completion via the phase-loop
+// dispatch; resumption from human seats happens via `resumeHook` in
+// `apps/web/app/api/rooms/[id]/human-input/route.ts`.
 //
-// Legacy note: this previously bundled the entire game into a single
-// waitUntil(room.start(flow)) — which hit Vercel's 5-min function wall
-// for werewolf. That path is gone.
-
+// Werewolf is WDK-only — no `body.runtime` opt-out. The legacy
+// http_chain advance loop (`advanceWerewolfRoom` in `room-runtime.ts`)
+// is scheduled for deletion in 4.5d-2.18.
+//
+// Mirrors the open-chat / roundtable WDK branches: createRoom commits
+// the row, then `start()` is wrapped in try/catch so a failure to
+// enqueue flips the room to 'error' (otherwise it would stay
+// 'running' forever; markOrphanedAsError skips WDK rooms).
 import { NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
-import type { GenerateFn, GenerateObjectFn } from '@agora/core'
+import { start } from 'workflow/api'
 import {
-  createGenerateFn,
-  createGenerateObjectFn,
-} from '@agora/llm'
-import { createWerewolf } from '@agora/modes'
+  assignWerewolfRoles,
+  buildRoleSystemPrompt,
+  type WerewolfAdvancedRules,
+  type WerewolfRole,
+} from '@agora/modes'
 import type { LLMProvider, ModelConfig } from '@agora/shared'
-import type { WerewolfAdvancedRules } from '@agora/modes'
-import { createRoom, setGameState, type AgentInfo } from '../../../lib/room-store'
+import {
+  createRoom,
+  updateRoomStatus,
+  type AgentInfo,
+} from '../../../lib/room-store'
 import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
-import { getTeam } from '../../../lib/team-store'
-import { getMembers } from '../../../lib/team-store'
+import { getTeam, getMembers } from '../../../lib/team-store'
 import { requireAuthUserId } from '../../../lib/auth'
+import {
+  werewolfWorkflow,
+  type WerewolfAgentSnapshot,
+} from '../../../workflows/werewolf-workflow'
 import type { NextRequest } from 'next/server'
 
 export const dynamic = 'force-dynamic'
-
-const _createGenFn: (model: ModelConfig) => GenerateFn = createGenerateFn
-const _createObjFn: (model: ModelConfig) => GenerateObjectFn = (m) =>
-  createGenerateObjectFn(m) as unknown as GenerateObjectFn
 
 interface PlayerInput {
   name: string
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as CreateWerewolfBody
 
-    // Phase 6 — resolve `players` list either from explicit body or a team.
+    // Resolve `players` list either from explicit body or a team.
     let players: PlayerInput[]
     let teamId: string | null = null
     const humanPlayerNames = new Set<string>()
@@ -82,7 +89,6 @@ export async function POST(request: NextRequest) {
         model: m.agent.modelId,
         provider: m.agent.modelProvider as LLMProvider,
       }))
-      // Phase 4.5d — accept either humanSeatIds[] or legacy humanSeatId.
       const humanSeatAgentIds = new Set<string>()
       if (Array.isArray(body.humanSeatIds)) {
         for (const id of body.humanSeatIds) if (typeof id === 'string') humanSeatAgentIds.add(id)
@@ -111,54 +117,82 @@ export async function POST(request: NextRequest) {
     }
     const createdBy = auth.id
 
-    const agentConfigs = players.map((p) => ({
-      name: p.name,
-      model: {
-        provider: p.provider ?? resolveProvider(p.model),
-        modelId: p.model,
-        maxTokens: 1500,
-      } satisfies ModelConfig,
-      isHuman: humanPlayerNames.has(p.name),
-    }))
-
-    // Generate roomId upfront — it seeds deterministic agentId + role
-    // shuffle so rehydration during ticks produces identical state.
+    // Build agent ids + name map fresh. Determinism across requests
+    // isn't needed (workflow replay reads from its own input, not from
+    // a recompute path); IDs are stable within this request.
     const roomId = crypto.randomUUID()
+    const agentIds = players.map(() => crypto.randomUUID())
+    const agentNames: Record<string, string> = {}
+    players.forEach((p, i) => {
+      agentNames[agentIds[i]!] = p.name
+    })
 
-    // Build the runtime solely to get deterministic agentIds +
-    // roleAssignments for the DB snapshot. We discard the runtime; the
-    // first tick rebuilds a fresh one from the DB row.
-    const result = createWerewolf(
-      {
-        agents: agentConfigs,
-        advancedRules,
-        languageInstruction: languageDirective,
-        seed: roomId,
-        roomId,
-      },
-      _createGenFn,
-      _createObjFn,
+    // Role assignment via @agora/modes (additive export landed in
+    // 4.5d-2.14a). PRNG is Math.random — seeded determinism would
+    // only matter for cross-request reproducibility, which we don't
+    // need: success → workflow holds state in DB; failure → room
+    // marked 'error' below, no retry.
+    const roleMap = assignWerewolfRoles(
+      agentIds,
+      agentNames,
+      advancedRules,
+      Math.random,
     )
+    const roleAssignments: Record<string, WerewolfRole> = {}
+    for (const [id, role] of roleMap) roleAssignments[id] = role
 
-    const agentInfos: AgentInfo[] = result.room.getAgentIds().map((id) => {
-      const agent = result.room.getAgent(id)!
+    const allPlayerNames = agentIds.map((id) => agentNames[id]!)
+    const wolfNames = agentIds
+      .filter((id) => roleMap.get(id) === 'werewolf')
+      .map((id) => agentNames[id]!)
+
+    // Persist the agent snapshot for replay / endpoint lookups.
+    const agentInfos: AgentInfo[] = agentIds.map((id, i) => {
+      const p = players[i]!
       return {
         id,
-        name: agent.config.name,
-        model: agent.config.model.modelId,
-        provider: agent.config.model.provider,
-        isHuman: humanPlayerNames.has(agent.config.name),
+        name: p.name,
+        model: p.model,
+        provider: p.provider ?? resolveProvider(p.model),
+        isHuman: humanPlayerNames.has(p.name),
       }
     })
 
-    const roleAssignments: Record<string, string> = {}
-    for (const [id, role] of Object.entries(result.roleAssignments)) {
-      roleAssignments[id] = role
-    }
+    // Build the workflow input. Each snapshot carries the role +
+    // pre-composed systemPrompt so the workflow body never recomputes
+    // role assignments (load-bearing — see WerewolfAgentSnapshot
+    // doc-comment in werewolf-workflow.ts).
+    const snapshots: WerewolfAgentSnapshot[] = agentIds.map((id, i) => {
+      const p = players[i]!
+      const role = roleMap.get(id)!
+      const provider = p.provider ?? resolveProvider(p.model)
+      const systemPrompt = buildRoleSystemPrompt(
+        p.name,
+        role,
+        [...allPlayerNames],
+        [...wolfNames],
+        languageDirective,
+      )
+      const model: ModelConfig = {
+        provider,
+        modelId: p.model,
+        maxTokens: 1500,
+      }
+      return {
+        id,
+        name: p.name,
+        persona: 'A player in the werewolf game',
+        systemPrompt,
+        role,
+        model,
+        isHuman: humanPlayerNames.has(p.name),
+      }
+    })
 
-    // Persist room shell. `language` is stored in config so the tick
-    // rehydration path can rebuild agents with the same language
-    // directive.
+    // Persist the room shell. `runtime: 'wdk'` is load-bearing — the
+    // human-input endpoint dispatches on it to use resumeHook instead
+    // of the legacy tick chain. Initial gameState is set by the
+    // workflow's `initializeGameState` step on first run, not here.
     await createRoom({
       id: roomId,
       modeId: 'werewolf',
@@ -170,28 +204,36 @@ export async function POST(request: NextRequest) {
       advancedRules: advancedRules as Record<string, boolean>,
       teamId,
       createdBy,
+      runtime: 'wdk',
     })
 
-    // Snapshot the initial WerewolfGameState so rehydration has a
-    // baseline even if the first tick errors before phase:changed fires.
-    await setGameState(roomId, {
-      ...(result.flow.getGameState().custom as Record<string, unknown>),
-    })
-
-    // Fire the first tick asynchronously.
-    const tickUrl = new URL('/api/rooms/tick', request.url)
-    tickUrl.searchParams.set('id', roomId)
-    waitUntil(
-      fetch(tickUrl.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-      }).catch((err) =>
-        console.error(`[werewolf-create] ${roomId} first-tick fetch failed:`, err),
-      ),
-    )
-
-    return NextResponse.json({ roomId })
+    // Enqueue the workflow. start() returns immediately after
+    // enqueueing; the workflow runs durably in the WDK runtime. If
+    // enqueue itself throws, flip the room to 'error' so the row
+    // doesn't sit at 'running' forever (markOrphanedAsError skips
+    // WDK rooms intentionally).
+    try {
+      await start(werewolfWorkflow, [
+        {
+          roomId,
+          agents: snapshots,
+          advancedRules,
+          seed: roomId,
+        },
+      ])
+      return NextResponse.json({ roomId, runtime: 'wdk' })
+    } catch (workflowStartError) {
+      const msg =
+        workflowStartError instanceof Error
+          ? workflowStartError.message
+          : String(workflowStartError)
+      console.error(`[werewolf wdk-start] ${roomId} failed to enqueue:`, workflowStartError)
+      await updateRoomStatus(roomId, 'error', `WDK enqueue failed: ${msg}`)
+      return NextResponse.json(
+        { error: 'Failed to start WDK runtime', roomId },
+        { status: 500 },
+      )
+    }
   } catch (error) {
     console.error('Failed to create werewolf game:', error)
     return NextResponse.json(
