@@ -45,6 +45,14 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
 
   const myAgent = snapshot.agents.find((a: AgentData) => a.id === humanAgentId)
   const myName = myAgent?.name ?? 'You'
+  // Werewolf only: the seat's role + a short instruction string for
+  // the active phase. Surfaces "🐺 你是狼人 — 选择今晚的目标" so the
+  // human knows what they're doing without leaving this bar.
+  const myRole =
+    snapshot.modeId === 'werewolf'
+      ? snapshot.roleAssignments?.[humanAgentId]
+      : undefined
+  const roleSubline = myRole ? roleSublineFor(myRole) : null
 
   // Total agents in the room
   const agentCount = snapshot.agents.length
@@ -117,13 +125,17 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
         <div style={{ ...barStyle, padding: '12px 16px' }}>
           <div style={{ fontSize: 13, lineHeight: 1.5, letterSpacing: '-0.13px' }}>
             <span style={{ fontWeight: 590 }}>
-              {'👋 '}Welcome! You&apos;re playing as {myName}.
+              {'👋 '}你的座位: {myName}
+              {roleSubline && (
+                <>
+                  {' · '}
+                  <span style={{ color: 'var(--accent)' }}>{roleSubline.label}</span>
+                </>
+              )}
             </span>
             <br />
             <span style={{ color: 'var(--muted)' }}>
-              Watch the conversation — your turn will come at position{' '}
-              {snapshot.agents.findIndex((a: AgentData) => a.id === humanAgentId) + 1} of{' '}
-              {agentCount} in the round.
+              {roleSubline?.hint ?? `观看进程 — 你的回合在第 ${snapshot.agents.findIndex((a: AgentData) => a.id === humanAgentId) + 1} 位 / 共 ${agentCount} 位.`}
             </span>
           </div>
           <button
@@ -199,7 +211,13 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
                 letterSpacing: '0.02em',
               }}
             >
-              Playing as {myName}
+              座位: {myName}
+              {roleSubline && (
+                <>
+                  {' · '}
+                  <span style={{ color: 'var(--accent)' }}>{roleSubline.label}</span>
+                </>
+              )}
             </div>
           )}
           <textarea
@@ -361,5 +379,29 @@ function getHeading(phase: string): string {
       return '💀 Your last words'
     default:
       return '💬 Your turn to speak'
+  }
+}
+
+// Werewolf role → short label + one-line orientation hint shown
+// next to the seat name. The hint is a *passive* reminder; the
+// active phase prompt comes from the panel renderer.
+function roleSublineFor(role: string): { label: string; hint: string } | null {
+  switch (role) {
+    case 'werewolf':
+      return { label: '🐺 狼人', hint: '夜晚和狼队友一起选择目标 · 白天伪装成好人' }
+    case 'seer':
+      return { label: '🔮 预言家', hint: '每晚验一人是否狼人 · 白天关键阶段表态' }
+    case 'witch':
+      return { label: '🧪 女巫', hint: '解药救人 / 毒药杀人 · 一晚最多用一瓶' }
+    case 'hunter':
+      return { label: '🏹 猎人', hint: '被狼刀或被票出可开枪带走一人 · 中毒不能开枪' }
+    case 'guard':
+      return { label: '🛡️ 守卫', hint: '每晚守护一人免被狼刀 · 不能连守同一人' }
+    case 'idiot':
+      return { label: '🃏 白痴', hint: '被票出会翻牌幸存 · 但失去后续投票权' }
+    case 'villager':
+      return { label: '👤 村民', hint: '没有特殊技能 · 靠观察发言推理找出狼人' }
+    default:
+      return null
   }
 }
