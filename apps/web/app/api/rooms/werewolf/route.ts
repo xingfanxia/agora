@@ -51,7 +51,13 @@ interface PlayerInput {
 
 // Internal post-resolution shape — `isHuman` is decided by the route
 // (from team membership + humanSeatIds), never trusted from input.
+// `agentId` is the room's seat id; for team-based creation it's the
+// team member's agentId (so the auto-claimed localStorage seat in
+// rooms/new matches the room's agent list — without this contract,
+// the human's seat token in localStorage points to a nonexistent
+// agent and the human-input endpoint 403s every submission).
 interface ResolvedPlayer {
+  readonly agentId: string
   readonly name: string
   readonly model: string
   readonly provider?: LLMProvider
@@ -107,6 +113,7 @@ export async function POST(request: NextRequest) {
       if (typeof body.humanSeatId === 'string') humanSeatAgentIds.add(body.humanSeatId)
 
       players = members.map((m) => ({
+        agentId: m.agentId,
         name: m.agent.name,
         model: m.agent.modelId,
         provider: m.agent.modelProvider as LLMProvider,
@@ -123,6 +130,7 @@ export async function POST(request: NextRequest) {
       // public PlayerInput shape doesn't accept `isHuman` (would let
       // callers spoof a human seat without a seat token).
       players = body.players.map((p) => ({
+        agentId: crypto.randomUUID(),
         name: p.name,
         model: p.model,
         provider: p.provider,
@@ -139,15 +147,15 @@ export async function POST(request: NextRequest) {
     }
     const createdBy = auth.id
 
-    // Build agent ids + name map fresh. Determinism across requests
-    // isn't needed (workflow replay reads from its own input, not from
-    // a recompute path); IDs are stable within this request.
+    // Agent ids are decided in the resolution step above:
+    //   - Team-based: the team member's agentId (so the localStorage
+    //     seat written by rooms/new matches a real room agent).
+    //   - Ad-hoc: a fresh crypto.randomUUID().
+    // Either way, players[i].agentId is the room's seat id.
     const roomId = crypto.randomUUID()
-    const agentIds = players.map(() => crypto.randomUUID())
+    const agentIds = players.map((p) => p.agentId)
     const agentNames: Record<string, string> = {}
-    players.forEach((p, i) => {
-      agentNames[agentIds[i]!] = p.name
-    })
+    for (const p of players) agentNames[p.agentId] = p.name
 
     // Role assignment via @agora/modes (additive export landed in
     // 4.5d-2.14a). PRNG is Math.random — seeded determinism would

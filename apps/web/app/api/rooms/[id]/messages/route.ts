@@ -32,7 +32,11 @@ export const dynamic = 'force-dynamic'
 
 // Werewolf-specific channel visibility. Roles not listed (villager,
 // hunter, idiot) get only public channels.
-const PUBLIC_CHANNELS = new Set(['main', 'day-vote', 'system'])
+// `day-vote` is NOT public: 狼人杀 closed-eyes voting expects votes to
+// remain anonymous until the tally announcement (which goes to `main`).
+// Spectators / replay still see individual votes via the spectator
+// carve-out below.
+const PUBLIC_CHANNELS = new Set(['main', 'system'])
 
 const ROLE_PRIVATE_CHANNELS: Record<string, ReadonlySet<string>> = {
   werewolf: new Set(['werewolf', 'wolf-vote']),
@@ -115,6 +119,33 @@ export async function GET(
   const allMessages = await getMessagesSince(id, after)
   const messages = filterMessagesByChannels(allMessages, allowedChannels)
 
+  // Filter roleAssignments by viewer's visibility:
+  //   - Spectator (owner) and post-game (status=completed) → full reveal.
+  //   - Werewolf player → see own role + other wolves (wolves coordinate).
+  //   - Other players → see ONLY own role.
+  //   - Strict observer (no seat, not owner) → see nothing.
+  // Without this, the round-table view leaks every seat's role to every
+  // viewer (caught while playtesting — 林溪's hunter, 顾君's werewolf
+  // etc. were all visible to a non-spectator).
+  let visibleRoles = snapshot.roleAssignments
+  if (snapshot.modeId === 'werewolf' && visibleRoles) {
+    if (snapshot.status === 'completed' || viewerRole === 'spectator') {
+      // Full reveal — leave visibleRoles as-is.
+    } else if (seatParam && viewerRole) {
+      const filtered: Record<string, string> = {}
+      const ownRole = visibleRoles[seatParam]
+      if (ownRole) filtered[seatParam] = ownRole
+      if (ownRole === 'werewolf') {
+        for (const [aid, role] of Object.entries(visibleRoles)) {
+          if (role === 'werewolf') filtered[aid] = role
+        }
+      }
+      visibleRoles = filtered
+    } else {
+      visibleRoles = {}
+    }
+  }
+
   // Prefer gameState.currentPhase (written by WDK workflow) over the
   // legacy `current_phase` column, which the WDK path doesn't update.
   // Falls back to the column for the legacy http_chain runtime.
@@ -136,7 +167,7 @@ export async function GET(
     agents: snapshot.agents,
     topic: snapshot.topic ?? '',
     tokenSummary: snapshot.tokenSummary,
-    roleAssignments: snapshot.roleAssignments,
+    roleAssignments: visibleRoles,
     advancedRules: snapshot.advancedRules,
     gameState: snapshot.gameState,
     error: snapshot.error,
