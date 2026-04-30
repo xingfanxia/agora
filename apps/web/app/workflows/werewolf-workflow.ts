@@ -116,6 +116,10 @@ import type { ZodSchema } from 'zod'
 // context from the caller and call shared step factories defined
 // below.
 import {
+  runDawn,
+  runGuardProtect,
+  runSeerCheck,
+  runWitchAction,
   runWolfDiscuss,
   runWolfVote,
 } from './werewolf-night-phases.js'
@@ -396,20 +400,27 @@ export async function werewolfWorkflow(
       const persistedState = derived.state as unknown as WerewolfPersistedState
 
       switch (currentPhase) {
+        case 'guardProtect':
+          await runGuardProtect(roomId, agents, persistedState)
+          break
         case 'wolfDiscuss':
           await runWolfDiscuss(roomId, agents, persistedState)
           break
         case 'wolfVote':
           await runWolfVote(roomId, agents, persistedState)
           break
-        // Remaining phases — implementations land in 2.14b (night
-        // tail: guardProtect/witchAction/seerCheck/dawn), 2.15 (day:
+        case 'witchAction':
+          await runWitchAction(roomId, agents, persistedState)
+          break
+        case 'seerCheck':
+          await runSeerCheck(roomId, agents, persistedState)
+          break
+        case 'dawn':
+          await runDawn(roomId, agents, persistedState)
+          break
+        // Remaining phases — implementations land in 2.15 (day:
         // sheriffGate/sheriffElection/dayDiscuss/dayVote/lastWords*),
         // 2.16 (triggered: hunterShoot*/sheriffTransfer*/checkWin*).
-        case 'guardProtect':
-        case 'witchAction':
-        case 'seerCheck':
-        case 'dawn':
         case 'sheriffGate':
         case 'sheriffElection':
         case 'dayDiscuss':
@@ -427,8 +438,7 @@ export async function werewolfWorkflow(
           // not yet shipped, not transient".
           throw new FatalError(
             `werewolfWorkflow: phase "${currentPhase}" not yet implemented. ` +
-              'Implementations land in 4.5d-2.14b (remaining night), ' +
-              '2.15 (day), 2.16 (triggered).',
+              'Implementations land in 4.5d-2.15 (day), 2.16 (triggered).',
           )
         case null:
           throw new FatalError(
