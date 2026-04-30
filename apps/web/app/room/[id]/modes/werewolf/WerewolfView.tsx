@@ -15,6 +15,7 @@ import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
+import { WorkflowWarmupBanner } from '../../components/v2/WorkflowWarmupBanner'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -303,6 +304,10 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           name={agents.find((a) => a.id === humanAgentId)?.name ?? ''}
           eliminated={eliminatedIds.has(humanAgentId)}
         />
+      )}
+
+      {status === 'running' && latestByAgent.size === 0 && (
+        <WorkflowWarmupBanner agents={agents} thinkingAgentId={thinkingAgentId ?? null} />
       )}
 
       {winResult && (

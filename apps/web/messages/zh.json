@@ -223,6 +223,12 @@
       "disconnected": "已断开 — 将自动按默认行动",
       "neverSeen": "尚未连接",
       "aiSeat": "AI 座位"
+    },
+    "warmup": {
+      "initializing": "正在初始化对局…",
+      "thinking": "AI 玩家思考中…",
+      "agentThinking": "{name} 正在思考…",
+      "hint": "首条消息可能需要 30-60 秒"
     }
   },
   "replays": {

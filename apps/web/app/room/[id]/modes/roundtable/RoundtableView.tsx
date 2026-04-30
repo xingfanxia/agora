@@ -15,6 +15,7 @@ import { AgentDetailModal } from '../../components/v2/AgentDetailModal'
 import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 import { DebateSummary } from '../../components/v2/DebateSummary'
+import { WorkflowWarmupBanner } from '../../components/v2/WorkflowWarmupBanner'
 
 interface RoundtableViewProps {
   messages: readonly MessageData[]
@@ -193,6 +194,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           <TokenCostPanel summary={tokenSummary} agents={agents} />
         </div>
       </header>
+
+      {status === 'running' && latestByAgent.size === 0 && (
+        <WorkflowWarmupBanner agents={agents} thinkingAgentId={thinkingAgentId ?? null} />
+      )}
 
       {/* Main — chat (default) or round-table */}
       <main

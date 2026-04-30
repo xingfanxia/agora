@@ -223,6 +223,12 @@
       "disconnected": "Disconnected — taking action with default",
       "neverSeen": "Not yet connected",
       "aiSeat": "AI seat"
+    },
+    "warmup": {
+      "initializing": "Setting up the room…",
+      "thinking": "AI players are thinking…",
+      "agentThinking": "{name} is thinking…",
+      "hint": "The first message may take 30-60 seconds"
     }
   },
   "replays": {
