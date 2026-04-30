@@ -454,7 +454,12 @@ function NewRoomPage() {
         {/* Phase 4.5d — multi-human seat picker. Check any seats that
             should be played by humans. Your own seat gets auto-claimed;
             others become invite URLs in the room's invite panel. */}
-        <Field label={language === 'zh' ? '人类座位（可多选）' : 'Human seats (multi-select)'}>
+        <Field label={language === 'zh' ? '由你（人类）来玩的座位' : 'Seats you (humans) will play'}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+            {language === 'zh'
+              ? '勾选你想自己控制的座位，其余座位由 AI 自动操作。座位名称仅作显示用 — 你不需要按那个名字的人设说话。'
+              : 'Check the seats you want to control yourself; the rest are auto-played by AI. The seat name is just a label — you don’t need to act in that character’s voice.'}
+          </div>
           <div
             style={{
               display: 'grid',
@@ -528,8 +533,8 @@ function NewRoomPage() {
           {humanSeatIds.size > 0 && ownSeatId && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
               {language === 'zh'
-                ? `你将扮演 ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'}。`
-                : `You'll play as ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'}.`}
+                ? `你的座位: ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'}（你以自己的方式来玩）。`
+                : `Your seat: ${members.find((m) => m.agentId === ownSeatId)?.agent.name ?? '?'} (play it however you want).`}
             </div>
           )}
           {humanSeatIds.size > 0 && !ownSeatId && (
