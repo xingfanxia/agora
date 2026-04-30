@@ -198,10 +198,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Default to http_chain to match historical behavior. Toggle to
-    // 'wdk' explicitly via body. New default may flip to 'wdk' for
-    // roundtable once 4.5d-2.3 cross-runtime equivalence test passes.
-    const runtime: 'http_chain' | 'wdk' = body.runtime === 'wdk' ? 'wdk' : 'http_chain'
+    // Phase 4.5d-2.11: default flipped to 'wdk' (durable workflow
+    // runtime). Cross-runtime equivalence proven by 4.5d-2.3/2.8
+    // for AI-only flows; idempotency migration 0010 in place so
+    // step retries don't double-write events. Caller can opt back
+    // into 'http_chain' explicitly via body.runtime if needed for
+    // a specific rollback case. Rollback path: revert this commit.
+    const runtime: 'http_chain' | 'wdk' = body.runtime === 'http_chain' ? 'http_chain' : 'wdk'
 
     await createRoom({
       id: roomId,
