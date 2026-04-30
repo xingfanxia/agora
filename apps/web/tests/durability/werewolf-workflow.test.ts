@@ -20,7 +20,61 @@ import {
   werewolfDayVoteToken,
   tallyVotes,
   applyFallback,
+  aliveIds,
+  aliveIdsByRole,
+  nameToIdMap,
+  allAliveNames,
+  aliveNonWolfNames,
+  aliveNamesExcluding,
+  cycleId,
+  type WerewolfPersistedState,
 } from '../../app/workflows/werewolf-workflow.js'
+
+// ── Test fixture ───────────────────────────────────────────
+//
+// 6-player baseline: 2 wolves, 1 seer, 1 witch, 2 villagers. agentNames
+// are stable across tests so assertions can name them directly. The
+// minimum size matches the workflow's 6..12 validation floor.
+
+const MOCK_STATE: WerewolfPersistedState = {
+  currentPhase: 'wolfDiscuss',
+  roleMap: {
+    'a-1': 'werewolf',
+    'a-2': 'werewolf',
+    'a-3': 'seer',
+    'a-4': 'witch',
+    'a-5': 'villager',
+    'a-6': 'villager',
+  },
+  agentNames: {
+    'a-1': 'Wolf1',
+    'a-2': 'Wolf2',
+    'a-3': 'Seer',
+    'a-4': 'Witch',
+    'a-5': 'Villager1',
+    'a-6': 'Villager2',
+  },
+  activeAgentIds: ['a-1', 'a-2', 'a-3', 'a-4', 'a-5', 'a-6'],
+  eliminatedIds: [],
+  lastNightKill: null,
+  witchSaveUsed: false,
+  witchPoisonUsed: false,
+  witchPoisonTarget: null,
+  witchUsedPotionTonight: false,
+  seerResult: null,
+  nightNumber: 1,
+  hunterCanShoot: false,
+  hunterPendingId: null,
+  hunterShotTarget: null,
+  guardProtectedId: null,
+  guardLastProtectedId: null,
+  idiotRevealedIds: [],
+  sheriffId: null,
+  sheriffElected: false,
+  pendingLastWordsIds: [],
+  winResult: null,
+  advancedRules: {},
+}
 
 // ── deriveWerewolfMessageId ────────────────────────────────
 
@@ -244,5 +298,144 @@ describe('applyFallback', () => {
 
   it("returns the registered FallbackAction for 'sheriff-transfer'", () => {
     expect(applyFallback('sheriff-transfer')).toEqual({ kind: 'drop-badge' })
+  })
+})
+
+// ============================================================
+// Phase 4.5d-2.14a -- state-lookup helpers
+// ============================================================
+//
+// Phase steps in werewolf-night-phases.ts (and 2.14b/2.15/2.16) call
+// these inline after reading WerewolfPersistedState once at step
+// entry. Unit-pinned here so a regression in one of these helpers
+// shows up here rather than as silently incorrect alive-list /
+// vote-target-list construction inside a phase step.
+
+describe('aliveIds', () => {
+  it('returns all activeAgentIds when none are eliminated', () => {
+    expect(aliveIds(MOCK_STATE)).toEqual([
+      'a-1',
+      'a-2',
+      'a-3',
+      'a-4',
+      'a-5',
+      'a-6',
+    ])
+  })
+
+  it('filters out eliminated agents', () => {
+    const state = { ...MOCK_STATE, eliminatedIds: ['a-1', 'a-3'] }
+    expect(aliveIds(state)).toEqual(['a-2', 'a-4', 'a-5', 'a-6'])
+  })
+
+  it('preserves activeAgentIds order (iteration-stable for round-robin)', () => {
+    // Round-robin chat phases (wolfDiscuss, dayDiscuss) depend on
+    // stable speaker order. If aliveIds reorders silently, the
+    // discussion order shifts between phase iterations and replay
+    // can drift. Pinning order = preserving determinism.
+    const state = {
+      ...MOCK_STATE,
+      activeAgentIds: ['a-3', 'a-1', 'a-5', 'a-2', 'a-4', 'a-6'],
+    }
+    expect(aliveIds(state)).toEqual(['a-3', 'a-1', 'a-5', 'a-2', 'a-4', 'a-6'])
+  })
+})
+
+describe('aliveIdsByRole', () => {
+  it("returns wolves only when role='werewolf'", () => {
+    expect(aliveIdsByRole(MOCK_STATE, 'werewolf')).toEqual(['a-1', 'a-2'])
+  })
+
+  it('returns empty when no agents of that role are alive', () => {
+    const state = { ...MOCK_STATE, eliminatedIds: ['a-3'] }
+    expect(aliveIdsByRole(state, 'seer')).toEqual([])
+  })
+
+  it('respects elimination', () => {
+    const state = { ...MOCK_STATE, eliminatedIds: ['a-1'] }
+    expect(aliveIdsByRole(state, 'werewolf')).toEqual(['a-2'])
+  })
+})
+
+describe('nameToIdMap', () => {
+  it('builds the name->id reverse lookup', () => {
+    const m = nameToIdMap(MOCK_STATE)
+    expect(m.get('Wolf1')).toBe('a-1')
+    expect(m.get('Witch')).toBe('a-4')
+    expect(m.get('Villager2')).toBe('a-6')
+  })
+
+  it('includes eliminated agents (used to interpret post-mortem references)', () => {
+    // tallyVotes consults this map to translate a vote target name
+    // (string from LLM output) back to an agent id. Eliminated
+    // agents may still be referenced (e.g. last-words mentioning
+    // a dead player), so the lookup MUST include them. If we ever
+    // restrict to alive only, day-vote tallies that name a
+    // just-eliminated player would silently drop.
+    const state = { ...MOCK_STATE, eliminatedIds: ['a-1'] }
+    const m = nameToIdMap(state)
+    expect(m.get('Wolf1')).toBe('a-1')
+  })
+})
+
+describe('allAliveNames / aliveNonWolfNames / aliveNamesExcluding', () => {
+  it('allAliveNames returns all alive agents in iteration order', () => {
+    expect(allAliveNames(MOCK_STATE)).toEqual([
+      'Wolf1',
+      'Wolf2',
+      'Seer',
+      'Witch',
+      'Villager1',
+      'Villager2',
+    ])
+  })
+
+  it('aliveNonWolfNames excludes wolves (used for wolf-vote target list)', () => {
+    expect(aliveNonWolfNames(MOCK_STATE)).toEqual([
+      'Seer',
+      'Witch',
+      'Villager1',
+      'Villager2',
+    ])
+  })
+
+  it('aliveNamesExcluding excludes the named id (e.g. seer cannot check self)', () => {
+    expect(aliveNamesExcluding(MOCK_STATE, 'a-3')).toEqual([
+      'Wolf1',
+      'Wolf2',
+      'Witch',
+      'Villager1',
+      'Villager2',
+    ])
+  })
+
+  it('combined elimination + exclusion drops both', () => {
+    const state = { ...MOCK_STATE, eliminatedIds: ['a-1'] }
+    expect(aliveNamesExcluding(state, 'a-3')).toEqual([
+      'Wolf2',
+      'Witch',
+      'Villager1',
+      'Villager2',
+    ])
+  })
+})
+
+describe('cycleId', () => {
+  it('formats night cycles as n${N}', () => {
+    expect(cycleId(1, false)).toBe('n1')
+    expect(cycleId(7, false)).toBe('n7')
+  })
+
+  it('formats day cycles as d${N}', () => {
+    expect(cycleId(1, true)).toBe('d1')
+    expect(cycleId(7, true)).toBe('d7')
+  })
+
+  it("uses the same number for the night/day pair (n1+d1 are the 'first cycle')", () => {
+    // Pinning the convention: day N follows night N. If we ever
+    // shift to "day after night N has number N+1" or similar, this
+    // test surfaces the change loudly.
+    expect(cycleId(1, false)).toBe('n1')
+    expect(cycleId(1, true)).toBe('d1')
   })
 })

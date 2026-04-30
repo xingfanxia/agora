@@ -84,12 +84,18 @@ import {
   getEventsSince,
   getMessagesSince,
   getRoom,
+  refreshMessageCount,
+  refreshRoomTokenAggregates as bumpRoomTokenAggregates,
   setGameState,
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
-import { createGenerateObjectFn } from '../lib/llm-factory.js'
+import {
+  createGenerateFn,
+  createGenerateObjectFn,
+} from '../lib/llm-factory.js'
 import { getFallback } from '@agora/modes'
+import { resolvePricing, calculateCost } from '@agora/llm'
 import type { FallbackAction } from '@agora/modes'
 import type {
   WerewolfAdvancedRules,
@@ -103,6 +109,16 @@ import type {
   TokenUsage,
 } from '@agora/shared'
 import type { ZodSchema } from 'zod'
+
+// Phase implementations live in sibling files to keep this file
+// under the 800-line ceiling. The `runXxx` helpers are body-helpers
+// (no `use step`/`use workflow` marker) — they inherit the workflow
+// context from the caller and call shared step factories defined
+// below.
+import {
+  runWolfDiscuss,
+  runWolfVote,
+} from './werewolf-night-phases.js'
 
 // ── Public types ───────────────────────────────────────────
 
@@ -151,6 +167,102 @@ export interface WerewolfWorkflowResult {
   readonly roomId: string
   readonly winner: 'village' | 'werewolves' | null
   readonly phaseTransitions: number
+}
+
+// ── Persisted state (rooms.gameState JSONB shape) ──────────
+//
+// Mirrors `WerewolfGameState` from `packages/modes/src/werewolf/
+// types.ts`, plus a `currentPhase` field for the workflow body's
+// dispatch loop and an `activeAgentIds` array (Set is not JSONB-
+// friendly). All fields are JSON-serializable so a single
+// setGameState write captures the whole snapshot.
+//
+// LOAD-BEARING SHAPE: phase-step bodies in werewolf-night-phases.ts
+// (and 2.15 / 2.16) read this directly from rooms.gameState. A
+// field rename here without coordinated updates silently corrupts
+// state mid-game (the next phase reads `undefined` for the renamed
+// field and behaves as if it were never set).
+
+export interface WerewolfPersistedState {
+  readonly currentPhase: string
+  readonly roleMap: Readonly<Record<string, WerewolfRole>>
+  readonly agentNames: Readonly<Record<string, string>>
+  readonly eliminatedIds: readonly string[]
+  readonly activeAgentIds: readonly string[]
+  readonly lastNightKill: string | null
+  readonly witchSaveUsed: boolean
+  readonly witchPoisonUsed: boolean
+  readonly witchPoisonTarget: string | null
+  readonly witchUsedPotionTonight: boolean
+  readonly seerResult: { readonly targetId: string; readonly isWerewolf: boolean } | null
+  readonly nightNumber: number
+  readonly hunterCanShoot: boolean
+  readonly hunterPendingId: string | null
+  readonly hunterShotTarget: string | null
+  readonly guardProtectedId: string | null
+  readonly guardLastProtectedId: string | null
+  readonly idiotRevealedIds: readonly string[]
+  readonly sheriffId: string | null
+  readonly sheriffElected: boolean
+  readonly pendingLastWordsIds: readonly string[]
+  readonly winResult: 'village_wins' | 'werewolves_win' | null
+  readonly advancedRules: WerewolfAdvancedRules
+}
+
+// ── Pure state-lookup helpers (used by phase steps) ────────
+//
+// All take a snapshot of WerewolfPersistedState and return derived
+// information. They're pure (no I/O) so phase steps can call them
+// inline after reading state once at step entry.
+
+/** Alive agent ids in iteration-stable order (snapshot order). */
+export function aliveIds(state: WerewolfPersistedState): readonly string[] {
+  const eliminated = new Set(state.eliminatedIds)
+  return state.activeAgentIds.filter((id) => !eliminated.has(id))
+}
+
+/** Alive agent ids of a specific role. */
+export function aliveIdsByRole(
+  state: WerewolfPersistedState,
+  role: WerewolfRole,
+): readonly string[] {
+  return aliveIds(state).filter((id) => state.roleMap[id] === role)
+}
+
+/** Map of `agentName -> agentId`, restricted to *all* agents (alive or dead). */
+export function nameToIdMap(state: WerewolfPersistedState): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const [id, name] of Object.entries(state.agentNames)) {
+    m.set(name, id)
+  }
+  return m
+}
+
+/** Names of all alive agents in iteration-stable order. */
+export function allAliveNames(state: WerewolfPersistedState): string[] {
+  return aliveIds(state).map((id) => state.agentNames[id] ?? id)
+}
+
+/** Names of alive non-werewolf agents (for wolf-vote target list). */
+export function aliveNonWolfNames(state: WerewolfPersistedState): string[] {
+  return aliveIds(state)
+    .filter((id) => state.roleMap[id] !== 'werewolf')
+    .map((id) => state.agentNames[id] ?? id)
+}
+
+/** Names of alive agents excluding `excludeId` (e.g. seer can't check self). */
+export function aliveNamesExcluding(
+  state: WerewolfPersistedState,
+  excludeId: string,
+): string[] {
+  return aliveIds(state)
+    .filter((id) => id !== excludeId)
+    .map((id) => state.agentNames[id] ?? id)
+}
+
+/** Cycle id format used in deterministic message ids: `n1`, `d1`, etc. */
+export function cycleId(nightNumber: number, isDay: boolean): string {
+  return `${isDay ? 'd' : 'n'}${nightNumber}`
 }
 
 // ── Hook-token contract (used by 2.15 day-vote) ────────────
@@ -277,10 +389,24 @@ export async function werewolfWorkflow(
       //   2.16 TRIGGERED  — hunterShoot, hunterShootAfterVote,
       //                     sheriffTransferNight, sheriffTransferVote,
       //                     checkWinAfterNight, checkWinAfterVote
+      // Cast derived state to the typed shape. initializeGameState
+      // populated all WerewolfPersistedState fields; reading
+      // gameState back returns Record<string, unknown> from the DB
+      // driver but the SHAPE matches.
+      const persistedState = derived.state as unknown as WerewolfPersistedState
+
       switch (currentPhase) {
-        case 'guardProtect':
         case 'wolfDiscuss':
+          await runWolfDiscuss(roomId, agents, persistedState)
+          break
         case 'wolfVote':
+          await runWolfVote(roomId, agents, persistedState)
+          break
+        // Remaining phases — implementations land in 2.14b (night
+        // tail: guardProtect/witchAction/seerCheck/dawn), 2.15 (day:
+        // sheriffGate/sheriffElection/dayDiscuss/dayVote/lastWords*),
+        // 2.16 (triggered: hunterShoot*/sheriffTransfer*/checkWin*).
+        case 'guardProtect':
         case 'witchAction':
         case 'seerCheck':
         case 'dawn':
@@ -300,9 +426,9 @@ export async function werewolfWorkflow(
           // state — retry won't change the outcome. Signals "code
           // not yet shipped, not transient".
           throw new FatalError(
-            `werewolfWorkflow: phase "${currentPhase}" not yet implemented ` +
-              '(skeleton — 4.5d-2.13). Implementations land in ' +
-              '4.5d-2.14 (night), 2.15 (day), 2.16 (triggered).',
+            `werewolfWorkflow: phase "${currentPhase}" not yet implemented. ` +
+              'Implementations land in 4.5d-2.14b (remaining night), ' +
+              '2.15 (day), 2.16 (triggered).',
           )
         case null:
           throw new FatalError(
@@ -682,6 +808,243 @@ export async function generateAgentDecision(
   const result = await generateFn(systemPrompt, history, schema, instruction)
 
   return { object: result.object, usage: result.usage }
+}
+
+// ── Shared phase steps (used by night / day / triggered) ───
+//
+// generateAgentReply: text-only LLM step (free-form chat phases —
+// wolfDiscuss, dayDiscuss, lastWords). Mirrors roundtable's pattern;
+// each turn is its own step so WDK caches the LLM result and a
+// retry of the persistence step doesn't re-pay for the LLM call.
+
+export interface GenerateAgentReplyInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly systemPrompt: string
+  readonly provider: LLMProvider
+  readonly modelId: string
+  readonly maxTokens: number
+  readonly instruction?: string
+  /** See generateAgentDecision.channelId for visibility-filter rationale. */
+  readonly channelId: string | null
+}
+
+export interface GenerateAgentReplyResult {
+  readonly content: string
+  readonly usage: TokenUsage
+}
+
+export async function generateAgentReply(
+  input: GenerateAgentReplyInput,
+): Promise<GenerateAgentReplyResult> {
+  'use step'
+
+  const {
+    roomId,
+    agentId,
+    systemPrompt,
+    provider,
+    modelId,
+    maxTokens,
+    instruction,
+    channelId,
+  } = input
+
+  const allMessages: Message[] = await getMessagesSince(roomId, 0)
+  const visible = channelId
+    ? allMessages.filter(
+        (m: Message) => m.channelId === channelId || m.channelId === 'main',
+      )
+    : allMessages
+
+  // History role tagging matches generateAgentDecision (and the
+  // 4.5d-2.7 alignment): own -> 'assistant' raw, others -> 'user'
+  // with `[name]:` prefix.
+  const history = visible.map((m: Message) => {
+    if (m.senderId === agentId) {
+      return { role: 'assistant' as const, content: m.content }
+    }
+    return { role: 'user' as const, content: `[${m.senderName}]: ${m.content}` }
+  })
+
+  const model: ModelConfig = { provider, modelId, maxTokens }
+  const generateFn = createGenerateFn(model)
+  const result = await generateFn(systemPrompt, history, instruction)
+
+  return { content: result.content, usage: result.usage }
+}
+
+// persistAgentMessage: writes a message:created event with optional
+// decision metadata (for structured phases). The deterministic
+// message id derives from (phaseTag, roomId, cycleId, agentId) —
+// combined with events_message_id_uq partial UNIQUE, retries are
+// no-op. `decision` (if non-null) is JSON-serialized and stored in
+// metadata so downstream phase outcome steps can read decisions
+// from the event log when needed (e.g. last-words narrative recap).
+
+export interface PersistAgentMessageInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly agentName: string
+  readonly content: string
+  readonly channelId: string
+  readonly phaseTag: string
+  readonly cycleId: string
+  /** Structured decision (e.g. WolfVoteSchema output). Null for chat phases. */
+  readonly decision: Record<string, unknown> | null
+}
+
+export async function persistAgentMessage(
+  input: PersistAgentMessageInput,
+): Promise<string> {
+  'use step'
+
+  const { roomId, agentId, agentName, content, channelId, phaseTag, cycleId, decision } =
+    input
+
+  const seq = await getEventCount(roomId)
+  const messageId = deriveWerewolfMessageId(phaseTag, roomId, cycleId, agentId)
+
+  const message: Message = {
+    id: messageId,
+    roomId,
+    senderId: agentId,
+    senderName: agentName,
+    content,
+    channelId,
+    timestamp: Date.now(),
+    metadata: {
+      phaseTag,
+      cycleId,
+      ...(decision !== null ? { decision } : {}),
+    },
+  }
+
+  const event: PlatformEvent = { type: 'message:created', message }
+  await appendEvent(roomId, seq, event)
+  await refreshMessageCount(roomId)
+
+  return messageId
+}
+
+// emitPhaseAnnouncement: writes a system-style message:created with
+// no senderId (the legacy uses Announcement objects in flow custom
+// state; for WDK we emit a message:created so the live UI renders
+// it inline without a special channel). Idempotent via deterministic
+// id keyed on (phaseTag, cycleId, slot) — slot is a hand-picked tag
+// per call site so two announcements in the same phase don't collide.
+
+export interface EmitPhaseAnnouncementInput {
+  readonly roomId: string
+  readonly channelId: string
+  readonly phaseTag: string
+  readonly cycleId: string
+  /** Discriminator within the phase — e.g. 'tally', 'death', 'kicker'. */
+  readonly slot: string
+  readonly content: string
+}
+
+export async function emitPhaseAnnouncement(
+  input: EmitPhaseAnnouncementInput,
+): Promise<void> {
+  'use step'
+
+  const { roomId, channelId, phaseTag, cycleId, slot, content } = input
+
+  const seq = await getEventCount(roomId)
+  const messageId = `ww-${phaseTag}-${roomId}-${cycleId}-announce-${slot}`
+
+  const message: Message = {
+    id: messageId,
+    roomId,
+    // Empty senderId / senderName signals "system announcement" to
+    // the UI. The room view renders these as italicized notices.
+    senderId: '',
+    senderName: '',
+    content,
+    channelId,
+    timestamp: Date.now(),
+    metadata: { phaseTag, cycleId, slot, system: true },
+  }
+
+  const event: PlatformEvent = { type: 'message:created', message }
+  await appendEvent(roomId, seq, event)
+  await refreshMessageCount(roomId)
+}
+
+// recordTurnUsage: token-cost tracking. Same shape as roundtable +
+// open-chat, since werewolf agents are LLM seats with identical
+// pricing semantics. Idempotent under both standard step retry AND
+// delivery-failure-after-success retry, via the events_token_message
+// _id_uq partial UNIQUE index (4.5d-2.6).
+
+export interface RecordTurnUsageInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly messageId: string
+  readonly provider: LLMProvider
+  readonly modelId: string
+  readonly usage: TokenUsage
+}
+
+export async function recordTurnUsage(input: RecordTurnUsageInput): Promise<void> {
+  'use step'
+
+  const { roomId, agentId, messageId, provider, modelId, usage } = input
+
+  const pricing = await resolvePricing(provider, modelId)
+  const cost = calculateCost(usage, pricing)
+
+  const seq = await getEventCount(roomId)
+  const event: PlatformEvent = {
+    type: 'token:recorded',
+    roomId,
+    agentId,
+    messageId,
+    provider,
+    modelId,
+    usage,
+    cost,
+  }
+  await appendEvent(roomId, seq, event)
+  await bumpRoomTokenAggregates(roomId)
+}
+
+// transitionPhase: atomic step that advances gameState.currentPhase
+// (and optionally merges in additional state mutations). The
+// per-phase outcome steps in werewolf-night-phases.ts call this as
+// their last operation. Read-merge-write inside one step body keeps
+// the transition atomic at the step boundary.
+
+export interface TransitionPhaseInput {
+  readonly roomId: string
+  readonly nextPhase: string
+  /**
+   * Additional fields to merge into gameState alongside the phase
+   * transition. Use this to bundle phase outcomes (e.g.
+   * `{ lastNightKill: 'agent-X' }`) with the transition so the
+   * write is atomic — a crash between separate setGameState calls
+   * could leave currentPhase advanced but the outcome unrecorded.
+   */
+  readonly stateMerge: Readonly<Record<string, unknown>>
+}
+
+export async function transitionPhase(input: TransitionPhaseInput): Promise<void> {
+  'use step'
+
+  const { roomId, nextPhase, stateMerge } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`transitionPhase: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+
+  await setGameState(roomId, {
+    ...existing,
+    ...stateMerge,
+    currentPhase: nextPhase,
+  })
 }
 
 // ── Standard infrastructure steps ──────────────────────────

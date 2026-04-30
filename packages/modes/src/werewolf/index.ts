@@ -287,3 +287,23 @@ export async function runWerewolf(
 // Re-export types
 export type { WerewolfRole, WerewolfGameState, WerewolfAdvancedRules } from './types.js'
 export { checkWinCondition } from './types.js'
+
+// 4.5d-2.14: expose internals the WDK port (apps/web/app/workflows/
+// werewolf-workflow.ts) consumes directly. The legacy http_chain
+// path uses createWerewolf() which bundles role assignment + agent
+// construction + state-machine wiring; the WDK port only needs the
+// pure pieces (schemas, role assignment, prompt builder) and
+// constructs its own per-step LLM calls.
+export {
+  createWolfVoteSchema,
+  createSeerCheckSchema,
+  createWitchActionSchema,
+  createGuardProtectSchema,
+  createDayVoteSchema,
+  createSheriffVoteSchema,
+  createSheriffTransferSchema,
+  createLastWordsSchema,
+  createHunterShootSchema,
+} from './types.js'
+export { buildRoleSystemPrompt, getDefaultRoleDistribution } from './roles.js'
+export { assignRoles as assignWerewolfRoles }
