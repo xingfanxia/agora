@@ -291,7 +291,7 @@ function useMessagesPerAgent(messages: readonly MessageData[]): Record<string, n
 
 // ── Sub-components (status pill, footers) ──────────────────
 
-function StatusPill({ status }: { status: 'running' | 'waiting' | 'completed' | 'error' }) {
+function StatusPill({ status }: { status: 'lobby' | 'running' | 'waiting' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =
     status === 'running'

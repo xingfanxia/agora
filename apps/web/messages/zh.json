@@ -229,6 +229,19 @@
       "thinking": "AI 玩家思考中…",
       "agentThinking": "{name} 正在思考…",
       "hint": "首条消息可能需要 30-60 秒"
+    },
+    "lobby": {
+      "title": "等待人类玩家就绪",
+      "subtitle": "{ready} / {total} 位人类玩家已就绪。所有人类玩家就绪后会自动开始。",
+      "humanSeats": "人类座位",
+      "youBadge": "我",
+      "readyBadge": "已就绪",
+      "notReadyBadge": "等待中",
+      "readyButton": "我就绪了",
+      "youReadyHint": "已就绪 — 等待其他人。",
+      "forceStartButton": "强制开始",
+      "forceStartHint": "立即开始（未就绪的座位会被 AI 接管或跳过）",
+      "spectatorHint": "你正在围观，房主或人类玩家就绪后游戏会开始。"
     }
   },
   "replays": {

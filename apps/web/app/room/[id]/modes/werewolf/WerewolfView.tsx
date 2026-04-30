@@ -422,7 +422,7 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
 
 // ── Sub-components ─────────────────────────────────────────
 
-function StatusPill({ status }: { status: 'running' | 'waiting' | 'completed' | 'error' }) {
+function StatusPill({ status }: { status: 'lobby' | 'running' | 'waiting' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =
     status === 'running'

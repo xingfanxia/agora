@@ -229,6 +229,19 @@
       "thinking": "AI players are thinking…",
       "agentThinking": "{name} is thinking…",
       "hint": "The first message may take 30-60 seconds"
+    },
+    "lobby": {
+      "title": "Waiting for human players",
+      "subtitle": "{ready} / {total} human players ready. The room will auto-start once everyone is ready.",
+      "humanSeats": "Human seats",
+      "youBadge": "You",
+      "readyBadge": "Ready",
+      "notReadyBadge": "Waiting",
+      "readyButton": "I'm ready",
+      "youReadyHint": "Ready — waiting on the others.",
+      "forceStartButton": "Force start",
+      "forceStartHint": "Start now (un-ready seats are taken over by AI or skipped)",
+      "spectatorHint": "You're spectating. The room starts once human players ready up."
     }
   },
   "replays": {

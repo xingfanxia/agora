@@ -310,6 +310,10 @@ function reconstructFromEvents(
       roleAssignments: initial.roleAssignments,
       advancedRules: initial.advancedRules,
       gameState,
+      // Replays are read-only; no live actions, so isOwner is moot.
+      // Default to false — the lobby branch in /room/[id]/page.tsx
+      // never fires here anyway (replay rooms are status='completed').
+      isOwner: false,
     },
   }
 }

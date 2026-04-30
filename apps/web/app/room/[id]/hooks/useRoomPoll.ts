@@ -20,7 +20,7 @@ export function useRoomPoll(roomId: string) {
   const [loading, setLoading] = useState(true)
 
   const lastTimestampRef = useRef(0)
-  const statusRef = useRef<'running' | 'waiting' | 'completed' | 'error'>('running')
+  const statusRef = useRef<'lobby' | 'running' | 'waiting' | 'completed' | 'error'>('running')
   // Seat is read once on mount — same as the dispatcher in page.tsx.
   // Re-reading on every poll would let stale localStorage from another
   // tab leak through; the dispatcher controls the seat lifecycle.
