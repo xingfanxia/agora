@@ -23,22 +23,29 @@
 // constraint of the durability contract -- a workflow restart picks
 // up the current env, not a captured one.
 //
-// ── SEAM SCOPE (4.5d-2.3) ──────────────────────────────────
-// Currently routed through this factory (mock-aware):
-//   * apps/web/app/api/rooms/route.ts        (roundtable http_chain + WDK)
-//   * apps/web/app/workflows/roundtable-workflow.ts (roundtable WDK)
+// ── SEAM SCOPE (4.5d-2.3, extended 4.5d-2.12) ─────────────
+// Text generation (createGenerateFn) -- mock-aware, routed through here:
+//   * apps/web/app/api/rooms/route.ts                (roundtable WDK)
+//   * apps/web/app/workflows/roundtable-workflow.ts  (roundtable WDK)
+//   * apps/web/app/workflows/open-chat-workflow.ts   (open-chat WDK)
 //
-// NOT YET routed (still calls @agora/llm directly):
-//   * apps/web/app/lib/room-runtime.ts       (advance loop for werewolf + open-chat)
-//   * apps/web/app/api/rooms/werewolf/route.ts  (werewolf creation)
-//   * packages/modes/src/roundtable/index.ts (CLI/script entrypoint)
+// Structured output (createGenerateObjectFn -- 4.5d-2.12) -- no mock,
+// throws under WORKFLOW_TEST=1. Werewolf-workflow.ts is the only
+// consumer. Validation strategy is real games end-to-end, not unit
+// equivalence -- per pre-users feedback rule, structured-output mocks
+// would be scaffolding for a use case (cross-runtime equivalence)
+// that's about to be deleted in 4.5d-2.18.
 //
-// Tests that exercise those code paths will hit a real provider unless
-// the seam is extended. The werewolf migration (phase 4.5d-3+) is the
-// natural time to widen scope.
+// NOT YET routed (still calls @agora/llm directly -- gone after 2.18):
+//   * apps/web/app/lib/room-runtime.ts          (legacy http_chain advance loop)
+//   * apps/web/app/api/rooms/werewolf/route.ts  (werewolf creation -- moves to WDK in 2.17)
+//   * packages/modes/src/roundtable/index.ts    (CLI/script entrypoint)
 
-import { createGenerateFn as realCreateGenerateFn } from '@agora/llm'
-import type { GenerateFn, GenerateResult } from '@agora/llm'
+import {
+  createGenerateFn as realCreateGenerateFn,
+  createGenerateObjectFn as realCreateGenerateObjectFn,
+} from '@agora/llm'
+import type { GenerateFn, GenerateObjectFn, GenerateResult } from '@agora/llm'
 import type { ModelConfig, TokenUsage } from '@agora/shared'
 import { createHash } from 'node:crypto'
 
@@ -105,4 +112,40 @@ function mockGenerate(
   const content = `[mock:${digest}] turn=${messages.length} model=${model.modelId}`
 
   return { content, usage: MOCK_USAGE }
+}
+
+// ============================================================
+// Phase 4.5d-2.12 -- structured-output factory (no mock)
+// ============================================================
+//
+// Werewolf phase decisions (vote, witch action, seer check, guard
+// protect, etc.) constrain the LLM to a Zod schema via Vercel AI SDK's
+// generateObject. This factory wraps @agora/llm's createGenerateObjectFn
+// for parity with createGenerateFn above, but does NOT implement a
+// mock: validation for werewolf is real game playthroughs, not
+// cross-runtime equivalence (cf. pre-users feedback rule).
+//
+// WORKFLOW_TEST=1 is forced globally by vitest.config.ts. If a unit
+// test ever imports this and invokes the returned function, that's
+// almost certainly a mistake -- so we throw fast with a pointer to
+// the integration test path instead of silently calling the real
+// provider (which would also fail, but with a confusing auth error).
+export function createGenerateObjectFn(config: ModelConfig): GenerateObjectFn {
+  // Lazy: same pattern as createGenerateFn -- real factory only
+  // resolved when actually needed. Keeps tests that import this
+  // module free of provider-auth side effects.
+  let real: GenerateObjectFn | undefined
+  return async (systemPrompt, messages, schema, instruction) => {
+    if (process.env.WORKFLOW_TEST === '1') {
+      throw new Error(
+        'createGenerateObjectFn: structured-output has no WORKFLOW_TEST mock. ' +
+          'Werewolf validation is real games (see docs/design/phase-4.5d-werewolf-port.md). ' +
+          'If you need to test a workflow that uses structured output, run it under ' +
+          'vitest.integration.config.ts (which does NOT set WORKFLOW_TEST=1) with a ' +
+          'real or test-double provider, or move the assertion to an end-to-end test.',
+      )
+    }
+    real ??= realCreateGenerateObjectFn(config)
+    return real(systemPrompt, messages, schema, instruction)
+  }
 }

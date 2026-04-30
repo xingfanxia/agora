@@ -9,7 +9,11 @@
 // claims are meaningless.
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
-import { createGenerateFn, MOCK_USAGE } from '../../app/lib/llm-factory.js'
+import {
+  createGenerateFn,
+  createGenerateObjectFn,
+  MOCK_USAGE,
+} from '../../app/lib/llm-factory.js'
 import type { ModelConfig } from '@agora/shared'
 
 const MODEL: ModelConfig = {
@@ -137,5 +141,61 @@ describe('createGenerateFn (real path gating)', () => {
     // Should NOT throw -- mock path doesn't validate model config.
     const result = await fn(SYSTEM_PROMPT, HISTORY)
     expect(result.content).toMatch(/^\[mock:/)
+  })
+})
+
+// ============================================================
+// Phase 4.5d-2.12 -- structured-output factory smoke
+// ============================================================
+//
+// Unlike createGenerateFn, the structured-output variant has no
+// WORKFLOW_TEST mock -- werewolf is validated by real game
+// playthroughs, not unit equivalence. The contract this pins:
+//
+//   1. Factory is callable and returns a function (no provider auth
+//      side effect at construction time -- proves the lazy `real`
+//      binding survived the WORKFLOW_TEST=1 path).
+//   2. Invoking the returned fn under WORKFLOW_TEST=1 throws fast
+//      with a message that points the operator at the integration
+//      test config, NOT at a generic provider auth failure.
+//
+// The schema parameter is never reached in the throw path, so we
+// pass `null as never` -- avoids forcing a `zod` dep into apps/web
+// just for a test that doesn't exercise schema validation. (When
+// werewolf-workflow.ts lands in 2.13 it will already pull zod
+// transitively via @agora/modes.)
+
+describe('createGenerateObjectFn (no mock path -- throws under WORKFLOW_TEST=1)', () => {
+  beforeEach(() => {
+    process.env.WORKFLOW_TEST = '1'
+  })
+
+  it('returns a function without touching provider auth at construction', () => {
+    // Same lazy-binding contract as createGenerateFn: invalid model
+    // configs must not throw at factory time. If this regresses,
+    // any test importing this module would fail at import time.
+    const fn = createGenerateObjectFn({
+      provider: 'anthropic',
+      modelId: 'definitely-not-a-real-model-id',
+    })
+    expect(typeof fn).toBe('function')
+  })
+
+  it('throws on invocation under WORKFLOW_TEST=1', async () => {
+    const fn = createGenerateObjectFn(MODEL)
+    // Schema is never reached -- the env-flag check throws first.
+    await expect(fn(SYSTEM_PROMPT, HISTORY, null as never)).rejects.toThrow(
+      /no WORKFLOW_TEST mock/,
+    )
+  })
+
+  it('error message points at the integration test config', async () => {
+    // Belt-and-suspenders: if this test ever fires in CI it should
+    // tell whoever's debugging it where the real-provider path
+    // lives, not just "an error happened".
+    const fn = createGenerateObjectFn(MODEL)
+    await expect(fn(SYSTEM_PROMPT, HISTORY, null as never)).rejects.toThrow(
+      /vitest\.integration\.config\.ts/,
+    )
   })
 })
