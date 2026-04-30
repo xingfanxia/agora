@@ -6,6 +6,12 @@ import type { MessageData, PollResponse } from '../components/theme'
 /**
  * Polls the room messages endpoint. Returns the full room snapshot
  * and appends new messages to local state as they arrive.
+ *
+ * If the viewer has claimed a seat (recorded in localStorage at key
+ * `agora-seat-${roomId}`), it's passed as `?seat=<agentId>` so the
+ * server can apply role-based channel visibility filtering. Without
+ * a seat the server defaults to strict-observer scope (public
+ * channels only) — non-owners can no longer read wolf chat.
  */
 export function useRoomPoll(roomId: string) {
   const [messages, setMessages] = useState<MessageData[]>([])
@@ -15,14 +21,27 @@ export function useRoomPoll(roomId: string) {
 
   const lastTimestampRef = useRef(0)
   const statusRef = useRef<'running' | 'waiting' | 'completed' | 'error'>('running')
+  // Seat is read once on mount — same as the dispatcher in page.tsx.
+  // Re-reading on every poll would let stale localStorage from another
+  // tab leak through; the dispatcher controls the seat lifecycle.
+  const seatRef = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
+    try {
+      const raw = localStorage.getItem(`agora-seat-${roomId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as { agentId?: string }
+        if (parsed.agentId) seatRef.current = parsed.agentId
+      }
+    } catch { /* localStorage unavailable / corrupt — observer scope */ }
+
     async function poll() {
       try {
         const after = lastTimestampRef.current
-        const res = await fetch(`/api/rooms/${roomId}/messages?after=${after}`)
+        const seatQS = seatRef.current ? `&seat=${encodeURIComponent(seatRef.current)}` : ''
+        const res = await fetch(`/api/rooms/${roomId}/messages?after=${after}${seatQS}`)
 
         if (!res.ok) {
           const data = (await res.json()) as { error?: string }

@@ -61,7 +61,11 @@ export default function RoomPage() {
   if (snapshot.modeId === 'werewolf') {
     return (
       <>
-        <WerewolfView messages={messages} snapshot={snapshot} />
+        <WerewolfView
+          messages={messages}
+          snapshot={snapshot}
+          humanAgentId={humanAgentId}
+        />
         {humanBar}
         {invitePanel}
       </>

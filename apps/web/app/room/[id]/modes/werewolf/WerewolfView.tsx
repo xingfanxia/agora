@@ -19,14 +19,52 @@ import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
 interface WerewolfViewProps {
   messages: readonly MessageData[]
   snapshot: Omit<PollResponse, 'messages'>
+  /**
+   * The agent id the human player occupies (from localStorage seat
+   * token). When set, we surface a "your role" banner and let the
+   * UI key off the human's role for filtering / hints. Spectators
+   * and un-seated owners pass null.
+   */
+  humanAgentId?: string | null
 }
 
 function isNightPhase(phase: string | null): boolean {
   if (!phase) return false
-  return ['wolfDiscuss', 'wolfVote', 'witchAction', 'seerCheck', 'guardProtect'].includes(phase)
+  return [
+    'wolfDiscuss',
+    'wolfVote',
+    'witchAction',
+    'seerCheck',
+    'guardProtect',
+    'dawn',
+  ].includes(phase)
 }
 
-export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
+// Human-readable role badge: emoji + role + faction. Used in the
+// "your role" banner shown to seated humans. Faction matters for
+// role-relative hints ("you win when all wolves die" vs. "...all
+// villagers die").
+const ROLE_DISPLAY: Record<
+  string,
+  { emoji: string; faction: 'village' | 'werewolves'; label: string }
+> = {
+  werewolf: { emoji: '🐺', faction: 'werewolves', label: '狼人' },
+  villager: { emoji: '👤', faction: 'village', label: '村民' },
+  seer: { emoji: '🔮', faction: 'village', label: '预言家' },
+  witch: { emoji: '🧪', faction: 'village', label: '女巫' },
+  hunter: { emoji: '🏹', faction: 'village', label: '猎人' },
+  guard: { emoji: '🛡️', faction: 'village', label: '守卫' },
+  idiot: { emoji: '🃏', faction: 'village', label: '白痴' },
+}
+
+const RULE_LABEL_ZH: Record<string, string> = {
+  guard: '守卫',
+  idiot: '白痴',
+  sheriff: '警长',
+  lastWords: '遗言',
+}
+
+export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewProps) {
   const params = useParams()
   const roomId = params.id as string
   const [isDark, setIsDark] = useState(false)
@@ -220,14 +258,26 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
             {tRoom('werewolfMode')}
           </h1>
           <StatusPill status={status} />
-          {advancedRules && (
-            <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
-              {Object.entries(advancedRules)
-                .filter(([, v]) => v)
-                .map(([k]) => k)
-                .join(' · ') || t('baseGame')}
-            </span>
-          )}
+          <DayNightBadge phase={currentPhase} nightNumber={
+            typeof gameState?.['nightNumber'] === 'number' ? (gameState['nightNumber'] as number) : 0
+          } />
+          {advancedRules && (() => {
+            const enabled = Object.entries(advancedRules)
+              .filter(([, v]) => v)
+              .map(([k]) => RULE_LABEL_ZH[k] ?? k)
+            if (enabled.length === 0) {
+              return (
+                <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                  {t('baseGame')}
+                </span>
+              )
+            }
+            return (
+              <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                规则: {enabled.join(' · ')}
+              </span>
+            )
+          })()}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
             <ViewToggle
               mode={viewMode}
@@ -246,6 +296,14 @@ export function WerewolfView({ messages, snapshot }: WerewolfViewProps) {
 
         <TokenCostPanel summary={tokenSummary} agents={agents} />
       </header>
+
+      {humanAgentId && roleAssignments?.[humanAgentId] && (
+        <YourRoleBanner
+          role={roleAssignments[humanAgentId]}
+          name={agents.find((a) => a.id === humanAgentId)?.name ?? ''}
+          eliminated={eliminatedIds.has(humanAgentId)}
+        />
+      )}
 
       {winResult && (
         <div
@@ -413,5 +471,100 @@ function EndMessage({ text }: { text: string }) {
     >
       {text}
     </div>
+  )
+}
+
+// "Your role: 🐺 狼人" — the banner is the seated player's primary
+// orientation. Without it the human has no idea which faction they
+// play for, and the game breaks down even though all the underlying
+// state is correct.
+function YourRoleBanner({
+  role,
+  name,
+  eliminated,
+}: {
+  role: string
+  name: string
+  eliminated: boolean
+}) {
+  const display = ROLE_DISPLAY[role]
+  if (!display) return null
+  const factionColor =
+    display.faction === 'werewolves' ? '#dc2626' : '#22c55e'
+  const factionLabel =
+    display.faction === 'werewolves' ? '狼人阵营' : '好人阵营'
+  return (
+    <div
+      style={{
+        margin: '1rem auto 0',
+        maxWidth: 1280,
+        width: '100%',
+        padding: '0.75rem 1rem',
+        borderRadius: 'var(--radius)',
+        background: `color-mix(in srgb, ${factionColor} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${factionColor} 40%, var(--border))`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        fontSize: '0.875rem',
+      }}
+    >
+      <div style={{ fontSize: '1.5rem', lineHeight: 1 }}>{display.emoji}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 590, marginBottom: 2 }}>
+          你的身份: <span style={{ color: factionColor }}>{display.label}</span>
+          {eliminated && (
+            <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 510 }}>
+              · 已淘汰
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+          {name && <>座位: <strong>{name}</strong> · </>}
+          阵营: <span style={{ color: factionColor, fontWeight: 510 }}>{factionLabel}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Day/night cycle indicator. Reads from gameState.nightNumber +
+// the current phase to compute "🌙 第 N 夜" or "☀️ 第 N 天". This
+// is what the user actually wants to see in the header — the raw
+// phase string is too jargony, and the wraparound 'guard' label
+// from advancedRules display was the proximate cause of the
+// "I can't tell what phase we're in" complaint.
+function DayNightBadge({
+  phase,
+  nightNumber,
+}: {
+  phase: string | null
+  nightNumber: number
+}) {
+  if (!phase) return null
+  const isNight = isNightPhase(phase)
+  // Day n maps to night n's morning — i.e. after night N transitions
+  // to dawn, it becomes day N. nightNumber is incremented at vote-end
+  // so during day N discussion, gameState.nightNumber === N already.
+  // (See werewolf-day-phases.ts:runDayVote.)
+  const cycleNum = Math.max(1, nightNumber || 1)
+  const label = isNight ? `🌙 第 ${cycleNum} 夜` : `☀️ 第 ${cycleNum} 天`
+  const color = isNight ? '#8b7ed8' : '#f5a623'
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        fontSize: '0.8rem',
+        color,
+        fontWeight: 510,
+        padding: '2px 8px',
+        borderRadius: '999px',
+        background: `color-mix(in srgb, ${color} 15%, transparent)`,
+      }}
+    >
+      {label}
+    </span>
   )
 }

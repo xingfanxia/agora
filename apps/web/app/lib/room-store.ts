@@ -367,6 +367,7 @@ export interface RoomSnapshot {
   startedAt: Date | null
   endedAt: Date | null
   createdAt: Date
+  createdBy: string | null
 }
 
 export async function getRoom(roomId: string): Promise<RoomRow | null> {
@@ -414,6 +415,7 @@ export async function getRoomSnapshot(roomId: string): Promise<RoomSnapshot | nu
     startedAt: row.startedAt,
     endedAt: row.endedAt,
     createdAt: row.createdAt,
+    createdBy: row.createdBy ?? null,
   }
 }
 
