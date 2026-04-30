@@ -49,6 +49,7 @@ import {
   humanTurnToken as openChatHumanTurnToken,
   type HumanTurnPayload,
 } from '../../../../workflows/open-chat-workflow'
+import { roundtableHumanTurnToken } from '../../../../workflows/roundtable-workflow'
 import {
   werewolfDayVoteToken,
   type WerewolfPersistedState,
@@ -218,6 +219,46 @@ export async function POST(
         // don't leak it verbatim (run ids etc.).
         console.warn(
           `[human-input wdk open-chat] resumeHook failed for ${token}:`,
+          resumeErr,
+        )
+        return NextResponse.json(
+          { error: 'Turn already submitted or no longer accepting input' },
+          { status: 409 },
+        )
+      }
+
+      return NextResponse.json({ ok: true, runtime: 'wdk' })
+    }
+
+    if (roomRow.modeId === 'roundtable') {
+      // Same shape as open-chat: workflow body markWaitingForRoundtableHuman
+      // wrote `gameState.waitingForTurnIdx`. Reconstruct the per-turn
+      // token via roundtableHumanTurnToken and resumeHook.
+      const text = typeof payload.content === 'string' ? payload.content.trim() : ''
+      if (text.length === 0) {
+        return NextResponse.json(
+          { error: 'WDK human-input requires non-empty payload.content' },
+          { status: 400 },
+        )
+      }
+
+      const gs = roomRow.gameState as { waitingForTurnIdx?: unknown } | null
+      const turnIdx = gs?.waitingForTurnIdx
+      if (typeof turnIdx !== 'number' || !Number.isInteger(turnIdx) || turnIdx < 0) {
+        return NextResponse.json(
+          { error: 'gameState.waitingForTurnIdx missing or invalid' },
+          { status: 500 },
+        )
+      }
+
+      const token = roundtableHumanTurnToken(roomId, turnIdx)
+      const hookPayload: HumanTurnPayload = { text }
+
+      try {
+        await resumeHook(token, hookPayload)
+      } catch (resumeErr) {
+        console.warn(
+          `[human-input wdk roundtable] resumeHook failed for ${token}:`,
           resumeErr,
         )
         return NextResponse.json(
