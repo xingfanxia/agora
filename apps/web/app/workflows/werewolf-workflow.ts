@@ -97,6 +97,13 @@ import {
 import { getFallback } from '@agora/modes'
 import { resolvePricing, calculateCost } from '@agora/llm'
 import type { FallbackAction } from '@agora/modes'
+import {
+  createDayVoteSchema,
+  createGuardProtectSchema,
+  createSeerCheckSchema,
+  createWitchActionSchema,
+  createWolfVoteSchema,
+} from '@agora/modes'
 import type {
   WerewolfAdvancedRules,
   WerewolfRole,
@@ -108,7 +115,6 @@ import type {
   PlatformEvent,
   TokenUsage,
 } from '@agora/shared'
-import type { ZodSchema } from 'zod'
 
 // Phase implementations live in sibling files to keep this file
 // under the 800-line ceiling. The `runXxx` helpers are body-helpers
@@ -744,6 +750,53 @@ async function deriveWerewolfState(
 
 // ── Decision-generation step (used by 2.14-2.16) ───────────
 
+/**
+ * Werewolf phase decision specs. Pure POJO — WDK's step-input
+ * serialization (devalue) requires plain data, no Zod schemas
+ * (their closures cannot be serialized across the queue boundary).
+ *
+ * Each variant carries the scalar params its schema factory needs.
+ * The step body switches on `kind` to call the matching factory
+ * INSIDE the step (so the schema lives in step-local memory and
+ * never crosses a serialization boundary). Discovered the hard way
+ * via 4.5d-2.17 validation: passing `schema: ZodSchema` as a step
+ * input wedged the workflow at attempt 42 with a serialization
+ * error.
+ *
+ * Adding a new decision kind: extend this union, add a switch arm
+ * in `buildDecisionSchema`, and call sites pass the new shape.
+ */
+export type WerewolfDecisionSpec =
+  | { readonly kind: 'wolfVote'; readonly targets: readonly string[] }
+  | { readonly kind: 'dayVote'; readonly targets: readonly string[] }
+  | { readonly kind: 'guardProtect'; readonly targets: readonly string[] }
+  | { readonly kind: 'seerCheck'; readonly targets: readonly string[] }
+  | {
+      readonly kind: 'witchAction'
+      readonly canSave: boolean
+      readonly canPoison: boolean
+      readonly alivePlayers: readonly string[]
+    }
+
+function buildDecisionSchema(spec: WerewolfDecisionSpec) {
+  switch (spec.kind) {
+    case 'wolfVote':
+      return createWolfVoteSchema([...spec.targets])
+    case 'dayVote':
+      return createDayVoteSchema([...spec.targets])
+    case 'guardProtect':
+      return createGuardProtectSchema([...spec.targets])
+    case 'seerCheck':
+      return createSeerCheckSchema([...spec.targets])
+    case 'witchAction':
+      return createWitchActionSchema(
+        spec.canSave,
+        spec.canPoison,
+        [...spec.alivePlayers],
+      )
+  }
+}
+
 export interface GenerateAgentDecisionInput {
   readonly roomId: string
   readonly agentId: string
@@ -758,11 +811,13 @@ export interface GenerateAgentDecisionInput {
    * sees seer-result, etc.), but the workflow consumes a flat events
    * log. Caller passes the channel id(s) to filter on; null means
    * 'all messages this agent has access to'.
-   *
-   * 2.14+ tightens this — this skeleton's signature is kept
-   * permissive so each phase step decides the visibility rule.
    */
   readonly channelId: string | null
+  /**
+   * POJO spec describing the structured-output schema. The step
+   * resolves this to a ZodSchema internally — see WerewolfDecisionSpec.
+   */
+  readonly decision: WerewolfDecisionSpec
 }
 
 export interface GenerateAgentDecisionResult {
@@ -773,24 +828,14 @@ export interface GenerateAgentDecisionResult {
 /**
  * Workflow step that generates a structured decision via Vercel AI
  * SDK's `generateObject`. Used by phase steps (vote, witch action,
- * seer check, ...) in 2.14-2.16.
+ * seer check, ...).
  *
- * SCHEMA HANDLING: Zod schemas are not JSON-serializable; passing one
- * as a step input would force WDK's step-input cache to choke (or
- * silently swallow object identity). So this step takes scalars +
- * the schema-builder name, and the consumer (phase step) calls a
- * schema factory matching the phase. Resolution of (factoryName,
- * args) → ZodSchema happens INSIDE the step body, keeping inputs
- * scalar (Rule 6).
- *
- * However for the 2.13 skeleton this step's signature accepts the
- * `ZodSchema` directly via a phase-step closure. 2.14 will switch
- * to the (factoryName, args) shape if WDK's step cache complains
- * about non-serializable inputs — TBD by experiment when the first
- * phase step lands.
+ * Step inputs are pure POJOs (Rule 6). The schema is reconstructed
+ * inside the step body from the `decision` discriminated union —
+ * see WerewolfDecisionSpec for why.
  */
 export async function generateAgentDecision(
-  input: GenerateAgentDecisionInput & { schema: ZodSchema },
+  input: GenerateAgentDecisionInput,
 ): Promise<GenerateAgentDecisionResult> {
   'use step'
 
@@ -803,8 +848,10 @@ export async function generateAgentDecision(
     maxTokens,
     instruction,
     channelId,
-    schema,
+    decision,
   } = input
+
+  const schema = buildDecisionSchema(decision)
 
   // Read prior messages from DB. If channelId is set, filter to
   // messages this agent should see (e.g. wolves see wolf-chat).

@@ -54,10 +54,6 @@ import {
 } from './werewolf-workflow.js'
 import {
   checkWinCondition,
-  createGuardProtectSchema,
-  createSeerCheckSchema,
-  createWitchActionSchema,
-  createWolfVoteSchema,
 } from '@agora/modes'
 import type { WerewolfAgentSnapshot } from './werewolf-workflow.js'
 import type { WerewolfRole } from '@agora/modes'
@@ -215,8 +211,6 @@ export async function runWolfVote(
     return
   }
 
-  const schema = createWolfVoteSchema([...targetNames])
-
   // Parallel: wolf-vote is blind — each wolf decides on the same
   // prior context (the wolf-chat that just ended). Promise.all over
   // step calls is supported by WDK; each LLM call gets its own
@@ -244,7 +238,7 @@ export async function runWolfVote(
         maxTokens: agent.model.maxTokens ?? 1500,
         instruction: `Vote on who to kill. Targets: ${targetNames.join(', ')}. Vote is blind.`,
         channelId: 'wolf-vote',
-        schema,
+        decision: { kind: 'wolfVote', targets: targetNames },
       })
 
       const decision = result.object as { target: string; reason: string }
@@ -361,7 +355,6 @@ export async function runGuardProtect(
     // human-input to night phases if desired.
     protectedTargetId = null
   } else {
-    const schema = createGuardProtectSchema(targets)
     const excludedName = state.guardLastProtectedId
       ? (state.agentNames[state.guardLastProtectedId] ?? 'someone')
       : null
@@ -378,7 +371,7 @@ export async function runGuardProtect(
       maxTokens: agent.model.maxTokens ?? 1500,
       instruction,
       channelId: 'guard-action',
-      schema,
+      decision: { kind: 'guardProtect', targets },
     })
 
     const decision = result.object as { target: string; reason: string }
@@ -456,7 +449,7 @@ export async function runWitchAction(
   if (agent.isHuman) {
     // MVP: humans skip night actions.
   } else {
-    const schema = createWitchActionSchema(canSave, canPoison, allAliveNames(state))
+    const alivePlayers = allAliveNames(state)
 
     const parts: string[] = []
     if (state.witchSaveUsed) {
@@ -483,7 +476,7 @@ export async function runWitchAction(
       maxTokens: agent.model.maxTokens ?? 1500,
       instruction: parts.join(' '),
       channelId: 'witch-action',
-      schema,
+      decision: { kind: 'witchAction', canSave, canPoison, alivePlayers },
     })
 
     const decision = result.object as {
@@ -578,7 +571,6 @@ export async function runSeerCheck(
   if (agent.isHuman || targets.length === 0) {
     // MVP humans skip; no targets is pathological.
   } else {
-    const schema = createSeerCheckSchema(targets)
     const result = await generateAgentDecision({
       roomId,
       agentId: seerId,
@@ -588,7 +580,7 @@ export async function runSeerCheck(
       maxTokens: agent.model.maxTokens ?? 1500,
       instruction: `Investigate a player. Targets: ${targets.join(', ')}.`,
       channelId: 'seer-result',
-      schema,
+      decision: { kind: 'seerCheck', targets },
     })
 
     const decision = result.object as { target: string }

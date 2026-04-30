@@ -42,7 +42,6 @@ import {
   werewolfDayVoteToken,
   type WerewolfPersistedState,
 } from './werewolf-workflow.js'
-import { createDayVoteSchema } from '@agora/modes'
 import type { WerewolfAgentSnapshot } from './werewolf-workflow.js'
 import type { WerewolfRole } from '@agora/modes'
 
@@ -295,7 +294,6 @@ export async function runDayVote(
     }
 
     const targets = aliveNamesExcluding(state, voterId)
-    const schema = createDayVoteSchema([...targets])
 
     const result = await generateAgentDecision({
       roomId,
@@ -306,7 +304,7 @@ export async function runDayVote(
       maxTokens: agent.model.maxTokens ?? 1500,
       instruction: `Vote to eliminate. Targets: ${targets.join(', ')}. Or "skip". Blind vote.`,
       channelId: 'day-vote',
-      schema,
+      decision: { kind: 'dayVote', targets },
     })
 
     const decision = result.object as { target: string; reason: string }
