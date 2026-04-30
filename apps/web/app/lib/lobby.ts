@@ -26,6 +26,7 @@ import type { WerewolfAdvancedRules, WerewolfRole } from '@agora/modes'
 import {
   flipLobbyToRunning,
   getRoom,
+  setGameState,
   updateRoomStatus,
   type AgentInfo,
 } from './room-store.js'
@@ -37,7 +38,10 @@ import {
   openChatWorkflow,
   toOpenChatAgentSnapshot,
 } from '../workflows/open-chat-workflow.js'
-import { werewolfWorkflow } from '../workflows/werewolf-workflow.js'
+import {
+  werewolfWorkflow,
+  WEREWOLF_AGENT_PERSONA,
+} from '../workflows/werewolf-workflow.js'
 
 // ── Public ──────────────────────────────────────────────────
 
@@ -87,6 +91,19 @@ export async function resolveLobby(
 
   const won = await flipLobbyToRunning(roomId)
   if (!won) return { flipped: false, reason: 'not-lobby' }
+
+  // Strip the lobby-only seatReady cruft from gameState now that
+  // we've won the flip. JSONB hygiene — workflows don't read this
+  // field and it's confusing for replay/debug tooling to see stale
+  // ready flags on a running room. Done here (post-flip, single
+  // call site) rather than in every markRunningAgain step (would
+  // run on every human-input resume) for predictable cost.
+  const existingGs = (room.gameState as Record<string, unknown> | null) ?? {}
+  if ('seatReady' in existingGs) {
+    const { seatReady: _drop, ...preserved } = existingGs
+    void _drop
+    await setGameState(roomId, preserved)
+  }
 
   // We won the flip. Workflow start is now our responsibility — if it
   // throws, we mark the room 'error' so it doesn't sit at 'running'
@@ -187,7 +204,7 @@ async function dispatchWorkflowStart(room: RoomRow): Promise<void> {
         return {
           id: info.id,
           name: info.name,
-          persona: 'A player in the werewolf game',
+          persona: WEREWOLF_AGENT_PERSONA,
           systemPrompt: info.systemPrompt,
           role,
           model,

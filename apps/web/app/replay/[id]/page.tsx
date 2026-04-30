@@ -213,6 +213,10 @@ function reconstructFromEvents(
   let totalRounds = 1
   let thinkingAgentId: string | null = null
   let gameState: Record<string, unknown> | null = initial.gameState
+  // Narrow union — replays only ever resolve to running/completed/error
+  // because lobby/waiting are pre-resolution states a recorded room
+  // already left. Widened union (with 'lobby' | 'waiting') would just
+  // be dead code paths.
   let status: 'running' | 'completed' | 'error' = 'running'
 
   for (const ev of events) {

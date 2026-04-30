@@ -79,8 +79,12 @@ export function useRoomPoll(roomId: string) {
       }
 
       if (!cancelled) {
-        // Poll fast when running or waiting (human may submit any moment)
-        const delay = statusRef.current === 'running' || statusRef.current === 'waiting' ? 1000 : 5000
+        // Poll fast in active states. 'lobby' included so the LobbyView
+        // re-renders within ~1s of the workflow flipping to 'running'
+        // (without it, the gate-clear → first-message latency gets +5s
+        // for no good reason). 'running' / 'waiting' for live games.
+        const s = statusRef.current
+        const delay = s === 'lobby' || s === 'running' || s === 'waiting' ? 1000 : 5000
         setTimeout(poll, delay)
       }
     }

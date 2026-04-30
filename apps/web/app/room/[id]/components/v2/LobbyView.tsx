@@ -164,7 +164,7 @@ export function LobbyView({
                     color: ready ? '#22c55e' : 'var(--muted)',
                   }}
                 >
-                  {ready ? `✓ ${t('readyBadge')}` : t('notReadyBadge')}
+                  {ready ? t('readyBadge') : t('notReadyBadge')}
                 </span>
               </div>
             )

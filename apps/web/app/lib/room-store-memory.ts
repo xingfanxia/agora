@@ -160,7 +160,7 @@ export async function memCreateRoom(args: CreateRoomArgs): Promise<void> {
     modeId: args.modeId,
     topic: args.topic ?? null,
     config: args.config,
-    status: 'running',
+    status: args.initialStatus ?? 'running',
     currentPhase: null,
     currentRound: args.currentRound ?? 1,
     thinkingAgentId: null,

@@ -164,6 +164,16 @@ export interface WerewolfAgentSnapshot {
   readonly isHuman?: boolean
 }
 
+/**
+ * Constant persona string written into every werewolf snapshot. The
+ * persona field is decorative on werewolf seats — each agent has its
+ * full role-aware systemPrompt; the LLM never reads this string. Kept
+ * as a const so the create-time path (apps/web/app/api/rooms/werewolf/
+ * route.ts) and the lobby-resolve path (apps/web/app/lib/lobby.ts)
+ * share one source.
+ */
+export const WEREWOLF_AGENT_PERSONA = 'A player in the werewolf game'
+
 export interface WerewolfWorkflowInput {
   /** UUID of a room already created via createRoom() with status='running'. */
   readonly roomId: string

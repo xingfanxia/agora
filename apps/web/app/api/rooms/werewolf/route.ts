@@ -34,6 +34,7 @@ import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/langu
 import { getTeam, getMembers } from '../../../lib/team-store'
 import { requireAuthUserId } from '../../../lib/auth'
 import {
+  WEREWOLF_AGENT_PERSONA,
   werewolfWorkflow,
   type WerewolfAgentSnapshot,
 } from '../../../workflows/werewolf-workflow'
@@ -227,7 +228,7 @@ export async function POST(request: NextRequest) {
       return {
         id,
         name: p.name,
-        persona: 'A player in the werewolf game',
+        persona: WEREWOLF_AGENT_PERSONA,
         systemPrompt: systemPromptByAgent[id]!,
         role,
         model,
