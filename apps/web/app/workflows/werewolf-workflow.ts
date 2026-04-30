@@ -177,6 +177,14 @@ export interface WerewolfWorkflowInput {
    * the route); reserved for phases that need randomness in 2.14+.
    */
   readonly seed: string
+  /**
+   * Display language for system messages emitted by phase steps —
+   * "Dawn breaks", vote tallies, role reveals. The agents'
+   * languageInstruction (which controls their LLM output) is baked
+   * into systemPrompt at the route level; this `language` only
+   * controls workflow-emitted UI strings. Default 'en' if omitted.
+   */
+  readonly language?: 'en' | 'zh'
 }
 
 export interface WerewolfWorkflowResult {
@@ -302,6 +310,76 @@ export function werewolfDayVoteToken(
   return `agora/room/${roomId}/mode/werewolf-day-vote/night/${nightNumber}/seat/${seatId}`
 }
 
+// ── System message localization ────────────────────────────
+//
+// Strings emitted by phase steps to the chat (dawn announcement,
+// vote tally, role reveal at elimination). Agents' LLM output
+// language is controlled separately via systemPrompt; this only
+// affects the workflow's own UI prose. Caller passes `language`
+// in the workflow input (defaults to 'en').
+
+export type WerewolfLanguage = 'en' | 'zh'
+
+interface WerewolfStrings {
+  readonly dawnDeath: (names: readonly string[]) => string
+  readonly dawnPeaceful: string
+  readonly voteCast: (target: string, reason: string) => string
+  readonly votePeaceful: (tally: string) => string
+  readonly voteEliminated: (tally: string, name: string, role: string) => string
+  readonly voteIdiotReveal: (tally: string, name: string) => string
+  readonly fallbackAbstain: string
+  readonly humanTimeoutAbstain: string
+  readonly roleLabel: (role: WerewolfRole) => string
+}
+
+const WEREWOLF_STRINGS: Record<WerewolfLanguage, WerewolfStrings> = {
+  en: {
+    dawnDeath: (names) =>
+      `Dawn breaks. Last night, **${names.join(' and ')}** did not survive.`,
+    dawnPeaceful: 'Dawn breaks. Everyone survived the night!',
+    voteCast: (target, reason) =>
+      reason ? `Votes for **${target}**: ${reason}` : `Votes for **${target}**`,
+    votePeaceful: (tally) => `Vote: ${tally}. No majority — peaceful day.`,
+    voteEliminated: (tally, name, role) =>
+      `Vote: ${tally}. **${name}** eliminated. They were a **${role}**.`,
+    voteIdiotReveal: (tally, name) =>
+      `Vote: ${tally}. **${name}** was voted out — but reveals they are the **Village Idiot**! They survive but lose voting rights.`,
+    fallbackAbstain: 'human seat — fallback abstain',
+    humanTimeoutAbstain: '(human seat timed out after 45s — auto-abstain)',
+    roleLabel: (role) => role,
+  },
+  zh: {
+    dawnDeath: (names) =>
+      `天亮了。昨晚 **${names.join(' 与 ')}** 没能挺过这一夜。`,
+    dawnPeaceful: '天亮了。昨晚平安无事。',
+    voteCast: (target, reason) =>
+      reason ? `投给 **${target}**：${reason}` : `投给 **${target}**`,
+    votePeaceful: (tally) => `投票：${tally}。无多数票 — 平安日。`,
+    voteEliminated: (tally, name, role) =>
+      `投票：${tally}。**${name}** 被票出。身份是 **${role}**。`,
+    voteIdiotReveal: (tally, name) =>
+      `投票：${tally}。**${name}** 被票出 — 翻出白痴牌！幸存但失去后续投票权。`,
+    fallbackAbstain: '人类座位 — 默认弃票',
+    humanTimeoutAbstain: '（人类座位 45 秒超时 — 自动弃票）',
+    roleLabel: (role) => {
+      const map: Record<WerewolfRole, string> = {
+        werewolf: '狼人',
+        villager: '村民',
+        seer: '预言家',
+        witch: '女巫',
+        hunter: '猎人',
+        guard: '守卫',
+        idiot: '白痴',
+      }
+      return map[role] ?? role
+    },
+  },
+}
+
+export function werewolfStrings(language: WerewolfLanguage | undefined): WerewolfStrings {
+  return WEREWOLF_STRINGS[language ?? 'en']
+}
+
 // ── Phase tags (terminal vs non-terminal) ──────────────────
 
 const TERMINAL_PHASES = new Set<string>(['werewolvesWin', 'villageWins', 'gameEnded'])
@@ -411,36 +489,37 @@ export async function werewolfWorkflow(
       // driver but the SHAPE matches.
       const persistedState = derived.state as unknown as WerewolfPersistedState
 
+      const lang: WerewolfLanguage = input.language ?? 'en'
       switch (currentPhase) {
         case 'guardProtect':
-          await runGuardProtect(roomId, agents, persistedState)
+          await runGuardProtect(roomId, agents, persistedState, lang)
           break
         case 'wolfDiscuss':
-          await runWolfDiscuss(roomId, agents, persistedState)
+          await runWolfDiscuss(roomId, agents, persistedState, lang)
           break
         case 'wolfVote':
-          await runWolfVote(roomId, agents, persistedState)
+          await runWolfVote(roomId, agents, persistedState, lang)
           break
         case 'witchAction':
-          await runWitchAction(roomId, agents, persistedState)
+          await runWitchAction(roomId, agents, persistedState, lang)
           break
         case 'seerCheck':
-          await runSeerCheck(roomId, agents, persistedState)
+          await runSeerCheck(roomId, agents, persistedState, lang)
           break
         case 'dawn':
-          await runDawn(roomId, agents, persistedState)
+          await runDawn(roomId, agents, persistedState, lang)
           break
         case 'dayDiscuss':
-          await runDayDiscuss(roomId, agents, persistedState)
+          await runDayDiscuss(roomId, agents, persistedState, lang)
           break
         case 'dayVote':
-          await runDayVote(roomId, agents, persistedState)
+          await runDayVote(roomId, agents, persistedState, lang)
           break
         case 'checkWinAfterNight':
-          await runCheckWinAfterNight(roomId, agents, persistedState)
+          await runCheckWinAfterNight(roomId, agents, persistedState, lang)
           break
         case 'checkWinAfterVote':
-          await runCheckWinAfterVote(roomId, agents, persistedState)
+          await runCheckWinAfterVote(roomId, agents, persistedState, lang)
           break
         // Remaining phases — implementations land in 2.16 (triggered:
         // hunterShoot*/sheriffTransfer*/sheriffElection/lastWords*).

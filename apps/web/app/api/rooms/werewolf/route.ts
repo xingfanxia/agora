@@ -259,6 +259,7 @@ export async function POST(request: NextRequest) {
           agents: snapshots,
           advancedRules,
           seed: roomId,
+          language,
         },
       ])
       return NextResponse.json({ roomId, runtime: 'wdk' })

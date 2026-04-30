@@ -50,7 +50,9 @@ import {
   recordTurnUsage,
   tallyVotes,
   transitionPhase,
+  werewolfStrings,
   type WerewolfPersistedState,
+  type WerewolfLanguage,
 } from './werewolf-workflow.js'
 import {
   checkWinCondition,
@@ -83,7 +85,9 @@ export async function runWolfDiscuss(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
+  void _language
   // Each alive wolf speaks ONCE per discussion phase. The legacy
   // (packages/modes/src/werewolf/phases.ts) caps at maxTurns=6 with
   // a getSpeakers-based done predicate — at 3-4 wolves that's
@@ -186,7 +190,9 @@ export async function runWolfVote(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  language: WerewolfLanguage,
 ): Promise<void> {
+  const S = werewolfStrings(language)
   const wolves = aliveIdsByRole(state, 'werewolf')
   if (wolves.length === 0) {
     await transitionPhase({
@@ -226,7 +232,7 @@ export async function runWolfVote(
       // Humans skip blind wolf-vote for MVP (same reasoning as
       // wolfDiscuss). They get fallback automatically.
       if (agent.isHuman) {
-        return [wolfId, { target: 'skip', reason: 'human seat — fallback abstain' }] as const
+        return [wolfId, { target: 'skip', reason: S.fallbackAbstain }] as const
       }
 
       const result = await generateAgentDecision({
@@ -247,7 +253,7 @@ export async function runWolfVote(
         roomId,
         agentId: wolfId,
         agentName: agent.name,
-        content: `Votes for **${decision.target}**: ${decision.reason}`,
+        content: S.voteCast(decision.target, decision.reason),
         channelId: 'wolf-vote',
         phaseTag: PHASE_TAGS.wolfVote,
         cycleId: cycle,
@@ -309,7 +315,9 @@ export async function runGuardProtect(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
+  void _language
   // Guard runs ONLY when the advanced rule is enabled. If the
   // dispatch reaches this branch with rules.guard=false, treat as
   // a no-op transition. Defensive — initializeGameState wouldn't
@@ -415,6 +423,7 @@ export async function runWitchAction(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
   const witches = aliveIdsByRole(state, 'witch')
   if (witches.length === 0) {
@@ -548,6 +557,7 @@ export async function runSeerCheck(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
   const seers = aliveIdsByRole(state, 'seer')
   if (seers.length === 0) {
@@ -627,7 +637,9 @@ export async function runDawn(
   roomId: string,
   _agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  language: WerewolfLanguage,
 ): Promise<void> {
+  const S = werewolfStrings(language)
   // Resolve overnight deaths: wolf-kill (if not saved by witch or
   // protected by guard) + witch-poison (bypasses guard). Both
   // resolutions are computed off the persisted state, no LLM call.
@@ -688,9 +700,7 @@ export async function runDawn(
   // Announcement
   const deathNames = newlyDead.map((id) => state.agentNames[id] ?? id)
   const announcement =
-    deathNames.length > 0
-      ? `Dawn breaks. Last night, **${deathNames.join(' and ')}** did not survive.`
-      : 'Dawn breaks. Everyone survived the night!'
+    deathNames.length > 0 ? S.dawnDeath(deathNames) : S.dawnPeaceful
 
   await emitPhaseAnnouncement({
     roomId,

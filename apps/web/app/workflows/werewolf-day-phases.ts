@@ -40,7 +40,9 @@ import {
   tallyVotes,
   transitionPhase,
   werewolfDayVoteToken,
+  werewolfStrings,
   type WerewolfPersistedState,
+  type WerewolfLanguage,
 } from './werewolf-workflow.js'
 import type { WerewolfAgentSnapshot } from './werewolf-workflow.js'
 import type { WerewolfRole } from '@agora/modes'
@@ -90,7 +92,9 @@ export async function runDayDiscuss(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
+  void _language
   // Each alive non-revealed-idiot speaks once in main channel.
   // Sheriff (if elected) speaks first per legacy convention; rest
   // of order follows snapshot order. Revealed idiots can't vote
@@ -196,11 +200,13 @@ interface CollectHumanDayVoteInput {
   readonly voterName: string
   readonly cycleStr: string
   readonly targetsList: readonly string[]
+  readonly language: WerewolfLanguage
 }
 
 async function collectHumanDayVote(
   input: CollectHumanDayVoteInput,
 ): Promise<readonly [string, HumanDayVotePayload]> {
+  const S = werewolfStrings(input.language)
   // workflow-body helper — `using` + `Promise.race` work because
   // we inherit the caller's 'use workflow' context.
   using hook = createHook<HumanDayVotePayload>({
@@ -219,7 +225,7 @@ async function collectHumanDayVote(
     // 'skip' in the schema => abstain in tally.
     decision = {
       target: 'skip',
-      reason: '(human seat timed out after 45s — auto-abstain)',
+      reason: S.humanTimeoutAbstain,
     }
   } else {
     // Defense-in-depth: validate payload shape. The endpoint should
@@ -241,7 +247,7 @@ async function collectHumanDayVote(
     roomId: input.roomId,
     agentId: input.voterId,
     agentName: input.voterName,
-    content: `Votes for **${decision.target}**: ${decision.reason ?? ''}`,
+    content: S.voteCast(decision.target, decision.reason ?? ''),
     channelId: 'day-vote',
     phaseTag: PHASE_TAGS.dayVote,
     cycleId: input.cycleStr,
@@ -257,7 +263,9 @@ export async function runDayVote(
   roomId: string,
   agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  language: WerewolfLanguage,
 ): Promise<void> {
+  const S = werewolfStrings(language)
   // Voters: alive players except revealed idiots (idiot survives
   // first elimination but loses voting rights — 白痴 rule).
   const revealedSet = new Set(state.idiotRevealedIds)
@@ -313,7 +321,7 @@ export async function runDayVote(
       roomId,
       agentId: voterId,
       agentName: agent.name,
-      content: `Votes for **${decision.target}**: ${decision.reason}`,
+      content: S.voteCast(decision.target, decision.reason),
       channelId: 'day-vote',
       phaseTag: PHASE_TAGS.dayVote,
       cycleId: cycle,
@@ -338,6 +346,7 @@ export async function runDayVote(
   const humanPromises = humanVoters.map((voterId) =>
     collectHumanDayVote({
       roomId,
+      language,
       nightNumber: state.nightNumber,
       voterId,
       voterName: state.agentNames[voterId] ?? voterId,
@@ -387,7 +396,7 @@ export async function runDayVote(
   const winnerId = tally.winnerId
 
   if (winnerId === null) {
-    announcement = `Vote: ${tallyStr}. No majority — 平安日 (peaceful day).`
+    announcement = S.votePeaceful(tallyStr)
   } else if (
     state.advancedRules.idiot &&
     state.roleMap[winnerId] === 'idiot' &&
@@ -395,7 +404,7 @@ export async function runDayVote(
   ) {
     nextIdiotRevealed = [...state.idiotRevealedIds, winnerId]
     const name = state.agentNames[winnerId] ?? winnerId
-    announcement = `Vote: ${tallyStr}. **${name}** was voted out — but reveals they are the **Village Idiot**! They survive but lose voting rights.`
+    announcement = S.voteIdiotReveal(tallyStr, name)
   } else {
     // Normal elimination
     if (state.roleMap[winnerId] === 'hunter') {
@@ -412,7 +421,8 @@ export async function runDayVote(
     }
     const name = state.agentNames[winnerId] ?? winnerId
     const role = state.roleMap[winnerId] ?? '?'
-    announcement = `Vote: ${tallyStr}. **${name}** eliminated. They were a **${role}**.`
+    const localizedRole = role === '?' ? role : S.roleLabel(role as WerewolfRole)
+    announcement = S.voteEliminated(tallyStr, name, localizedRole)
   }
 
   await emitPhaseAnnouncement({
@@ -473,7 +483,9 @@ export async function runCheckWinAfterNight(
   roomId: string,
   _agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
+  void _language
   // Trivial routing step. winResult was set by dawn (or by
   // hunterShoot/sheriffTransfer if those ran). If win, terminate.
   // Else go to dayDiscuss (or sheriffGate Day 1 if rule enabled).
@@ -507,7 +519,9 @@ export async function runCheckWinAfterVote(
   roomId: string,
   _agents: readonly WerewolfAgentSnapshot[],
   state: WerewolfPersistedState,
+  _language: WerewolfLanguage,
 ): Promise<void> {
+  void _language
   // Same shape as runCheckWinAfterNight but routes back to night
   // entry on continue.
   if (state.winResult === 'werewolves_win') {
