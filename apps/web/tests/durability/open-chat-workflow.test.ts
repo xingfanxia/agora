@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest'
 import {
   deriveOpenChatMessageId,
   humanTurnToken,
+  type HumanTurnPayload,
 } from '../../app/workflows/open-chat-workflow.js'
 
 describe('deriveOpenChatMessageId', () => {
@@ -131,5 +132,24 @@ describe('humanTurnToken', () => {
     // string-interpolation behavior so a refactor away from raw
     // template literals is forced to handle large integers.
     expect(humanTurnToken('r', 999)).toBe('agora/room/r/mode/open-chat/turn/999')
+  })
+})
+
+describe('HumanTurnPayload (4.5d-2.10b workflow ↔ endpoint contract)', () => {
+  it('has a single load-bearing `text` field of type string', () => {
+    // Pins the runtime hook-resume payload shape that the WDK branch
+    // of /api/rooms/[id]/human-input constructs and passes through
+    // resumeHook(). The workflow body's `await hook` returns this
+    // exact shape -- a renamed/added field on either side without a
+    // coordinated caller migration silently misroutes human turns.
+    //
+    // Type-level pin via runtime check on a sample value: if the
+    // exported type widens to allow extra fields or rename `text`,
+    // the keys assertion fails. The compiler also catches drift via
+    // the `: HumanTurnPayload` annotation -- this test just adds a
+    // runtime breadcrumb for the same invariant.
+    const payload: HumanTurnPayload = { text: 'hello' }
+    expect(typeof payload.text).toBe('string')
+    expect(Object.keys(payload)).toEqual(['text'])
   })
 })

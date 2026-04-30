@@ -3,21 +3,39 @@
 // ============================================================
 //
 // Phase 4.5c — Accept human player input and resume the tick chain.
+// Phase 4.5d-2.10b — WDK runtime branch via resumeHook.
 //
-// Flow:
+// Flow (legacy http_chain):
 //   1. Validate room is in 'waiting' state and agentId matches waitingForHuman
 //   2. Insert the human's message as a regular message:created event
 //   3. Set room status back to 'running'
 //   4. Fire the next tick via waitUntil(fetch(/api/rooms/tick))
+//
+// Flow (WDK, mode='open-chat'):
+//   1. Same validation (room.status='waiting', gameState.waitingForHuman)
+//   2. Same authZ (Bearer seat-token OR owner session)
+//   3. Read gameState.waitingForTurnIdx (set by workflow's
+//      markWaitingForHuman step)
+//   4. Reconstruct `humanTurnToken(roomId, turnIdx)` and call
+//      `resumeHook(token, { text })`. The workflow itself owns
+//      persistence + status update on resume.
+//
+// Other WDK + human modes (werewolf TBD) are rejected with 501
+// until they ship their own token namespace and dispatch entry.
 //
 // The human's message is indistinguishable from an AI message in the
 // event stream — same schema, same replay semantics.
 
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
+import { resumeHook } from 'workflow/api'
 import { getRoom, updateRoomStatus, appendEvent, getEventCount } from '../../../../lib/room-store'
 import { getAuthUser } from '../../../../lib/supabase-server'
 import { verifySeatToken } from '../../../../lib/seat-tokens'
+import {
+  humanTurnToken as openChatHumanTurnToken,
+  type HumanTurnPayload,
+} from '../../../../workflows/open-chat-workflow'
 
 export const dynamic = 'force-dynamic'
 
@@ -73,9 +91,15 @@ export async function POST(
   }
 
   const { agentId, turnId, payload } = body
-  if (!agentId || !turnId || !payload) {
+  // agentId + payload are required by both runtimes. turnId is the
+  // legacy http_chain branch's discriminator for resolveHumanMessage's
+  // switch (see bottom of this file); the WDK branch reads turnIdx
+  // from gameState.waitingForTurnIdx instead and ignores turnId.
+  // Validating turnId only when it's actually used keeps the WDK
+  // contract from leaking a confusing legacy field requirement.
+  if (!agentId || !payload) {
     return NextResponse.json(
-      { error: 'Missing required fields: agentId, turnId, payload' },
+      { error: 'Missing required fields: agentId, payload' },
       { status: 400 },
     )
   }
@@ -106,6 +130,94 @@ export async function POST(
     return NextResponse.json(
       { error: 'Missing or invalid seat token' },
       { status: 401 },
+    )
+  }
+
+  // ── WDK branch (4.5d-2.10b) ─────────────────────────────────
+  //
+  // For WDK rooms, the workflow itself owns persistence + status
+  // transitions. We just resume the hook the workflow is paused on.
+  // The workflow's persistHumanMessage step writes the message:created
+  // event after resume; markRunningAgain step flips status back.
+  //
+  // This branch runs AFTER state-validation and authZ. Same checks as
+  // legacy: status='waiting', gameState.waitingForHuman===agentId.
+  if (roomRow.runtime === 'wdk') {
+    // Mode dispatch: only open-chat ships WDK + human-seat support
+    // today. Werewolf and future modes will register their own token
+    // namespace under `mode/<mode-name>/` and gain a dispatch arm.
+    if (roomRow.modeId !== 'open-chat') {
+      return NextResponse.json(
+        {
+          error:
+            `WDK runtime + human seats not yet supported for mode '${roomRow.modeId}'`,
+        },
+        { status: 501 },
+      )
+    }
+
+    // Defense-in-depth: validate text BEFORE calling resumeHook so a
+    // bad payload doesn't push the workflow into FatalError → room
+    // 'error' state. The workflow body has its own non-empty check
+    // for resumes triggered by other tooling (Vercel dashboard,
+    // scripts), but we should fail cleanly here for endpoint callers.
+    const text = typeof payload.content === 'string' ? payload.content.trim() : ''
+    if (text.length === 0) {
+      return NextResponse.json(
+        { error: 'WDK human-input requires non-empty payload.content' },
+        { status: 400 },
+      )
+    }
+
+    // turnIdx is the workflow loop index, written by the workflow's
+    // markWaitingForHuman step into gameState.waitingForTurnIdx
+    // alongside waitingForHuman. The endpoint cannot derive it
+    // independently (would have to parse events to count turns),
+    // so the workflow → endpoint contract is: workflow writes the
+    // breadcrumb, endpoint reads it. A missing field means the
+    // workflow paused without setting state correctly -- 500, not
+    // 400, since this is a server-side invariant violation.
+    const gs = roomRow.gameState as { waitingForTurnIdx?: unknown } | null
+    const turnIdx = gs?.waitingForTurnIdx
+    if (typeof turnIdx !== 'number' || !Number.isInteger(turnIdx) || turnIdx < 0) {
+      return NextResponse.json(
+        { error: 'gameState.waitingForTurnIdx missing or invalid' },
+        { status: 500 },
+      )
+    }
+
+    const token = openChatHumanTurnToken(roomId, turnIdx)
+    const hookPayload: HumanTurnPayload = { text }
+
+    try {
+      await resumeHook(token, hookPayload)
+    } catch (resumeErr) {
+      // resumeHook throws if the hook isn't currently registered
+      // (workflow not paused at this token, or already resumed).
+      // Don't leak the WDK error message verbatim -- it can include
+      // run ids that aren't useful to clients.
+      console.error(
+        `[human-input wdk] resumeHook failed for ${token}:`,
+        resumeErr,
+      )
+      return NextResponse.json(
+        { error: 'Failed to resume workflow at this turn' },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ ok: true, runtime: 'wdk' })
+  }
+
+  // ── Legacy http_chain branch (default) ───────────────────────
+
+  // turnId discriminates the legacy `resolveHumanMessage` switch
+  // (channel + payload-shape per game phase). Required only on this
+  // branch -- the WDK branch above derives turnIdx from gameState.
+  if (!turnId) {
+    return NextResponse.json(
+      { error: 'Missing required field: turnId (http_chain runtime)' },
+      { status: 400 },
     )
   }
 

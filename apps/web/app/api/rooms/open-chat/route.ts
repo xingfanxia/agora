@@ -105,29 +105,13 @@ export async function POST(request: NextRequest) {
   }
   const createdBy = auth.id
 
-  // Default to http_chain for now -- the cross-runtime equivalence
-  // test from 4.5d-2.8 covers roundtable but NOT open-chat (the
-  // human-seat hook resume path needs its own integration test).
-  // Caller can opt into wdk explicitly; flip to default 'wdk' once
-  // open-chat equivalence is proven AND the WDK human-input
-  // endpoint (4.5d-2.10b) is in place.
+  // Default to http_chain for now -- callers can opt into 'wdk'
+  // explicitly. Default flip awaits the open-chat cross-runtime
+  // equivalence integration test (added in 4.5d-2.10b) running
+  // green in CI for a soak window. WDK + humans is now supported
+  // (4.5d-2.10b shipped the resumeHook branch in the human-input
+  // endpoint).
   const runtime: 'http_chain' | 'wdk' = body.runtime === 'wdk' ? 'wdk' : 'http_chain'
-
-  // Pre-flight check for WDK humans: WDK supports human seats via
-  // createHook, but the resumeHook caller (the human-input endpoint)
-  // doesn't have a WDK branch yet (4.5d-2.10b). Reject WDK + humans
-  // for now so a misconfigured client doesn't create a room that
-  // appears to start but blocks indefinitely on the first human turn.
-  // AI-only WDK rooms work today.
-  if (runtime === 'wdk' && humanSeatIds.size > 0) {
-    return NextResponse.json(
-      {
-        error:
-          'WDK runtime does not yet support human seats for open-chat. Use http_chain or wait for 4.5d-2.10b.',
-      },
-      { status: 400 },
-    )
-  }
 
   await createRoom({
     id: roomId,

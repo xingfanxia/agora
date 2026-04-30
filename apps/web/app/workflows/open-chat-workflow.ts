@@ -62,8 +62,10 @@ import {
   getEventCount,
   getEventsSince,
   getMessagesSince,
+  getRoom,
   refreshMessageCount,
   refreshRoomTokenAggregates as bumpRoomTokenAggregates,
+  setGameState,
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
@@ -225,10 +227,33 @@ export async function openChatWorkflow(
         // registered, instead of holding all 12*10=120 tokens for
         // the entire workflow lifetime. Per WDK's docs/foundations
         // /hooks.mdx best practice for short-lived hooks.
+        //
+        // ORDERING IS LOAD-BEARING:
+        //   1. createHook FIRST (synchronous primitive -- registers
+        //      the token in the workflow runtime's hook storage)
+        //   2. markWaitingForHuman SECOND (writes status='waiting'
+        //      + gameState.waitingForHuman / waitingForTurnIdx)
+        //   3. await hook
+        //
+        // If markWaitingForHuman ran first, a poll-based caller (UI
+        // refresh or in-process test) sees status='waiting' before
+        // the hook is registered. resumeHook called in that window
+        // throws HookNotFoundError. Reversing the order closes the
+        // race -- by the time status='waiting' is observable, the
+        // hook is already in storage and resumeHook succeeds even
+        // if it fires before the workflow body actually awaits.
+        //
+        // The UI contract `status === 'waiting' && gameState
+        // .waitingForHuman` (HumanPlayBar.tsx:44) holds: cleared
+        // by markRunningAgain AFTER persistHumanMessage on the
+        // happy path. On error, the outer catch's markRoomError
+        // sets status='error' which overrides any stale waiting
+        // fields in the UI's isMyTurn check.
         {
           using hook = createHook<HumanTurnPayload>({
             token: humanTurnToken(roomId, turnIdx),
           })
+          await markWaitingForHuman({ roomId, agentId: agent.id, turnIdx })
           const event = await hook
 
           // Defense-in-depth: the human-input endpoint (4.5d-2.10
@@ -253,6 +278,7 @@ export async function openChatWorkflow(
             content: event.text,
           })
         }
+        await markRunningAgain({ roomId })
       } else {
         // AI seat: same three-step shape as roundtable. Step 1 caches
         // the LLM result; step 2's retry doesn't re-invoke the LLM.
@@ -314,7 +340,17 @@ const ALLOWED_PROVIDERS: readonly LLMProvider[] = [
   'deepseek',
 ]
 
-interface HumanTurnPayload {
+/**
+ * Payload shape for a human-seat hook resume.
+ *
+ * LOAD-BEARING: external resumers (`/api/rooms/[id]/human-input`)
+ * construct this exact shape and pass it to `resumeHook`. The
+ * workflow body's `await hook` returns the same shape. A drift here
+ * silently misroutes the human turn -- the workflow's defense-in-
+ * depth check (text non-empty) catches the missing-field case but
+ * not a renamed field. Exported so callers share the type.
+ */
+export interface HumanTurnPayload {
   /** The human's typed message. */
   readonly text: string
 }
@@ -545,6 +581,109 @@ async function markRoomError(input: MarkRoomErrorInput): Promise<void> {
   // Same idempotency + sustained-DB-outage semantics as roundtable's
   // markRoomError. See that file for the full rationale.
   await updateRoomStatus(input.roomId, 'error', input.message)
+}
+
+interface MarkWaitingForHumanInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly turnIdx: number
+}
+
+/**
+ * Mark the room as awaiting a specific human seat's input.
+ *
+ * Writes BOTH `gameState.waitingForHuman` (legacy UI contract --
+ * `HumanPlayBar.tsx:44` reads this with `room.status === 'waiting'`)
+ * AND `gameState.waitingForTurnIdx` (new for WDK -- the human-input
+ * endpoint reads it to reconstruct `humanTurnToken(roomId, turnIdx)`
+ * before calling `resumeHook`).
+ *
+ * Read-merge pattern preserves topic / totalTurns / leaderAgentId
+ * that the open-chat creation route wrote at room-init. setGameState
+ * OVERWRITES the JSONB column, so a partial write would clobber.
+ *
+ * IDEMPOTENT: replay re-runs read+merge with the same input ->
+ * same output. waitingSince is captured INSIDE the step body, so
+ * WDK's step-result cache pins it on first success and replay
+ * returns the cached result without re-reading the clock.
+ */
+async function markWaitingForHuman(
+  input: MarkWaitingForHumanInput,
+): Promise<void> {
+  'use step'
+  const { roomId, agentId, turnIdx } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markWaitingForHuman: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+
+  // ORDERING INVARIANT: setGameState (gameState.waitingForHuman /
+  // waitingForTurnIdx / waitingSince) MUST commit BEFORE
+  // updateRoomStatus(..., 'waiting'). The /api/rooms/[id]/human-input
+  // endpoint validates `room.status === 'waiting'` first, then reads
+  // `gameState.waitingForTurnIdx` to reconstruct the hook token.
+  // Reversing the writes opens a window where status='waiting' is
+  // observable but the breadcrumb isn't yet committed -- the endpoint
+  // would 500 on missing waitingForTurnIdx.
+  //
+  // Crash safety: a crash AFTER setGameState but BEFORE
+  // updateRoomStatus leaves status='running' with the breadcrumb
+  // partially written. The endpoint sees status='running' (returns
+  // 409 -- correct, room not yet waiting). On WDK retry the step
+  // re-runs both writes with the same args -- read-merge produces
+  // the same output, setGameState overwrites with identical content,
+  // updateRoomStatus is idempotent. No data corruption.
+  await setGameState(roomId, {
+    ...existing,
+    waitingForHuman: agentId,
+    waitingForTurnIdx: turnIdx,
+    waitingSince: Date.now(),
+  })
+  await updateRoomStatus(roomId, 'waiting')
+}
+
+interface MarkRunningAgainInput {
+  readonly roomId: string
+}
+
+/**
+ * Clear the waiting-for-human breadcrumb and return to 'running'.
+ *
+ * Inverse of markWaitingForHuman. Strips waitingForHuman /
+ * waitingForTurnIdx / waitingSince from gameState; preserves
+ * topic / totalTurns / leaderAgentId. Sets status='running' so
+ * the next turn (AI or human) renders correctly in the UI.
+ *
+ * Called only on the happy path (after persistHumanMessage). On
+ * error the outer try/catch's markRoomError sets status='error'
+ * which overrides waitingForHuman in the UI's isMyTurn check.
+ *
+ * IDEMPOTENT: replay re-strips already-stripped keys (no-op).
+ */
+async function markRunningAgain(
+  input: MarkRunningAgainInput,
+): Promise<void> {
+  'use step'
+  const { roomId } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markRunningAgain: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+  const {
+    waitingForHuman: _h,
+    waitingForTurnIdx: _t,
+    waitingSince: _s,
+    ...preserved
+  } = existing
+  void _h
+  void _t
+  void _s
+  await setGameState(roomId, preserved)
+  await updateRoomStatus(roomId, 'running')
 }
 
 // ── Helpers (compile-time consumers) ───────────────────────
