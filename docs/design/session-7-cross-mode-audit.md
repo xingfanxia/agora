@@ -66,8 +66,10 @@ Full pipeline works.
 - This document.
 - One-line picker conditional in `rooms/new/page.tsx`.
 
+## Update — 2026-04-30 (later same session)
+
+The "Roundtable Humans Gap" section above became actionable: P2 closed both gaps (silently-dropped `humanSeatIds` AND missing workflow `isHuman` branch). The picker stopgap added in this audit was reverted in P2's wave 4. See PR #1 (https://github.com/xingfanxia/agora/pull/1) and `docs/design/session-7-handoff.md` for the full P2 description.
+
 ## Resume order for next session
 
-1. P1 (loading-state indicator) — applies to all three modes. Werewolf + open-chat will benefit; roundtable benefits even though it's AI-only.
-2. P2 (multi-human ready-up gate) — bundle the roundtable-humans add into this phase since P2 is the lobby infrastructure that all modes use.
-3. P3, P4, P5 in order.
+P1 + P2 already shipped. Next priority queue: P3 (human display name) → P4 (sidebar refactor) → P5 (localize private-channel werewolf messages). See `docs/design/session-7-handoff.md`.
