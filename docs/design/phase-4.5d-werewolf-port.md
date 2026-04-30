@@ -1,10 +1,12 @@
 # Phase 4.5d-2.12+ — Werewolf WDK Port
 
-> Working design memo. Sequences the werewolf → WDK migration after roundtable + open-chat completed. As of 2026-04-29: not started, scaffolding only.
+> Working design memo. Sequences werewolf → WDK migration. As of 2026-04-29: not started, scaffolding only.
+>
+> **Operating context (2026-04-29):** Agora has zero users. Validation = play actual games end-to-end in dev. Once a WDK path works for a mode, the legacy http_chain path for that mode is **deleted**, not preserved as opt-out. No soak windows, no canary rollouts, no cross-runtime equivalence tests for new modes. Integration tests stay valuable as fast feedback but they are not gating.
 
 ## Context
 
-Roundtable and open-chat ship via the durable WDK runtime as of `a4e9045`. Werewolf is the last mode still bound entirely to the legacy `http_chain` tick path. Until ported, werewolf rooms cannot benefit from the durability contract (no terminal-error guard, no schema-level idempotency, no cross-runtime equivalence guarantees).
+Roundtable and open-chat ship via the durable WDK runtime as of `a4e9045`. Werewolf is the last mode still bound entirely to the legacy `http_chain` tick path. Once werewolf's WDK port works, the entire `http_chain` infrastructure (the `runtime` column on `rooms`, `room-runtime.ts:advanceWerewolfRoom` / `advanceOpenChatRoom`, the cron tick sweeper for non-WDK rooms, `room-store-memory.ts` + cross-runtime equivalence tests, the `body.runtime` opt-out parameter on creation routes) becomes deletable.
 
 Werewolf is qualitatively harder than the previous two modes:
 
@@ -12,86 +14,76 @@ Werewolf is qualitatively harder than the previous two modes:
 |---|---|---|
 | Speaker selection | Round-robin | Phase-driven state machine (8+ phases) |
 | LLM output shape | Plain text | Structured (Zod-typed votes / actions) |
-| Human pause | One seat at a time | Multiple humans vote in parallel |
+| Human pause | One seat at a time | Multiple humans vote in parallel during day-vote |
 | Timeouts | None — wait indefinitely | Grace window via `sleep(...)`, fall back on offline humans |
 | Game state | Just turn counter | Roles, eliminations, witch potions, sheriff badge, guard last-protected, ... |
-| Determinism boundary | LLM hash | LLM hash + seeded role assignment + `crypto.randomUUID` replacement |
 
-## Existing utilities (good news — most of what we need already exists)
+## Existing utilities (most of what we need already exists)
 
 | What | Where | Status |
 |---|---|---|
 | Mode fallback registry | `packages/modes/src/fallback-policies.ts` | ✓ Complete. `getFallback('werewolf', 'day-vote')` returns `{ kind: 'abstain' }` |
 | Seat presence (Postgres) | `apps/web/app/lib/presence.ts` | ✓ Complete. `getPresence` + `isOnline(presence, graceMs, now)` are pure helpers |
-| Seeded role assignment | `packages/modes/src/werewolf/index.ts:assignRoles` | ✓ Deterministic (`createSeededPrng`) |
+| Seeded role assignment | `packages/modes/src/werewolf/index.ts:assignRoles` | ✓ Deterministic |
 | Decision schemas (Zod) | `packages/modes/src/werewolf/types.ts` | ✓ Day-vote, wolf-vote, witch-action, seer-check, hunter-shoot, guard-protect, sheriff schemas |
-| Vote tally helper | `packages/modes/src/werewolf/phases.ts:tallyVotes` | ✓ Reusable, mode-agnostic — just lift it out |
-| WDK `sleep` primitive | `workflow/sleep.d.ts` | ✓ Three overloads (string duration / Date / ms) |
+| Vote tally helper | `packages/modes/src/werewolf/phases.ts:tallyVotes` | ✓ Lift to a shared helper module |
+| Real `createGenerateObjectFn` | `packages/llm/src/generate.ts:173` | ✓ Vercel AI SDK `generateObject` wrapper |
+| WDK `sleep` primitive | `workflow/sleep.d.ts` | ✓ Three overloads (string / Date / ms) |
 | WDK `createHook` | `workflow` | ✓ Used in open-chat already |
-| `Promise.race` against sleep | — | ❓ Pattern is in the original 4.5d-2 plan sketch but never validated end-to-end. The 4.5d-2.0 spike validated `createHook` alone, NOT the race |
 
 ## Missing utilities
 
-1. **Structured-output WDK step adapter** — equivalent of `generateAgentReply` but using `generateObjectFn` (Zod schema → typed decision). New step + new entry in `llm-factory.ts`.
+1. **Structured-output LLM factory wrapper** — `apps/web/app/lib/llm-factory.ts` already wraps `createGenerateFn` with the WORKFLOW_TEST mock seam. Add `createGenerateObjectFnFromFactory` that wraps `@agora/llm`'s `createGenerateObjectFn`. **No mock needed for the new factory** — validation is real games, not equivalence tests. If WORKFLOW_TEST=1 fires for some other test path, the factory can throw a clear error rather than silently mocking.
 
-2. **Structured-output mock for `WORKFLOW_TEST=1`** — `llm-factory.ts:createGenerateFn` returns deterministic mock TEXT for the LLM. There's no `createGenerateObjectFn` mock today. Need a deterministic mock that returns a Zod-valid object based on hashed inputs (e.g., for day-vote pick the first allowed target).
+2. **`generateAgentDecision` step** — workflow step that takes (provider, model, systemPrompt, history, schema, instruction) and returns the structured object via `generateObjectFn`. New step in `apps/web/app/workflows/werewolf-workflow.ts`.
 
-3. **Mode-fallback dispatch step** — adapts a `FallbackAction` (kind: 'abstain' / 'skip' / etc.) into a vote payload. Pure logic, ~30 lines, but should be a step so retries get the cached result.
+3. **Mode-fallback dispatch helper** — adapts a `FallbackAction` (kind: 'abstain' / 'skip' / etc.) into a vote payload appropriate to the phase. Pure logic, no I/O. Step or inline helper.
 
-4. **Game-state rehydration helper** — `apps/web/app/lib/room-runtime.ts:rehydrateWerewolfFromDb` currently rehydrates a `StateMachineFlow`. WDK doesn't use `StateMachineFlow` — its replay is automatic via step-result cache. But the workflow body still needs to load roles + eliminations + last-night state from events on cold start. New helper.
+4. **Game-state derivation helper** — pure helper that takes the events log (since reset) and reconstructs the werewolf state (roles, eliminations, witch potions, etc.). Replaces `rehydrateWerewolfFromDb` from `room-runtime.ts`. WDK doesn't need rehydration — its replay is automatic — but the workflow body needs to compute the state to drive phase transitions. Read DB once at the start of each phase rather than threading state through every step.
 
 ## Sub-phase ladder
 
 > Numbering continues from `2.11` (last shipped). Each row is one PR / commit.
 
-| Sub-phase | Scope | Risk | Est |
-|---|---|---|---|
-| **2.12** | Structured-output infrastructure: extend `llm-factory.ts` with `createGenerateObjectFn` (real + WORKFLOW_TEST=1 mock), add format-pinning unit tests | Low — mirrors `createGenerateFn` | ~2h |
-| **2.13** | `generateAgentDecision` step + `applyFallback` step + tally helper, all in a new `apps/web/app/workflows/werewolf-day-vote-workflow.ts`. No persistence yet. | Low | ~2h |
-| **2.14-spike** | Day-vote workflow standalone (NOT integrated into full werewolf game). Wires AI fan-in + human `createHook` + `sleep` race + fallback. Integration tests via @workflow/vitest: all-AI / mixed in-time / mixed timeout. **Validates the binding meta-invariant for werewolf: parallel-human-votes-with-grace-window can be expressed in WDK at all.** | **HIGH** — first time `Promise.race(hook, sleep)` is validated in this project | ~4h |
-| **2.15** | Night phases — wolfDiscuss (chat) / wolfVote / witchAction / seerCheck / guardProtect. Sequential per-phase, easier than day-vote. | Medium | ~3h |
-| **2.16** | Dawn computation phase + day-discuss chat + last-words. | Low — follows established patterns | ~2h |
-| **2.17** | Hunter / sheriff / idiot mechanics. Triggered phases (hunter only fires on death). | Medium — conditional flow | ~3h |
-| **2.18** | Full game integration — single workflow body that orchestrates all phases via TS switch on `currentPhase`. Replaces `advanceWerewolfRoom`. Migration 0010 already covers the events table. Werewolf API route gets `runtime: 'wdk'` branch. | Medium-high — integration risk | ~4h |
-| **2.19** | Werewolf cross-runtime equivalence test. AI-only flow (skip humans). Mirrors the open-chat / roundtable allowlist. | Medium — werewolf has more event divergences | ~2h |
-| **2.20** | Default flip to `runtime: 'wdk'` for werewolf. After soak. | Low | ~1h |
+| Sub-phase | Scope |
+|---|---|
+| **2.12** | Structured-output factory: `createGenerateObjectFnFromFactory` in `llm-factory.ts`. No mock. ~50 lines + smoke test. |
+| **2.13** | `apps/web/app/workflows/werewolf-workflow.ts` skeleton: workflow body with phase-loop dispatch (`switch (currentPhase)`), `generateAgentDecision` step, `applyFallback` helper, vote-tally helper lifted from `packages/modes/src/werewolf/phases.ts`. No phase logic yet. |
+| **2.14** | All NIGHT phases: `wolfDiscuss` (chat), `wolfVote` (structured), `witchAction` (structured), `seerCheck` (structured), `guardProtect` (structured). Sequential per-phase — easier than day-vote. Includes `dawn` computation phase (no speakers, just resolves wolf-kill + witch-poison + guard-saves and emits announcements). |
+| **2.15** | DAY phases: `daySpeak` (round-robin chat), `dayVote` (the parallel hybrid AI+human vote with `Promise.race(hook, sleep)` for grace window), `lastWords` (chat for eliminated). Day-vote is the load-bearing piece; if `Promise.race(hook, sleep)` doesn't work in WDK as expected, this is where we find out. |
+| **2.16** | Triggered phases: `hunterShoot` (fires on hunter death), `sheriffElection` (day 1), `sheriffTransfer` (sheriff death), idiot reveal mechanics. |
+| **2.17** | API integration: `apps/web/app/api/rooms/werewolf/route.ts` constructs the WDK snapshot and calls `start(werewolfWorkflow, [...])`. **Default to wdk; no `body.runtime` opt-out.** |
+| **2.18** | **Delete legacy** — remove `room-runtime.ts:advanceWerewolfRoom`, `room-runtime.ts:advanceOpenChatRoom`, `room-runtime.ts:rehydrateWerewolfFromDb`, the http_chain branches in `apps/web/app/api/rooms/route.ts` + `apps/web/app/api/rooms/open-chat/route.ts`, the `body.runtime` parameter, the `cron tick-all` sweeper for non-WDK rooms, and the `runtime` column on rooms (drizzle migration 0011: drop column). Plus drop `room-store-memory.ts` + cross-runtime equivalence tests + `WORKFLOW_TEST` env mock paths if no longer needed for any active test. |
 
-**Total estimate**: ~23 hours of focused work. Realistic calendar: 4-6 sessions.
+After 2.18 lands: WDK is the only runtime. The phrase "http_chain" is gone from the codebase.
 
-## 2.14-spike: detailed design
-
-This is the load-bearing sub-phase. If it doesn't work, the entire sequence stops. Worth designing in detail upfront.
+## 2.15 day-vote — detailed design (the load-bearing piece)
 
 ### Workflow body shape
 
 ```ts
-// apps/web/app/workflows/werewolf-day-vote-workflow.ts
+// apps/web/app/workflows/werewolf-workflow.ts (excerpt)
 
 import { createHook, sleep, FatalError } from 'workflow'
-import { z } from 'zod'
+
+const DAY_VOTE_GRACE_MS = 45_000  // 45s per human seat
 
 interface DayVoteInput {
   readonly roomId: string
-  readonly nightNumber: number  // for namespacing the hook tokens
-  readonly aliveSeats: readonly Seat[]  // both AI and human
+  readonly nightNumber: number  // for hook-token namespacing
+  readonly aliveSeats: readonly Seat[]
   readonly aliveTargetNames: readonly string[]
-  readonly graceMs: number  // typically 60_000
 }
 
-interface DayVoteResult {
-  readonly winnerId: string | null
-  readonly tally: Record<string, number>
-}
-
-export async function dayVoteWorkflow(input: DayVoteInput): Promise<DayVoteResult> {
-  'use workflow'
-
+async function runDayVote(input: DayVoteInput): Promise<DayVoteResult> {
+  // (called from the workflow body — inherits 'use workflow' context)
   const aiSeats = input.aliveSeats.filter(s => !s.isHuman)
   const humanSeats = input.aliveSeats.filter(s => s.isHuman)
 
-  // (1) AI votes — parallel within the workflow body. Each is a step.
-  // Parallelism is at the workflow level: the runtime can interleave step
-  // execution. Step idempotency means each retry recomputes the same vote.
+  // (1) AI votes — workflow-level Promise.all over step calls. Each retry
+  // recomputes deterministically (LLM hash mock in tests, real LLM at
+  // runtime — but real LLM is fine, replay won't re-call it because step
+  // result is cached).
   const aiVotes: VoteRecord[] = await Promise.all(
     aiSeats.map(seat => generateDayVoteDecision({
       roomId: input.roomId,
@@ -105,123 +97,95 @@ export async function dayVoteWorkflow(input: DayVoteInput): Promise<DayVoteResul
   )
 
   // (2) Human votes — each gets a hook + sleep race.
-  // The createHook is registered as a workflow primitive; the race uses
-  // sleep() from 'workflow' (durable across workflow restarts).
-  const humanResults: VoteRecord[] = await Promise.all(
-    humanSeats.map(seat => collectHumanVote(
+  const humanVotes: VoteRecord[] = await Promise.all(
+    humanSeats.map(seat => collectHumanDayVote(
       input.roomId,
       input.nightNumber,
       seat,
-      input.graceMs,
     ))
   )
 
-  // (3) Persist all votes as message:created events
-  // Each is a step so retries dedupe via deterministic message id
-  // (`wd-${roomId}-n${nightNumber}-${seatId}`).
-  for (const vote of [...aiVotes, ...humanResults]) {
-    await persistVoteMessage({ roomId: input.roomId, nightNumber: input.nightNumber, vote })
+  // (3) Persist all votes — each is a step with deterministic message id
+  // (`wd-${roomId}-n${nightNumber}-${seatId}`) so retries dedupe at
+  // events_message_id_uq.
+  for (const vote of [...aiVotes, ...humanVotes]) {
+    await persistVoteMessage({
+      roomId: input.roomId,
+      nightNumber: input.nightNumber,
+      vote,
+    })
   }
 
-  // (4) Tally — pure helper, no I/O
-  const result = tallyVotes([...aiVotes, ...humanResults])
-  return result
+  return tallyVotes([...aiVotes, ...humanVotes], aliveSeats)
 }
 
-async function collectHumanVote(
+async function collectHumanDayVote(
   roomId: string,
   nightNumber: number,
   seat: Seat,
-  graceMs: number,
 ): Promise<VoteRecord> {
-  // 'use workflow' is INHERITED — this is a workflow-body helper, NOT a
-  // step. It uses createHook + sleep which are workflow primitives.
-
+  // Workflow-body helper. createHook + sleep are workflow primitives.
   using hook = createHook<HumanDayVotePayload>({
     token: dayVoteToken(roomId, nightNumber, seat.id),
   })
 
   const TIMEOUT = Symbol('timeout')
-  const winner = await Promise.race([
-    hook.then(p => p),
-    sleep(graceMs).then(() => TIMEOUT as typeof TIMEOUT),
+  const result = await Promise.race([
+    hook,
+    sleep(DAY_VOTE_GRACE_MS).then(() => TIMEOUT as typeof TIMEOUT),
   ])
 
-  if (winner === TIMEOUT) {
-    // Fallback: read presence, apply mode policy
-    return await applyHumanFallback({ roomId, nightNumber, seat })
+  if (result === TIMEOUT) {
+    return await applyDayVoteFallback({ roomId, nightNumber, seat })
   }
 
-  return { seatId: seat.id, target: winner.target, reason: winner.reason, source: 'human' }
+  return {
+    seatId: seat.id,
+    target: result.target,
+    reason: result.reason ?? '',
+    source: 'human',
+  }
 }
 ```
 
 ### Token format
-
 ```
 agora/room/${roomId}/mode/werewolf-day-vote/night/${nightNumber}/seat/${seatId}
 ```
 
-- `mode/werewolf-day-vote/` namespace prefix matches the convention from open-chat (`mode/open-chat/`)
-- `night/${nightNumber}/seat/${seatId}` keys per (game-night, seat) so a single werewolf game has DISTINCT tokens for each day-vote across multiple nights
-- Pin the format with a unit test (mirrors `humanTurnToken` pin)
-
 ### Message ID prefix
-
 ```
 wd-${roomId}-n${nightNumber}-${seatId}
 ```
+`wd-` namespace prevents collision with `rt-` (roundtable) and `oc-` (open-chat) on `events_message_id_uq`.
 
-`wd-` prefix avoids collision with `rt-` (roundtable) and `oc-` (open-chat) on `events_message_id_uq`.
+### Open question this validates
+**Does `Promise.race([hook, sleep])` actually work in WDK?** The pattern is in WDK docs but never exercised in this codebase. If the `using hook = createHook(...)` resource-management semantics interact badly with the race (e.g., hook gets disposed while still pending and the race never resolves), we'll find out here. If it doesn't work, fall back to: register hook → start sleep step → if sleep returns first, manually dispose hook + apply fallback. More verbose but explicit.
 
-### `applyHumanFallback` step
+## Validation plan (no equivalence tests)
 
-```ts
-async function applyHumanFallback(input: { roomId, nightNumber, seat }): Promise<VoteRecord> {
-  'use step'
-  const presence = await getPresence(input.roomId, input.seat.id)
-  const online = isOnline(presence)
-  const fallback = getFallback('werewolf', 'day-vote') // { kind: 'abstain' }
+After 2.17 lands, **play actual games**. Suggested matrix:
 
-  // Even if technically online, if they didn't respond within the grace
-  // window, apply the policy. The presence read is for observability /
-  // logging, NOT to override the policy.
-  console.log(`[day-vote fallback] seat=${input.seat.id} online=${online} action=${fallback?.kind}`)
+| Scenario | What to check |
+|---|---|
+| 4 AI vs 1 human, basic 7-role | Night flow correct, day-vote with 1 human votes, win condition fires |
+| 9 AI no human | Pure AI playthrough; sheriff election, hunter trigger, idiot reveal all hit at least once |
+| 2 humans + 7 AI, 1 human goes AFK day 1 | Grace window expires, fallback votes abstain, game continues |
+| Two humans vote simultaneously | Both register; tally is correct |
+| Human disconnects mid-night | Workflow doesn't pause for them at night phases (only day-vote and last-words have human-input) |
 
-  if (!fallback) throw new FatalError(...)
+Each playthrough is the test. Bugs go in a follow-up commit, not a separate phase. After all five scenarios pass at least once, **2.18 starts** (legacy deletion).
 
-  switch (fallback.kind) {
-    case 'abstain':
-      return { seatId: input.seat.id, target: 'skip', reason: 'no response', source: 'fallback' }
-    case 'skip':
-      return { seatId: input.seat.id, target: 'skip', reason: 'no response', source: 'fallback' }
-    // ...
-  }
-}
-```
+## What's intentionally NOT in this plan
 
-### Open questions to resolve in 2.14
+- Cross-runtime equivalence tests (no legacy to compare against once 2.18 lands)
+- `WORKFLOW_TEST=1` mock for `generateObjectFn` (validation = real games)
+- Soak windows / canary rollouts / `body.runtime` opt-out
+- `git revert` rollback paths in commit messages
+- `/schedule` agents to "monitor prod for incidents"
 
-1. **Does `Promise.race(hook, sleep)` actually work in WDK?** The plan sketch assumes yes; not validated. If WDK requires hook + sleep to be separate steps with explicit cancellation, the shape differs.
+## Decisions made
 
-2. **Hook disposal on race-loss** — when `sleep` wins the race, the `using hook` block should still dispose the hook cleanly (TC39 explicit resource management). Verify the disposal happens BEFORE the workflow advances to the next step.
-
-3. **Replay semantics** — if the workflow crashes during day-vote and replays, what happens to:
-   - In-flight AI votes: cached (step result), no re-generation. ✓
-   - Human hooks already resumed: cached event, replays without re-blocking. ✓ (per WDK docs)
-   - Human hooks NOT yet resumed at crash time: re-registered, sleep restarts. ⚠ This means the grace window resets on crash. Is that acceptable? Probably yes — better to give offline-during-crash humans another chance than aggressively fall back.
-
-4. **Test infrastructure** — the open-chat integration tests use a `waitForRoomStatus` polling helper. Day-vote doesn't transition the room to 'waiting' (multiple parallel hooks; no single status). Need a different test pattern: probably register all hooks (via in-process resumeHook calls) BEFORE start(), or check hook storage directly.
-
-## What this memo does NOT cover
-
-- Replay UI compatibility (events-log gap from 4.5d-2.4 still present)
-- Realtime UX events (`agent:thinking`, etc.) — werewolf legacy emits these; WDK doesn't. Acceptable per the durability contract.
-- Werewolf prod deployment / canary
-- Database schema changes — none needed. Migration 0010 already covers the events table for all modes.
-
-## Decision points needing user input before 2.14 starts
-
-1. **Grace window default** — 60s in the plan sketch. Confirm or adjust.
-2. **In-flight game migration** — what happens to legacy werewolf rooms when 2.20 flips the default? They stay on `runtime: 'http_chain'` per the per-room flag (4.5d-1). Confirm this is the policy (no mid-game migration).
-3. **Spike branch vs main** — should 2.12-2.14 land on a spike branch first (like 4.5d-2.0 did) or directly on main? The day-vote workflow can stand alone without breaking production werewolf, so direct-to-main is viable.
+- **Grace window** = 45s (between werewolf-client norms of 30-60s)
+- **Spike branch** = no, direct to main. The new workflow file doesn't break anything until the API route opts in, and the API route only opts in once the workflow works.
+- **In-flight game migration** = nothing to migrate (no users)
