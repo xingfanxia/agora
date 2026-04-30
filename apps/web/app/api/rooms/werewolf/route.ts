@@ -45,6 +45,17 @@ interface PlayerInput {
   name: string
   model: string
   provider?: LLMProvider
+  // No `isHuman` here — public callers can't claim a human seat without
+  // a team-member id. Resolution happens server-side from humanSeatIds.
+}
+
+// Internal post-resolution shape — `isHuman` is decided by the route
+// (from team membership + humanSeatIds), never trusted from input.
+interface ResolvedPlayer {
+  readonly name: string
+  readonly model: string
+  readonly provider?: LLMProvider
+  readonly isHuman: boolean
 }
 
 interface CreateWerewolfBody {
@@ -70,9 +81,11 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as CreateWerewolfBody
 
     // Resolve `players` list either from explicit body or a team.
-    let players: PlayerInput[]
+    // Human-seat resolution is id-keyed throughout — never name-keyed —
+    // so two team members sharing a display name don't both flip to
+    // isHuman.
+    let players: ResolvedPlayer[]
     let teamId: string | null = null
-    const humanPlayerNames = new Set<string>()
     if (body.teamId) {
       const team = await getTeam(body.teamId)
       if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
@@ -84,20 +97,21 @@ export async function POST(request: NextRequest) {
         )
       }
       teamId = team.id
-      players = members.map((m) => ({
-        name: m.agent.name,
-        model: m.agent.modelId,
-        provider: m.agent.modelProvider as LLMProvider,
-      }))
+
+      // Collect human-seat agentIds (id-keyed Set, NOT a name-keyed Set
+      // — see ResolvedPlayer doc-comment).
       const humanSeatAgentIds = new Set<string>()
       if (Array.isArray(body.humanSeatIds)) {
         for (const id of body.humanSeatIds) if (typeof id === 'string') humanSeatAgentIds.add(id)
       }
       if (typeof body.humanSeatId === 'string') humanSeatAgentIds.add(body.humanSeatId)
-      for (const agentId of humanSeatAgentIds) {
-        const humanMember = members.find((m) => m.agentId === agentId)
-        if (humanMember) humanPlayerNames.add(humanMember.agent.name)
-      }
+
+      players = members.map((m) => ({
+        name: m.agent.name,
+        model: m.agent.modelId,
+        provider: m.agent.modelProvider as LLMProvider,
+        isHuman: humanSeatAgentIds.has(m.agentId),
+      }))
     } else {
       if (!body.players || body.players.length < 6 || body.players.length > 12) {
         return NextResponse.json(
@@ -105,7 +119,15 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         )
       }
-      players = body.players
+      // Ad-hoc body.players path doesn't support human seats — the
+      // public PlayerInput shape doesn't accept `isHuman` (would let
+      // callers spoof a human seat without a seat token).
+      players = body.players.map((p) => ({
+        name: p.name,
+        model: p.model,
+        provider: p.provider,
+        isHuman: false,
+      }))
     }
 
     const advancedRules = body.advancedRules ?? {}
@@ -154,7 +176,7 @@ export async function POST(request: NextRequest) {
         name: p.name,
         model: p.model,
         provider: p.provider ?? resolveProvider(p.model),
-        isHuman: humanPlayerNames.has(p.name),
+        isHuman: p.isHuman,
       }
     })
 
@@ -185,9 +207,19 @@ export async function POST(request: NextRequest) {
         systemPrompt,
         role,
         model,
-        isHuman: humanPlayerNames.has(p.name),
+        isHuman: p.isHuman,
       }
     })
+
+    // The room-store column expects Record<string, boolean>. WerewolfAdvancedRules
+    // is currently boolean-only but typed with `?:` (so values are
+    // `boolean | undefined`); filter to a clean payload so any future
+    // non-boolean rule has to be opted in here, not silently widened
+    // through a cast.
+    const advancedRulesPayload: Record<string, boolean> = {}
+    for (const [key, value] of Object.entries(advancedRules)) {
+      if (typeof value === 'boolean') advancedRulesPayload[key] = value
+    }
 
     // Persist the room shell. `runtime: 'wdk'` is load-bearing — the
     // human-input endpoint dispatches on it to use resumeHook instead
@@ -201,7 +233,7 @@ export async function POST(request: NextRequest) {
       modeConfig: { advancedRules, language, playerCount: players.length },
       agents: agentInfos,
       roleAssignments,
-      advancedRules: advancedRules as Record<string, boolean>,
+      advancedRules: advancedRulesPayload,
       teamId,
       createdBy,
       runtime: 'wdk',

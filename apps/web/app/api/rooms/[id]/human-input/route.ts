@@ -3,7 +3,8 @@
 // ============================================================
 //
 // Phase 4.5c — Accept human player input and resume the tick chain.
-// Phase 4.5d-2.10b — WDK runtime branch via resumeHook.
+// Phase 4.5d-2.10b — WDK runtime branch via resumeHook (open-chat).
+// Phase 4.5d-2.17 — WDK werewolf branch via resumeHook (day-vote).
 //
 // Flow (legacy http_chain):
 //   1. Validate room is in 'waiting' state and agentId matches waitingForHuman
@@ -20,8 +21,20 @@
 //      `resumeHook(token, { text })`. The workflow itself owns
 //      persistence + status update on resume.
 //
-// Other WDK + human modes (werewolf TBD) are rejected with 501
-// until they ship their own token namespace and dispatch entry.
+// Flow (WDK, mode='werewolf'):
+//   1. NO room-status lock — runDayVote registers hooks for every
+//      human voter in parallel, room stays 'running' across the
+//      whole vote phase. Eligibility is computed from
+//      gameState.currentPhase + the agents snapshot.
+//   2. Same authZ (Bearer seat-token OR owner session)
+//   3. Validate phase == 'dayVote', voter is in snapshot + isHuman
+//      + not eliminated, payload.target is non-empty
+//   4. Reconstruct `werewolfDayVoteToken(roomId, nightNumber, agentId)`
+//      and call `resumeHook(token, { target, reason })`. Workflow's
+//      collectHumanDayVote handles persistence on resume.
+//
+// Other WDK + human modes are rejected with 501 until they ship their
+// own token namespace and dispatch entry.
 //
 // The human's message is indistinguishable from an AI message in the
 // event stream — same schema, same replay semantics.
@@ -198,16 +211,18 @@ export async function POST(
         await resumeHook(token, hookPayload)
       } catch (resumeErr) {
         // resumeHook throws if the hook isn't currently registered
-        // (workflow not paused at this token, or already resumed).
-        // Don't leak the WDK error message verbatim -- it can include
-        // run ids that aren't useful to clients.
-        console.error(
-          `[human-input wdk] resumeHook failed for ${token}:`,
+        // (workflow not paused at this token, or already resumed
+        // by a duplicate POST). Treat as 409 Conflict — the
+        // resource state moved out from under the request, not
+        // server breakage. Log the underlying error for diagnosis;
+        // don't leak it verbatim (run ids etc.).
+        console.warn(
+          `[human-input wdk open-chat] resumeHook failed for ${token}:`,
           resumeErr,
         )
         return NextResponse.json(
-          { error: 'Failed to resume workflow at this turn' },
-          { status: 500 },
+          { error: 'Turn already submitted or no longer accepting input' },
+          { status: 409 },
         )
       }
 
@@ -253,7 +268,14 @@ export async function POST(
           { status: 403 },
         )
       }
-      const eliminated = (gs.eliminatedIds ?? []) as readonly string[]
+      // Defensive shape check on eliminatedIds — the workflow owns
+      // this field but corruption (manual edit, partial migration)
+      // could leave non-string entries that .includes silently
+      // misses, letting an eliminated player vote.
+      const eliminatedRaw = gs.eliminatedIds
+      const eliminated: string[] = Array.isArray(eliminatedRaw)
+        ? eliminatedRaw.filter((x): x is string => typeof x === 'string')
+        : []
       if (eliminated.includes(agentId)) {
         return NextResponse.json(
           { error: `Agent ${agentId} has been eliminated` },
@@ -297,13 +319,20 @@ export async function POST(
       try {
         await resumeHook(token, hookPayload)
       } catch (resumeErr) {
-        console.error(
+        // 409 not 500: under werewolf's parallel-hook design the
+        // 45s grace timeout makes "stale hook" the most likely
+        // failure mode (sleep won the race, runDayVote moved on).
+        // Duplicate POST during the window also lands here. The
+        // resource state changed underneath the request — it's
+        // not server breakage. Log for diagnosis; surface a
+        // generic message so callers don't infer too much.
+        console.warn(
           `[human-input wdk werewolf] resumeHook failed for ${token}:`,
           resumeErr,
         )
         return NextResponse.json(
-          { error: 'Failed to resume workflow at this vote' },
-          { status: 500 },
+          { error: 'Vote window closed or already submitted' },
+          { status: 409 },
         )
       }
 
