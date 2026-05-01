@@ -241,7 +241,14 @@
       "youReadyHint": "Ready — waiting on the others.",
       "forceStartButton": "Force start",
       "forceStartHint": "Start now (un-ready seats are taken over by AI or skipped)",
-      "spectatorHint": "You're spectating. The room starts once human players ready up."
+      "spectatorHint": "You're spectating. The room starts once human players ready up.",
+      "editNameAria": "Edit your seat name",
+      "editNameSave": "Save",
+      "editNameCancel": "Cancel",
+      "editNamePlaceholder": "Your name",
+      "editNameTooLong": "Name must be 30 characters or fewer",
+      "editNameDuplicate": "Another seat already uses that name",
+      "editNameSaving": "Saving..."
     }
   },
   "replays": {

@@ -48,6 +48,14 @@ export function LobbyView({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Inline name-edit state. Only the viewer's own seat can edit.
+  // editingName=null means not editing; a string means showing the
+  // input with that draft value. savingName=true while POST is in
+  // flight. nameError surfaces server validation errors.
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [savingName, setSavingName] = useState(false)
+  const [nameError, setNameError] = useState<string | null>(null)
+
   const seatReady = readSeatReady(gameState)
   const humans = agents.filter((a) => a.isHuman === true)
   const totalHumans = humans.length
@@ -75,6 +83,49 @@ export function LobbyView({
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function postNameChange(newName: string) {
+    if (!humanAgentId) return
+    const trimmed = newName.trim()
+    if (trimmed.length === 0) {
+      setNameError(t('editNamePlaceholder'))
+      return
+    }
+    if (trimmed.length > 30) {
+      setNameError(t('editNameTooLong'))
+      return
+    }
+    setSavingName(true)
+    setNameError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (seatToken) headers['Authorization'] = `Bearer ${seatToken}`
+      const res = await fetch(
+        `/api/rooms/${roomId}/seats/${humanAgentId}/name`,
+        { method: 'POST', headers, body: JSON.stringify({ name: trimmed }) },
+      )
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        // Map server messages to localized strings where possible.
+        const serverMsg = j.error ?? `HTTP ${res.status}`
+        if (serverMsg.toLowerCase().includes('already uses')) {
+          setNameError(t('editNameDuplicate'))
+        } else if (serverMsg.toLowerCase().includes('too long') || serverMsg.includes('30')) {
+          setNameError(t('editNameTooLong'))
+        } else {
+          setNameError(serverMsg)
+        }
+        return
+      }
+      // Success — exit edit mode. The room poll will pick up the new
+      // name on its next tick.
+      setEditingName(null)
+    } catch (e) {
+      setNameError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSavingName(false)
     }
   }
 
@@ -129,6 +180,7 @@ export function LobbyView({
           {humans.map((a) => {
             const ready = seatReady[a.id] === true
             const isOwn = humanAgentId === a.id
+            const isEditing = isOwn && editingName !== null
             return (
               <div
                 key={a.id}
@@ -142,33 +194,136 @@ export function LobbyView({
                   border: `1px solid ${ready ? 'color-mix(in srgb, #22c55e 35%, var(--border))' : 'var(--border)'}`,
                 }}
               >
-                <span style={{ flex: 1, fontSize: 14 }}>{a.name}</span>
-                {isOwn && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: '1px 6px',
-                      borderRadius: 999,
-                      background: 'var(--accent-strong)',
-                      color: '#fff',
-                      fontWeight: 590,
-                    }}
-                  >
-                    {t('youBadge')}
-                  </span>
+                {isEditing ? (
+                  <>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={editingName ?? ''}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void postNameChange(editingName ?? '')
+                        else if (e.key === 'Escape') {
+                          setEditingName(null)
+                          setNameError(null)
+                        }
+                      }}
+                      maxLength={30}
+                      placeholder={t('editNamePlaceholder')}
+                      disabled={savingName}
+                      style={{
+                        flex: 1,
+                        fontSize: 14,
+                        padding: '4px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--accent)',
+                        background: 'var(--surface)',
+                        color: 'var(--foreground)',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void postNameChange(editingName ?? '')}
+                      disabled={savingName}
+                      style={{
+                        background: 'var(--accent-strong)',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 12,
+                        fontWeight: 590,
+                        cursor: savingName ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {savingName ? t('editNameSaving') : t('editNameSave')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingName(null)
+                        setNameError(null)
+                      }}
+                      disabled={savingName}
+                      style={{
+                        background: 'transparent',
+                        color: 'var(--muted)',
+                        border: '1px solid var(--border)',
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 12,
+                        cursor: savingName ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {t('editNameCancel')}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1, fontSize: 14 }}>{a.name}</span>
+                    {isOwn && !ready && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingName(a.name)
+                          setNameError(null)
+                        }}
+                        aria-label={t('editNameAria')}
+                        title={t('editNameAria')}
+                        style={{
+                          background: 'transparent',
+                          color: 'var(--muted)',
+                          border: 'none',
+                          padding: '2px 6px',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: 14,
+                          cursor: 'pointer',
+                          lineHeight: 1,
+                        }}
+                      >
+                        ✎
+                      </button>
+                    )}
+                    {isOwn && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          borderRadius: 999,
+                          background: 'var(--accent-strong)',
+                          color: '#fff',
+                          fontWeight: 590,
+                        }}
+                      >
+                        {t('youBadge')}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 510,
+                        color: ready ? '#22c55e' : 'var(--muted)',
+                      }}
+                    >
+                      {ready ? t('readyBadge') : t('notReadyBadge')}
+                    </span>
+                  </>
                 )}
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 510,
-                    color: ready ? '#22c55e' : 'var(--muted)',
-                  }}
-                >
-                  {ready ? t('readyBadge') : t('notReadyBadge')}
-                </span>
               </div>
             )
           })}
+          {nameError && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                color: 'var(--danger)',
+              }}
+            >
+              {nameError}
+            </div>
+          )}
         </div>
       </section>
 

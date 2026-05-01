@@ -241,7 +241,14 @@
       "youReadyHint": "已就绪 — 等待其他人。",
       "forceStartButton": "强制开始",
       "forceStartHint": "立即开始（未就绪的座位会被 AI 接管或跳过）",
-      "spectatorHint": "你正在围观，房主或人类玩家就绪后游戏会开始。"
+      "spectatorHint": "你正在围观，房主或人类玩家就绪后游戏会开始。",
+      "editNameAria": "修改你的座位名",
+      "editNameSave": "保存",
+      "editNameCancel": "取消",
+      "editNamePlaceholder": "你的名字",
+      "editNameTooLong": "名字不能超过 30 个字符",
+      "editNameDuplicate": "这个名字已被其他玩家使用",
+      "editNameSaving": "保存中..."
     }
   },
   "replays": {

@@ -12,6 +12,8 @@ import type { LLMProvider, Message, PlatformEvent, TokenUsage } from '@agora/sha
 import type { EventRow, RoomRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
+import { buildRoleSystemPrompt, type WerewolfRole } from '@agora/modes'
+import { buildLanguageDirective } from './language.js'
 // Phase 4.5d-2.8 -- in-memory seam for cross-runtime equivalence tests.
 // Each writer + the three reads exercised by the WDK roundtable workflow
 // short-circuit to the memory adapter when WORKFLOW_TEST=1. Production
@@ -281,6 +283,82 @@ export async function markSeatReady(
     gameState: (row.gameState as Record<string, unknown>) ?? {},
     agents: (row.agents as unknown as AgentInfo[]) ?? [],
   }
+}
+
+/**
+ * Rename a human seat in the lobby — updates `room.agents[i].name`
+ * for the matching agentId, plus regenerates downstream systemPrompts
+ * that embed the name. Returns the updated agents array on success
+ * or a structured error reason for the endpoint to map to HTTP.
+ *
+ * Mode-specific systemPrompt regeneration:
+ *
+ * - **werewolf**: every agent's systemPrompt embeds the full player
+ *   roster + the wolf list (built by buildRoleSystemPrompt at
+ *   create-time in werewolf/route.ts). A rename mutates a name
+ *   that appears in EVERY agent's prompt, so we rebuild ALL of
+ *   them. Cost is O(N) buildRoleSystemPrompt calls — trivial CPU.
+ *   roleAssignments + modeConfig.language are pulled from the row.
+ *
+ * - **roundtable / open-chat**: composeSystemPrompt embeds only the
+ *   speaker's own name + topic. Peer agents' prompts don't list
+ *   rosters, so renaming one seat doesn't drift any peer's prompt.
+ *   The renamed seat's own systemPrompt is dead weight at runtime
+ *   (humans don't get LLM replies), so we skip prompt regen
+ *   entirely for non-werewolf modes.
+ *
+ * Atomicity: single UPDATE with `WHERE status='lobby'` predicate.
+ * If the room flipped to 'running' between read and write, the
+ * UPDATE returns no rows and we return 'not-lobby'. Concurrent
+ * renames on the same seat last-write-wins (acceptable — rare race,
+ * UI re-fetches and user can re-rename if needed).
+ */
+export type UpdateSeatNameResult =
+  | { ok: true; agents: AgentInfo[] }
+  | { ok: false; reason: 'not-found' | 'not-lobby' | 'not-human' | 'invalid-name' | 'duplicate-name' }
+
+export async function updateSeatName(
+  roomId: string,
+  agentId: string,
+  newName: string,
+): Promise<UpdateSeatNameResult> {
+  if (inMemoryMode()) return memUpdateSeatName(roomId, agentId, newName)
+
+  const trimmed = newName.trim()
+  if (trimmed.length === 0 || trimmed.length > 30) {
+    return { ok: false, reason: 'invalid-name' }
+  }
+
+  const room = await getRoom(roomId)
+  if (!room) return { ok: false, reason: 'not-found' }
+  if (room.status !== 'lobby') return { ok: false, reason: 'not-lobby' }
+
+  const agents = (room.agents as unknown as AgentInfo[]) ?? []
+  const seat = agents.find((a) => a.id === agentId)
+  if (!seat) return { ok: false, reason: 'not-found' }
+  if (seat.isHuman !== true) return { ok: false, reason: 'not-human' }
+
+  // Trim is no-op if already correct — return current agents unchanged.
+  if (seat.name === trimmed) return { ok: true, agents }
+
+  // Reject duplicate display names — confusing for AI rosters AND
+  // for human readers in the chat log. Equality on `.name` is the
+  // right check (case-sensitive — we don't normalize).
+  if (agents.some((a) => a.id !== agentId && a.name === trimmed)) {
+    return { ok: false, reason: 'duplicate-name' }
+  }
+
+  // Build new agents array. Mode-specific prompt regen.
+  const updatedAgents = await rebuildAgentsAfterRename(agents, agentId, trimmed, room)
+
+  const result = await db
+    .update(rooms)
+    .set({ agents: updatedAgents as object })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ agents: rooms.agents })
+
+  if (result.length === 0) return { ok: false, reason: 'not-lobby' }
+  return { ok: true, agents: (result[0]!.agents as unknown as AgentInfo[]) ?? [] }
 }
 
 /**
@@ -733,4 +811,90 @@ export async function markOrphanedAsError(maxAgeMinutes = 15): Promise<number> {
       ),
     )
   return Array.isArray(rowsAffected) ? rowsAffected.length : 0
+}
+
+// ── rename helpers ────────────────────────────────────────
+
+/**
+ * Build the new agents array for a seat rename. Werewolf needs every
+ * agent's systemPrompt rebuilt (roster + wolf list embed names);
+ * other modes only update the renamed seat's name field.
+ *
+ * Pure: no DB writes, just returns the new AgentInfo[].
+ */
+async function rebuildAgentsAfterRename(
+  agents: AgentInfo[],
+  agentId: string,
+  newName: string,
+  room: RoomRow,
+): Promise<AgentInfo[]> {
+  const renamed = agents.map((a) => (a.id === agentId ? { ...a, name: newName } : a))
+
+  if (room.modeId !== 'werewolf') {
+    // Non-werewolf modes: peer prompts don't reference rosters, so
+    // nothing else needs to change. The renamed seat's own systemPrompt
+    // is fine stale (humans don't get LLM replies).
+    return renamed
+  }
+
+  const roleAssignments =
+    (room.roleAssignments as Record<string, WerewolfRole> | null) ?? {}
+  const modeConfig = (room.modeConfig as Record<string, unknown> | null) ?? {}
+  const language = (modeConfig['language'] as 'en' | 'zh' | undefined) ?? 'zh'
+  const languageDirective = buildLanguageDirective(language)
+
+  const allPlayerNames = renamed.map((a) => a.name)
+  const wolfNames = renamed
+    .filter((a) => roleAssignments[a.id] === 'werewolf')
+    .map((a) => a.name)
+
+  return renamed.map((a) => {
+    const role = roleAssignments[a.id]
+    if (!role) return a
+    return {
+      ...a,
+      systemPrompt: buildRoleSystemPrompt(
+        a.name,
+        role,
+        allPlayerNames,
+        wolfNames,
+        languageDirective,
+      ),
+    }
+  })
+}
+
+/**
+ * In-memory mirror of updateSeatName for the WORKFLOW_TEST seam.
+ * Same shape; mutates the in-memory rooms map directly.
+ */
+async function memUpdateSeatName(
+  roomId: string,
+  agentId: string,
+  newName: string,
+): Promise<UpdateSeatNameResult> {
+  const trimmed = newName.trim()
+  if (trimmed.length === 0 || trimmed.length > 30) {
+    return { ok: false, reason: 'invalid-name' }
+  }
+
+  const room = await memGetRoom(roomId)
+  if (!room) return { ok: false, reason: 'not-found' }
+  if (room.status !== 'lobby') return { ok: false, reason: 'not-lobby' }
+
+  const agents = (room.agents as unknown as AgentInfo[]) ?? []
+  const seat = agents.find((a) => a.id === agentId)
+  if (!seat) return { ok: false, reason: 'not-found' }
+  if (seat.isHuman !== true) return { ok: false, reason: 'not-human' }
+  if (seat.name === trimmed) return { ok: true, agents }
+
+  if (agents.some((a) => a.id !== agentId && a.name === trimmed)) {
+    return { ok: false, reason: 'duplicate-name' }
+  }
+
+  const updatedAgents = await rebuildAgentsAfterRename(agents, agentId, trimmed, room)
+  // Mutating the in-memory row's agents jsonb so subsequent memGetRoom
+  // sees the rename (mirrors the real path's UPDATE ... RETURNING).
+  ;(room as { agents: unknown }).agents = updatedAgents as unknown
+  return { ok: true, agents: updatedAgents }
 }
