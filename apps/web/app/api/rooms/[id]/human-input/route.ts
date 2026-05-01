@@ -53,7 +53,11 @@ import { roundtableHumanTurnToken } from '../../../../workflows/roundtable-workf
 import {
   werewolfDayDiscussToken,
   werewolfDayVoteToken,
+  werewolfWolfDiscussToken,
+  werewolfWolfVoteToken,
   type HumanDayDiscussPayload,
+  type HumanWolfDiscussPayload,
+  type HumanWolfVotePayload,
   type WerewolfPersistedState,
 } from '../../../../workflows/werewolf-workflow'
 import type { HumanDayVotePayload } from '../../../../workflows/werewolf-day-phases'
@@ -273,24 +277,32 @@ export async function POST(
     }
 
     if (roomRow.modeId === 'werewolf') {
-      // Werewolf has TWO phases that accept human input:
+      // Werewolf accepts human input in four phases:
       //
-      // 1. dayVote (parallel): all human voters' hooks race in parallel,
-      //    room stays 'running' across the phase — eligibility is
-      //    computed from the snapshot, not from a waitingForHuman
-      //    breadcrumb. 45s grace.
+      // 1. dayVote (parallel hooks, 45s, structured target)
+      //    Room stays 'running'; eligibility from snapshot. All human
+      //    voters' hooks race in parallel.
       //
-      // 2. dayDiscuss (sequential): one human at a time, room flips to
-      //    'waiting' with gameState.waitingForHuman set to the active
-      //    speaker. The HumanPlayBar UI's isMyTurn check fires; the
-      //    speaker types in the chat textarea. 90s grace.
+      // 2. dayDiscuss (sequential, 90s, free text)
+      //    Room flips to 'waiting' with waitingForHuman = active speaker.
+      //    One speaker at a time.
       //
-      // Other phases (wolfDiscuss, lastWords, hunter / sheriff /
-      // witch / seer / guard private actions) are still AI-only or
-      // panel-driven; their tokens land alongside their phase support.
+      // 3. wolfVote (parallel hooks, 45s, structured target)
+      //    Mirror of dayVote but at night for the kill decision. Only
+      //    wolf-role human seats hit this. Room stays 'running'.
+      //
+      // 4. wolfDiscuss (sequential, 90s, free text)
+      //    Mirror of dayDiscuss but in the wolves-only `werewolf`
+      //    channel during the night cycle. Only wolf-role human seats
+      //    hit this. Room flips to 'waiting' per speaker.
+      //
+      // Other phases (lastWords, hunter / sheriff / witch / seer /
+      // guard private actions) are still AI-only or panel-driven;
+      // their tokens land alongside their phase support.
       const gs = roomRow.gameState as Partial<WerewolfPersistedState> | null
       const phase = gs?.currentPhase
-      if (phase !== 'dayVote' && phase !== 'dayDiscuss') {
+      const acceptedPhases = new Set(['dayVote', 'dayDiscuss', 'wolfVote', 'wolfDiscuss'])
+      if (typeof phase !== 'string' || !acceptedPhases.has(phase)) {
         return NextResponse.json(
           {
             error:
@@ -347,34 +359,23 @@ export async function POST(
       }
 
       // Per-phase payload validation + token reconstruction.
+      // Sequential chat phases (dayDiscuss, wolfDiscuss): validate
+      // waitingForHuman matches agentId, validate non-empty text,
+      // route to the phase-specific token.
+      // Parallel vote phases (dayVote, wolfVote): no waitingForHuman
+      // check (room stays 'running'), validate target, route to
+      // phase-specific token.
       let token: string
-      let hookPayload: HumanDayVotePayload | HumanDayDiscussPayload
+      let hookPayload:
+        | HumanDayVotePayload
+        | HumanDayDiscussPayload
+        | HumanWolfVotePayload
+        | HumanWolfDiscussPayload
 
-      if (phase === 'dayVote') {
-        // Validate vote shape. The workflow's collectHumanDayVote
-        // has defensive normalization (empty target → abstain), but
-        // reject obviously bad shapes here so callers get a clean 400.
-        const target = typeof payload.target === 'string' ? payload.target.trim() : ''
-        if (target.length === 0) {
-          return NextResponse.json(
-            { error: 'Werewolf day-vote requires payload.target (a player name or "skip")' },
-            { status: 400 },
-          )
-        }
-        const reason =
-          typeof payload.reason === 'string' && payload.reason.trim().length > 0
-            ? payload.reason.trim()
-            : undefined
+      const isChatPhase = phase === 'dayDiscuss' || phase === 'wolfDiscuss'
+      const isVotePhase = phase === 'dayVote' || phase === 'wolfVote'
 
-        token = werewolfDayVoteToken(roomId, nightNumber, agentId)
-        hookPayload = reason ? { target, reason } : { target }
-      } else {
-        // phase === 'dayDiscuss'
-        // Sequential — additionally check `waitingForHuman` matches
-        // this agentId. If it doesn't, another speaker holds the slot
-        // (or the workflow already advanced). 409 is the right code:
-        // resource state moved out from under the request, not server
-        // breakage.
+      if (isChatPhase) {
         // waitingForHuman is a transient breadcrumb the workflow writes
         // via markWaitingForWerewolfHuman; not part of WerewolfPersistedState's
         // strongly-typed surface. Read through a wider cast.
@@ -386,8 +387,8 @@ export async function POST(
             {
               error:
                 waitingForHuman === null
-                  ? 'Werewolf day-discuss not awaiting input'
-                  : `Werewolf day-discuss is awaiting ${waitingForHuman}, not ${agentId}`,
+                  ? `Werewolf ${phase} not awaiting input`
+                  : `Werewolf ${phase} is awaiting ${waitingForHuman}, not ${agentId}`,
             },
             { status: 409 },
           )
@@ -396,13 +397,42 @@ export async function POST(
         const text = typeof payload.content === 'string' ? payload.content.trim() : ''
         if (text.length === 0) {
           return NextResponse.json(
-            { error: 'Werewolf day-discuss requires non-empty payload.content' },
+            { error: `Werewolf ${phase} requires non-empty payload.content` },
             { status: 400 },
           )
         }
 
-        token = werewolfDayDiscussToken(roomId, nightNumber, agentId)
+        token =
+          phase === 'dayDiscuss'
+            ? werewolfDayDiscussToken(roomId, nightNumber, agentId)
+            : werewolfWolfDiscussToken(roomId, nightNumber, agentId)
         hookPayload = { text }
+      } else if (isVotePhase) {
+        // Validate vote shape. The workflow's collect helpers have
+        // defensive normalization (empty target → abstain), but reject
+        // obviously bad shapes here so callers get a clean 400.
+        const target = typeof payload.target === 'string' ? payload.target.trim() : ''
+        if (target.length === 0) {
+          return NextResponse.json(
+            { error: `Werewolf ${phase} requires payload.target (a player name or "skip")` },
+            { status: 400 },
+          )
+        }
+        const reason =
+          typeof payload.reason === 'string' && payload.reason.trim().length > 0
+            ? payload.reason.trim()
+            : undefined
+
+        token =
+          phase === 'dayVote'
+            ? werewolfDayVoteToken(roomId, nightNumber, agentId)
+            : werewolfWolfVoteToken(roomId, nightNumber, agentId)
+        hookPayload = reason ? { target, reason } : { target }
+      } else {
+        return NextResponse.json(
+          { error: `Unsupported werewolf phase: ${phase}` },
+          { status: 500 },
+        )
       }
 
       try {
@@ -420,10 +450,9 @@ export async function POST(
         )
         return NextResponse.json(
           {
-            error:
-              phase === 'dayVote'
-                ? 'Vote window closed or already submitted'
-                : 'Discussion window closed or already submitted',
+            error: isVotePhase
+              ? 'Vote window closed or already submitted'
+              : 'Discussion window closed or already submitted',
           },
           { status: 409 },
         )

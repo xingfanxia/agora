@@ -345,6 +345,41 @@ export interface HumanDayDiscussPayload {
   readonly text: string
 }
 
+// Wolf-discuss is the SEQUENTIAL human-chat phase for the night-cycle
+// werewolf channel. Same shape contract as day-discuss but on a
+// distinct token namespace so a stale night-cycle resume can't
+// accidentally land on the day-cycle hook.
+
+export function werewolfWolfDiscussToken(
+  roomId: string,
+  nightNumber: number,
+  seatId: string,
+): string {
+  return `agora/room/${roomId}/mode/werewolf-wolf-discuss/night/${nightNumber}/seat/${seatId}`
+}
+
+export interface HumanWolfDiscussPayload {
+  readonly text: string
+}
+
+// Wolf-vote is the PARALLEL blind-vote phase — every alive wolf's hook
+// races against a 45s grace simultaneously, mirroring day-vote. Token
+// keyed on (room, night, voter) so a wolf's vote can resume their own
+// hook regardless of other wolves' state.
+
+export function werewolfWolfVoteToken(
+  roomId: string,
+  nightNumber: number,
+  seatId: string,
+): string {
+  return `agora/room/${roomId}/mode/werewolf-wolf-vote/night/${nightNumber}/seat/${seatId}`
+}
+
+export interface HumanWolfVotePayload {
+  readonly target: string
+  readonly reason?: string
+}
+
 // ── System message localization ────────────────────────────
 //
 // Strings emitted by phase steps to the chat (dawn announcement,
