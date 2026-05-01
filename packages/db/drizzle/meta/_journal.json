@@ -78,6 +78,20 @@
       "when": 1777680000000,
       "tag": "0010_event_content_key_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777780000000,
+      "tag": "0011_status_lobby",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1777790000000,
+      "tag": "0012_status_pgenum",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ import {
   index,
   integer,
   jsonb,
+  pgEnum,
   pgTable,
   primaryKey,
   text,
@@ -33,6 +34,25 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+
+// ── enums ──────────────────────────────────────────────────
+//
+// roomStatus: lifecycle states for a room. Backed by a real Postgres
+// ENUM type via migration 0012 — the CHECK constraint added in 0002
+// (and patched in 0011 to add 'lobby') is now subsumed. This is what
+// closes the TS-vs-SQL drift gap that bit P2 (see
+// project_ts_sql_drift_gap.md): tsc rejects unknown values now.
+//
+// 'lobby' is the P2 lobby gate state — rooms with at least one human
+// seat park here until everyone flips ready or the owner force-starts.
+
+export const roomStatus = pgEnum('room_status', [
+  'lobby',
+  'running',
+  'waiting',
+  'completed',
+  'error',
+])
 
 // ── agents ─────────────────────────────────────────────────
 
@@ -158,7 +178,7 @@ export const rooms = pgTable(
     config: jsonb('config').notNull(),
 
     // Lifecycle
-    status: text('status').notNull(), // 'running' | 'waiting' | 'completed' | 'error'
+    status: roomStatus('status').notNull(),
     currentPhase: text('current_phase'),
     currentRound: integer('current_round').default(1).notNull(),
     thinkingAgentId: text('thinking_agent_id'),

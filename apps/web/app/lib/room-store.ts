@@ -248,12 +248,30 @@ export async function markSeatReady(
   agentId: string,
 ): Promise<MarkSeatReadyResult | null> {
   if (inMemoryMode()) return memMarkSeatReady(roomId, agentId)
-  // jsonb_set(target, path, new_value, create_missing). create_missing=true
-  // creates `seatReady` and the agent key if they don't exist yet.
+  // jsonb merge (||) + jsonb_build_object. We can't use jsonb_set with a
+  // 2-deep path here: Postgres's `create_missing=true` only creates the
+  // LAST element, and only if its immediate parent already exists. On a
+  // freshly-created lobby room gameState is NULL → coalesces to '{}',
+  // and `seatReady` doesn't exist as a parent, so jsonb_set silently
+  // returns the input unchanged (the original P2 implementation hit
+  // exactly this and never persisted any seat-ready flip).
+  //
+  // The `||` operator merges jsonb objects with right-side-wins on key
+  // collision, so this both creates seatReady when missing AND preserves
+  // its existing entries (every other human's prior ready flip) when
+  // present. Other gameState keys are also preserved by the outer ||.
+  // Single statement → still atomic against concurrent ready clicks.
   const result = await db
     .update(rooms)
     .set({
-      gameState: sql`jsonb_set(coalesce(${rooms.gameState}, '{}'::jsonb), ARRAY['seatReady', ${agentId}]::text[], 'true'::jsonb, true)`,
+      gameState: sql`
+        coalesce(${rooms.gameState}, '{}'::jsonb)
+        || jsonb_build_object(
+          'seatReady',
+          coalesce(${rooms.gameState}->'seatReady', '{}'::jsonb)
+          || jsonb_build_object(${agentId}::text, true)
+        )
+      `,
     })
     .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
     .returning({ gameState: rooms.gameState, agents: rooms.agents })
