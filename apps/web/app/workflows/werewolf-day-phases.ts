@@ -34,13 +34,17 @@ import {
   generateAgentDecision,
   generateAgentReply,
   emitPhaseAnnouncement,
+  markRunningAgainForWerewolf,
+  markWaitingForWerewolfHuman,
   nameToIdMap,
   persistAgentMessage,
   recordTurnUsage,
   tallyVotes,
   transitionPhase,
+  werewolfDayDiscussToken,
   werewolfDayVoteToken,
   werewolfStrings,
+  type HumanDayDiscussPayload,
   type WerewolfPersistedState,
   type WerewolfLanguage,
 } from './werewolf-workflow.js'
@@ -67,6 +71,21 @@ const PHASE_TAGS = {
 // thoughtful human play. 45s threads the needle.
 
 const DAY_VOTE_GRACE_MS = 45_000
+
+// Day-discuss is text chat — bigger thinking + typing window than a
+// vote panel. 90s threads "engaged human play" against "AI-paired
+// games where everyone waits on you". Empty / no-show => skip silently
+// (no placeholder message; mirrors the AI-only behavior pre-fix
+// from the human's seat perspective). The user-facing UI shows a
+// countdown so they know the window.
+
+const DAY_DISCUSS_GRACE_MS = 90_000
+
+// Module-level unique-symbol sentinel for the discuss timeout race.
+// Same rationale as DAY_VOTE_TIMEOUT — TS1335 forbids `unique symbol`
+// inside function bodies, so the symbol value lives at module scope.
+
+const DAY_DISCUSS_TIMEOUT: unique symbol = Symbol('day-discuss-timeout')
 
 // Human-vote payload — what the /api/rooms/.../human-input endpoint
 // passes to resumeHook. LOAD-BEARING: the endpoint constructs this
@@ -131,9 +150,23 @@ export async function runDayDiscuss(
       )
     }
 
-    // Humans skip discussion in MVP — same trade-off as wolfDiscuss.
-    // Day-vote is where humans engage (via the hook + sleep race).
-    if (agent.isHuman) continue
+    // Humans get a sequential pause-and-prompt. Workflow sets
+    // status='waiting' + gameState.waitingForHuman so the existing
+    // HumanPlayBar's isMyTurn check fires; UI shows the dayDiscuss
+    // textarea panel (default free-text branch in HumanPlayBar.tsx).
+    // On hook resolve we persist their text; on timeout we skip
+    // (no placeholder message — same observable shape as a no-show
+    // human in pre-fix runs, but now reachable, not auto-skipped).
+    if (agent.isHuman) {
+      await collectHumanDayDiscuss({
+        roomId,
+        nightNumber: state.nightNumber,
+        speakerId,
+        speakerName: agent.name,
+        cycleStr: cycle,
+      })
+      continue
+    }
 
     const reply = await generateAgentReply({
       roomId,
@@ -171,6 +204,96 @@ export async function runDayDiscuss(
     roomId,
     nextPhase: 'dayVote',
     stateMerge: {},
+  })
+}
+
+// ── collectHumanDayDiscuss (workflow-body helper) ──────────
+//
+// Sequential human chat for day-discuss. Mirrors collectHumanDayVote's
+// hook + sleep race pattern, but for free text instead of structured
+// vote. Differences:
+//   - Sequential, not parallel: room toggles 'waiting' → 'running' per
+//     human speaker so the UI's existing isMyTurn check (HumanPlayBar:
+//     `status === 'waiting' && waitingForHuman === me`) lights up the
+//     textarea for ONE seat at a time.
+//   - Longer grace (90s) — chat needs think + type time.
+//   - Empty / no-show payload => skip silently (no placeholder).
+//
+// LOAD-BEARING: the markWaitingForWerewolfHuman BEFORE createHook
+// ordering matches the open-chat pattern. If the hook is registered
+// before the breadcrumb commits, a fast resumeHook from the endpoint
+// could land before the waiting marker, breaking the endpoint's
+// state-validation precondition. Fix order if you change either site.
+//
+// Hook lifecycle: `using` ensures the hook disposes when the function
+// returns (any branch). createHook → race → markRunningAgain → return.
+// markRunningAgain runs on BOTH happy + timeout paths (via the if/else),
+// because the room MUST go back to 'running' for the next AI speaker
+// regardless of whether the human spoke or timed out.
+
+interface CollectHumanDayDiscussInput {
+  readonly roomId: string
+  readonly nightNumber: number
+  readonly speakerId: string
+  readonly speakerName: string
+  readonly cycleStr: string
+}
+
+async function collectHumanDayDiscuss(
+  input: CollectHumanDayDiscussInput,
+): Promise<void> {
+  // 1. Park the room on this human seat — UI lights up the chat panel.
+  await markWaitingForWerewolfHuman({
+    roomId: input.roomId,
+    agentId: input.speakerId,
+    phaseTag: 'dayDiscuss',
+  })
+
+  // 2. Race the hook against the grace timeout.
+  using hook = createHook<HumanDayDiscussPayload>({
+    token: werewolfDayDiscussToken(input.roomId, input.nightNumber, input.speakerId),
+  })
+
+  const result = await Promise.race<HumanDayDiscussPayload | typeof DAY_DISCUSS_TIMEOUT>([
+    hook,
+    sleep(DAY_DISCUSS_GRACE_MS).then(() => DAY_DISCUSS_TIMEOUT),
+  ])
+
+  // 3. Always unpark before returning (next speaker in the for-loop
+  //    needs status='running' for AI generateAgentReply, and clearing
+  //    waitingForHuman makes sure the UI for THIS seat goes back to
+  //    the spectator/between-turns state).
+  await markRunningAgainForWerewolf({ roomId: input.roomId })
+
+  if (typeof result === 'symbol') {
+    // Timeout — silent skip. AI agents see "no message from this
+    // seat" in the channel history; same shape as if the human just
+    // didn't have anything to say.
+    return
+  }
+
+  const text = typeof result.text === 'string' ? result.text.trim() : ''
+  if (text.length === 0) {
+    // Defensive: empty payload => skip. Endpoint already enforces
+    // non-empty, but a manual resumeHook from tooling shouldn't
+    // crash the workflow.
+    return
+  }
+
+  // 4. Persist the human's message inline. Same shape as AI day-discuss
+  //    messages (channelId='main', phaseTag=PHASE_TAGS.dayDiscuss).
+  //    Deterministic message id via persistAgentMessage means a
+  //    resumeHook delivery-failure retry produces the same id and
+  //    no-ops via events_message_id_uq.
+  await persistAgentMessage({
+    roomId: input.roomId,
+    agentId: input.speakerId,
+    agentName: input.speakerName,
+    content: text,
+    channelId: 'main',
+    phaseTag: PHASE_TAGS.dayDiscuss,
+    cycleId: input.cycleStr,
+    decision: null,
   })
 }
 
