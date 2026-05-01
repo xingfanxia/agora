@@ -178,7 +178,10 @@ export function RoundtableView({ messages, snapshot }: RoundtableViewProps) {
           }}
         >
           <span>{t('roundOf', { current: currentRound, total: totalRounds })}</span>
-          <StatusPill status={status} />
+          {/* status === 'lobby' never reaches here — page.tsx routes
+              lobby rooms to LobbyView. The narrow cast tells TS what
+              the runtime invariant guarantees. */}
+          <StatusPill status={status === 'lobby' ? 'running' : status} />
           <span style={{ marginLeft: 'auto' }}>
             {t('agentCount', { count: agents.length })}
           </span>
@@ -291,6 +294,12 @@ function useMessagesPerAgent(messages: readonly MessageData[]): Record<string, n
 
 // ── Sub-components (status pill, footers) ──────────────────
 
+// 'lobby' is intentionally excluded — the page-level dispatcher routes
+// status='lobby' to LobbyView before this view renders, so StatusPill
+// never legitimately sees 'lobby'. Narrowing the input prevents a
+// misclassification (the chained ternary would map 'lobby' to the
+// red error styling) if a future refactor of page.tsx slips the
+// lobby branch.
 function StatusPill({ status }: { status: 'running' | 'waiting' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =

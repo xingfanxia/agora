@@ -9,6 +9,7 @@ import { RoundtableView } from './modes/roundtable/RoundtableView'
 import { WerewolfView } from './modes/werewolf/WerewolfView'
 import { HumanPlayBar } from './components/v2/HumanPlayBar'
 import { InvitePanel } from './components/InvitePanel'
+import { LobbyView } from './components/v2/LobbyView'
 
 /**
  * Thin dispatcher — polls the room, then renders the mode-specific
@@ -22,12 +23,16 @@ export default function RoomPage() {
 
   // Read human seat token from localStorage (Phase 4.5c)
   const [humanAgentId, setHumanAgentId] = useState<string | null>(null)
+  // P2: also pull the seat-token (used as Bearer for the ready endpoint
+  // when the viewer is an invitee, not the owner).
+  const [seatToken, setSeatToken] = useState<string | null>(null)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(`agora-seat-${roomId}`)
       if (raw) {
-        const parsed = JSON.parse(raw) as { agentId?: string }
+        const parsed = JSON.parse(raw) as { agentId?: string; token?: string }
         if (parsed.agentId) setHumanAgentId(parsed.agentId)
+        if (typeof parsed.token === 'string') setSeatToken(parsed.token)
       }
     } catch { /* localStorage unavailable or corrupt */ }
   }, [roomId])
@@ -42,6 +47,25 @@ export default function RoomPage() {
 
   if (!snapshot) {
     return <LoadingScreen />
+  }
+
+  // P2: lobby gate. Status='lobby' means the workflow hasn't started
+  // yet — show the lobby UI (cross-mode, mode-agnostic). The InvitePanel
+  // also renders so the owner can copy invite URLs while waiting.
+  if (snapshot.status === 'lobby') {
+    return (
+      <>
+        <LobbyView
+          roomId={roomId}
+          agents={snapshot.agents ?? []}
+          gameState={snapshot.gameState}
+          humanAgentId={humanAgentId}
+          seatToken={seatToken}
+          isOwner={snapshot.isOwner === true}
+        />
+        <InvitePanel roomId={roomId} agents={snapshot.agents ?? []} />
+      </>
+    )
   }
 
   // The human play bar — renders at the bottom when the viewer has a seat

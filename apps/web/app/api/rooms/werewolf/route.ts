@@ -34,6 +34,7 @@ import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/langu
 import { getTeam, getMembers } from '../../../lib/team-store'
 import { requireAuthUserId } from '../../../lib/auth'
 import {
+  WEREWOLF_AGENT_PERSONA,
   werewolfWorkflow,
   type WerewolfAgentSnapshot,
 } from '../../../workflows/werewolf-workflow'
@@ -176,7 +177,29 @@ export async function POST(request: NextRequest) {
       .filter((id) => roleMap.get(id) === 'werewolf')
       .map((id) => agentNames[id]!)
 
-    // Persist the agent snapshot for replay / endpoint lookups.
+    // Build per-agent systemPrompts ONCE; both the persisted AgentInfo
+    // (room.agents) and the workflow input snapshot reference the same
+    // string. Persisting systemPrompt is what lets the P2 lobby flow
+    // reconstruct the workflow input later — dispatchWorkflowStart
+    // (apps/web/app/lib/lobby.ts) reads room.agents[i].systemPrompt
+    // when the lobby resolves, so we don't have to rerun
+    // buildRoleSystemPrompt at lobby-resolve time.
+    const systemPromptByAgent: Record<string, string> = {}
+    for (const id of agentIds) {
+      const p = players[agentIds.indexOf(id)]!
+      const role = roleMap.get(id)!
+      systemPromptByAgent[id] = buildRoleSystemPrompt(
+        p.name,
+        role,
+        [...allPlayerNames],
+        [...wolfNames],
+        languageDirective,
+      )
+    }
+
+    // Persist the agent snapshot for replay / endpoint lookups + lobby
+    // resolve. systemPrompt persistence is load-bearing for the lobby
+    // flow (see comment above on systemPromptByAgent).
     const agentInfos: AgentInfo[] = agentIds.map((id, i) => {
       const p = players[i]!
       return {
@@ -185,6 +208,7 @@ export async function POST(request: NextRequest) {
         model: p.model,
         provider: p.provider ?? resolveProvider(p.model),
         isHuman: p.isHuman,
+        systemPrompt: systemPromptByAgent[id]!,
       }
     })
 
@@ -196,13 +220,6 @@ export async function POST(request: NextRequest) {
       const p = players[i]!
       const role = roleMap.get(id)!
       const provider = p.provider ?? resolveProvider(p.model)
-      const systemPrompt = buildRoleSystemPrompt(
-        p.name,
-        role,
-        [...allPlayerNames],
-        [...wolfNames],
-        languageDirective,
-      )
       const model: ModelConfig = {
         provider,
         modelId: p.model,
@@ -211,13 +228,20 @@ export async function POST(request: NextRequest) {
       return {
         id,
         name: p.name,
-        persona: 'A player in the werewolf game',
-        systemPrompt,
+        persona: WEREWOLF_AGENT_PERSONA,
+        systemPrompt: systemPromptByAgent[id]!,
         role,
         model,
         isHuman: p.isHuman,
       }
     })
+
+    // Lobby gate (P2): if any seat is human, the room enters 'lobby'
+    // and the workflow doesn't `start()` until all human seats flip
+    // ready (or the owner force-starts via /api/rooms/[id]/start).
+    // Pure-AI rooms preserve the old behavior — straight to 'running'
+    // with `start()` inline.
+    const hasHumans = players.some((p) => p.isHuman)
 
     // The room-store column expects Record<string, boolean>. WerewolfAdvancedRules
     // is currently boolean-only but typed with `?:` (so values are
@@ -245,13 +269,22 @@ export async function POST(request: NextRequest) {
       teamId,
       createdBy,
       runtime: 'wdk',
+      initialStatus: hasHumans ? 'lobby' : 'running',
     })
 
-    // Enqueue the workflow. start() returns immediately after
-    // enqueueing; the workflow runs durably in the WDK runtime. If
-    // enqueue itself throws, flip the room to 'error' so the row
-    // doesn't sit at 'running' forever (markOrphanedAsError skips
-    // WDK rooms intentionally).
+    // Lobby branch: room is parked at status='lobby'. Don't start the
+    // workflow — the /seats/[agentId]/ready or /start endpoints will
+    // call resolveLobby + dispatchWorkflowStart when the gate clears.
+    if (hasHumans) {
+      return NextResponse.json({ roomId, runtime: 'wdk', status: 'lobby' })
+    }
+
+    // Pure-AI rooms (no humans): old behavior — enqueue the workflow
+    // immediately. start() returns immediately after enqueueing; the
+    // workflow runs durably in the WDK runtime. If enqueue itself
+    // throws, flip the room to 'error' so the row doesn't sit at
+    // 'running' forever (markOrphanedAsError skips WDK rooms
+    // intentionally).
     try {
       await start(werewolfWorkflow, [
         {

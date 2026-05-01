@@ -49,8 +49,15 @@ import {
   humanTurnToken as openChatHumanTurnToken,
   type HumanTurnPayload,
 } from '../../../../workflows/open-chat-workflow'
+import { roundtableHumanTurnToken } from '../../../../workflows/roundtable-workflow'
 import {
+  werewolfDayDiscussToken,
   werewolfDayVoteToken,
+  werewolfWolfDiscussToken,
+  werewolfWolfVoteToken,
+  type HumanDayDiscussPayload,
+  type HumanWolfDiscussPayload,
+  type HumanWolfVotePayload,
   type WerewolfPersistedState,
 } from '../../../../workflows/werewolf-workflow'
 import type { HumanDayVotePayload } from '../../../../workflows/werewolf-day-phases'
@@ -229,40 +236,96 @@ export async function POST(
       return NextResponse.json({ ok: true, runtime: 'wdk' })
     }
 
+    if (roomRow.modeId === 'roundtable') {
+      // Same shape as open-chat: workflow body markWaitingForRoundtableHuman
+      // wrote `gameState.waitingForTurnIdx`. Reconstruct the per-turn
+      // token via roundtableHumanTurnToken and resumeHook.
+      const text = typeof payload.content === 'string' ? payload.content.trim() : ''
+      if (text.length === 0) {
+        return NextResponse.json(
+          { error: 'WDK human-input requires non-empty payload.content' },
+          { status: 400 },
+        )
+      }
+
+      const gs = roomRow.gameState as { waitingForTurnIdx?: unknown } | null
+      const turnIdx = gs?.waitingForTurnIdx
+      if (typeof turnIdx !== 'number' || !Number.isInteger(turnIdx) || turnIdx < 0) {
+        return NextResponse.json(
+          { error: 'gameState.waitingForTurnIdx missing or invalid' },
+          { status: 500 },
+        )
+      }
+
+      const token = roundtableHumanTurnToken(roomId, turnIdx)
+      const hookPayload: HumanTurnPayload = { text }
+
+      try {
+        await resumeHook(token, hookPayload)
+      } catch (resumeErr) {
+        console.warn(
+          `[human-input wdk roundtable] resumeHook failed for ${token}:`,
+          resumeErr,
+        )
+        return NextResponse.json(
+          { error: 'Turn already submitted or no longer accepting input' },
+          { status: 409 },
+        )
+      }
+
+      return NextResponse.json({ ok: true, runtime: 'wdk' })
+    }
+
     if (roomRow.modeId === 'werewolf') {
-      // Werewolf differs from open-chat: runDayVote collects votes
-      // from all human seats in parallel (each seat has its own
-      // hook), so the room stays at status='running' throughout and
-      // there's no single waitingForHuman marker. Eligibility is
-      // computed from gameState.currentPhase + agents snapshot.
+      // Werewolf accepts human input in four phases:
       //
-      // Only dayVote accepts human input today. lastWords / hunter
-      // / sheriff phases land in 4.5d-2.16 with their own tokens.
+      // 1. dayVote (parallel hooks, 45s, structured target)
+      //    Room stays 'running'; eligibility from snapshot. All human
+      //    voters' hooks race in parallel.
+      //
+      // 2. dayDiscuss (sequential, 90s, free text)
+      //    Room flips to 'waiting' with waitingForHuman = active speaker.
+      //    One speaker at a time.
+      //
+      // 3. wolfVote (parallel hooks, 45s, structured target)
+      //    Mirror of dayVote but at night for the kill decision. Only
+      //    wolf-role human seats hit this. Room stays 'running'.
+      //
+      // 4. wolfDiscuss (sequential, 90s, free text)
+      //    Mirror of dayDiscuss but in the wolves-only `werewolf`
+      //    channel during the night cycle. Only wolf-role human seats
+      //    hit this. Room flips to 'waiting' per speaker.
+      //
+      // Other phases (lastWords, hunter / sheriff / witch / seer /
+      // guard private actions) are still AI-only or panel-driven;
+      // their tokens land alongside their phase support.
       const gs = roomRow.gameState as Partial<WerewolfPersistedState> | null
-      if (gs?.currentPhase !== 'dayVote') {
+      const phase = gs?.currentPhase
+      const acceptedPhases = new Set(['dayVote', 'dayDiscuss', 'wolfVote', 'wolfDiscuss'])
+      if (typeof phase !== 'string' || !acceptedPhases.has(phase)) {
         return NextResponse.json(
           {
             error:
-              `Werewolf room not accepting human input (phase: ${gs?.currentPhase ?? 'unknown'})`,
+              `Werewolf room not accepting human input (phase: ${phase ?? 'unknown'})`,
           },
           { status: 409 },
         )
       }
 
-      // Voter must be in the snapshot, marked human, and alive.
+      // Voter / speaker must be in the snapshot, marked human, and alive.
       const agents = (roomRow.agents as unknown as Array<{
         id: string
         name: string
         isHuman?: boolean
       }>) ?? []
-      const voter = agents.find((a) => a.id === agentId)
-      if (!voter) {
+      const seat = agents.find((a) => a.id === agentId)
+      if (!seat) {
         return NextResponse.json(
           { error: `Agent ${agentId} not in this room` },
           { status: 403 },
         )
       }
-      if (!voter.isHuman) {
+      if (!seat.isHuman) {
         return NextResponse.json(
           { error: `Agent ${agentId} is not a human seat` },
           { status: 403 },
@@ -271,8 +334,8 @@ export async function POST(
       // Defensive shape check on eliminatedIds — the workflow owns
       // this field but corruption (manual edit, partial migration)
       // could leave non-string entries that .includes silently
-      // misses, letting an eliminated player vote.
-      const eliminatedRaw = gs.eliminatedIds
+      // misses, letting an eliminated player participate.
+      const eliminatedRaw = gs?.eliminatedIds
       const eliminated: string[] = Array.isArray(eliminatedRaw)
         ? eliminatedRaw.filter((x): x is string => typeof x === 'string')
         : []
@@ -283,27 +346,11 @@ export async function POST(
         )
       }
 
-      // Validate payload shape. The workflow's collectHumanDayVote
-      // has its own defensive normalization (empty target → abstain),
-      // but reject obviously bad shapes here so callers get a clean
-      // 400 rather than a silent abstain on the workflow side.
-      const target = typeof payload.target === 'string' ? payload.target.trim() : ''
-      if (target.length === 0) {
-        return NextResponse.json(
-          { error: 'Werewolf day-vote requires payload.target (a player name or "skip")' },
-          { status: 400 },
-        )
-      }
-      const reason =
-        typeof payload.reason === 'string' && payload.reason.trim().length > 0
-          ? payload.reason.trim()
-          : undefined
-
       // nightNumber is the cycle index in the persisted state. It's
       // load-bearing for token reconstruction — the workflow's
-      // collectHumanDayVote built the hook with this exact value,
-      // and we have to match.
-      const nightNumber = typeof gs.nightNumber === 'number' ? gs.nightNumber : null
+      // collectHumanDayVote / collectHumanDayDiscuss built the hook
+      // with this exact value, and we have to match.
+      const nightNumber = typeof gs?.nightNumber === 'number' ? gs.nightNumber : null
       if (nightNumber === null || !Number.isInteger(nightNumber) || nightNumber < 0) {
         return NextResponse.json(
           { error: 'gameState.nightNumber missing or invalid' },
@@ -311,32 +358,107 @@ export async function POST(
         )
       }
 
-      const token = werewolfDayVoteToken(roomId, nightNumber, agentId)
-      const hookPayload: HumanDayVotePayload = reason
-        ? { target, reason }
-        : { target }
+      // Per-phase payload validation + token reconstruction.
+      // Sequential chat phases (dayDiscuss, wolfDiscuss): validate
+      // waitingForHuman matches agentId, validate non-empty text,
+      // route to the phase-specific token.
+      // Parallel vote phases (dayVote, wolfVote): no waitingForHuman
+      // check (room stays 'running'), validate target, route to
+      // phase-specific token.
+      let token: string
+      let hookPayload:
+        | HumanDayVotePayload
+        | HumanDayDiscussPayload
+        | HumanWolfVotePayload
+        | HumanWolfDiscussPayload
+
+      const isChatPhase = phase === 'dayDiscuss' || phase === 'wolfDiscuss'
+      const isVotePhase = phase === 'dayVote' || phase === 'wolfVote'
+
+      if (isChatPhase) {
+        // waitingForHuman is a transient breadcrumb the workflow writes
+        // via markWaitingForWerewolfHuman; not part of WerewolfPersistedState's
+        // strongly-typed surface. Read through a wider cast.
+        const waitingHint = (roomRow.gameState ?? {}) as { waitingForHuman?: unknown }
+        const waitingForHuman =
+          typeof waitingHint.waitingForHuman === 'string' ? waitingHint.waitingForHuman : null
+        if (waitingForHuman !== agentId) {
+          return NextResponse.json(
+            {
+              error:
+                waitingForHuman === null
+                  ? `Werewolf ${phase} not awaiting input`
+                  : `Werewolf ${phase} is awaiting ${waitingForHuman}, not ${agentId}`,
+            },
+            { status: 409 },
+          )
+        }
+
+        const text = typeof payload.content === 'string' ? payload.content.trim() : ''
+        if (text.length === 0) {
+          return NextResponse.json(
+            { error: `Werewolf ${phase} requires non-empty payload.content` },
+            { status: 400 },
+          )
+        }
+
+        token =
+          phase === 'dayDiscuss'
+            ? werewolfDayDiscussToken(roomId, nightNumber, agentId)
+            : werewolfWolfDiscussToken(roomId, nightNumber, agentId)
+        hookPayload = { text }
+      } else if (isVotePhase) {
+        // Validate vote shape. The workflow's collect helpers have
+        // defensive normalization (empty target → abstain), but reject
+        // obviously bad shapes here so callers get a clean 400.
+        const target = typeof payload.target === 'string' ? payload.target.trim() : ''
+        if (target.length === 0) {
+          return NextResponse.json(
+            { error: `Werewolf ${phase} requires payload.target (a player name or "skip")` },
+            { status: 400 },
+          )
+        }
+        const reason =
+          typeof payload.reason === 'string' && payload.reason.trim().length > 0
+            ? payload.reason.trim()
+            : undefined
+
+        token =
+          phase === 'dayVote'
+            ? werewolfDayVoteToken(roomId, nightNumber, agentId)
+            : werewolfWolfVoteToken(roomId, nightNumber, agentId)
+        hookPayload = reason ? { target, reason } : { target }
+      } else {
+        return NextResponse.json(
+          { error: `Unsupported werewolf phase: ${phase}` },
+          { status: 500 },
+        )
+      }
 
       try {
         await resumeHook(token, hookPayload)
       } catch (resumeErr) {
-        // 409 not 500: under werewolf's parallel-hook design the
-        // 45s grace timeout makes "stale hook" the most likely
-        // failure mode (sleep won the race, runDayVote moved on).
-        // Duplicate POST during the window also lands here. The
-        // resource state changed underneath the request — it's
-        // not server breakage. Log for diagnosis; surface a
-        // generic message so callers don't infer too much.
+        // 409 not 500: under werewolf's hook-based design, the most
+        // likely failure mode is the grace timeout firing first
+        // (sleep won the race, workflow moved on) or a duplicate POST
+        // during the window. Resource state changed underneath the
+        // request — not server breakage. Log for diagnosis; surface
+        // a generic message so callers don't infer too much.
         console.warn(
-          `[human-input wdk werewolf] resumeHook failed for ${token}:`,
+          `[human-input wdk werewolf ${phase}] resumeHook failed for ${token}:`,
           resumeErr,
         )
         return NextResponse.json(
-          { error: 'Vote window closed or already submitted' },
+          {
+            error: isVotePhase
+              ? 'Vote window closed or already submitted'
+              : 'Discussion window closed or already submitted',
+          },
           { status: 409 },
         )
       }
 
-      return NextResponse.json({ ok: true, runtime: 'wdk', mode: 'werewolf' })
+      return NextResponse.json({ ok: true, runtime: 'wdk', mode: 'werewolf', phase })
     }
 
     return NextResponse.json(

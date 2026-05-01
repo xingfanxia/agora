@@ -83,14 +83,15 @@ export async function GET(
   const after = afterParam ? parseInt(afterParam, 10) : 0
   const seatParam = url.searchParams.get('seat')
 
-  // Resolve the viewer's role for channel-visibility filtering.
-  // Werewolf is the only mode that gates messages today; other modes
-  // get the unfiltered (spectator) view.
+  // Resolve the viewer's role for channel-visibility filtering AND
+  // owner check (used by the P2 lobby UI to render the force-start
+  // button). Lifted out of the werewolf branch so non-werewolf modes
+  // also get an isOwner signal.
+  const user = await getAuthUser().catch(() => null)
+  const isOwner = user?.id != null && user.id === snapshot.createdBy
+
   let viewerRole: string | null = null
   if (snapshot.modeId === 'werewolf') {
-    const user = await getAuthUser().catch(() => null)
-    const isOwner = user?.id != null && user.id === snapshot.createdBy
-
     if (seatParam) {
       // Caller claims a specific seat. Validate that seat exists in the
       // room's agents snapshot before honoring it (so a typo can't
@@ -175,5 +176,10 @@ export async function GET(
     // it can/can't see). Derived server-side so a forged client-side
     // role can't reveal hidden channels.
     viewerRole: viewerRole ?? 'observer',
+    // P2: client uses this to decide whether to render the lobby
+    // force-start button. Server-derived so a forged client flag
+    // can't bypass the actual /start endpoint check (which re-runs
+    // the auth match).
+    isOwner,
   })
 }

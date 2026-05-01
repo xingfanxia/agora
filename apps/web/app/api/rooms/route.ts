@@ -57,6 +57,13 @@ interface CreateRoomBody {
   // Set to 'wdk' for new rooms that should run on Workflow DevKit.
   // Per the durability contract, runtime is fixed at creation.
   runtime?: 'http_chain' | 'wdk'
+  // P2 — multi-human seat picker (rooms/new picker). Sets isHuman on
+  // matching agents in the room snapshot; the workflow then waits on
+  // their input via resumeHook. Same shape as werewolf + open-chat.
+  // Silently ignored if a non-team-based path is used (no agentIds
+  // to match against).
+  humanSeatId?: string | null
+  humanSeatIds?: readonly string[]
 }
 
 function composeAdHocSystemPrompt(
@@ -126,6 +133,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Team needs at least 2 members' }, { status: 400 })
       }
       teamId = team.id
+
+      // P2 — flag human seats from humanSeatIds (matches the werewolf +
+      // open-chat pattern). Pre-P2 the field was silently dropped from
+      // roundtable; rooms/new now sends it for all 3 modes.
+      const humanSeatIds = new Set<string>()
+      if (Array.isArray(body.humanSeatIds)) {
+        for (const id of body.humanSeatIds) if (typeof id === 'string') humanSeatIds.add(id)
+      }
+      if (typeof body.humanSeatId === 'string') humanSeatIds.add(body.humanSeatId)
+      for (const info of snapshot) {
+        if (humanSeatIds.has(info.id)) {
+          (info as { isHuman?: boolean }).isHuman = true
+        }
+      }
+
       for (const info of snapshot) {
         const provider = info.provider as LLMProvider
         const modelConfig: ModelConfig = {
@@ -206,6 +228,12 @@ export async function POST(request: NextRequest) {
     // a specific rollback case. Rollback path: revert this commit.
     const runtime: 'http_chain' | 'wdk' = body.runtime === 'http_chain' ? 'http_chain' : 'wdk'
 
+    // Lobby gate (P2): WDK rooms with any human seats park at 'lobby'
+    // and defer start(). Pure-AI WDK rooms + http_chain rooms keep the
+    // pre-P2 behavior (immediate start). http_chain bypasses lobby
+    // unconditionally — it's tracked for delete in 4.5d-2.18.
+    const hasHumans = runtime === 'wdk' && agentInfos.some((a) => a.isHuman === true)
+
     await createRoom({
       id: roomId,
       modeId: 'roundtable',
@@ -217,7 +245,14 @@ export async function POST(request: NextRequest) {
       teamId,
       createdBy,
       runtime,
+      initialStatus: hasHumans ? 'lobby' : 'running',
     })
+
+    // Lobby branch: don't start the workflow. /seats/[agentId]/ready
+    // or /start will trigger resolveLobby when the gate clears.
+    if (hasHumans) {
+      return NextResponse.json({ roomId, runtime: 'wdk', status: 'lobby' })
+    }
 
     if (runtime === 'wdk') {
       // WDK path: skip in-memory Room/AIAgent/Flow/Accountant entirely.

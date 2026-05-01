@@ -164,6 +164,16 @@ export interface WerewolfAgentSnapshot {
   readonly isHuman?: boolean
 }
 
+/**
+ * Constant persona string written into every werewolf snapshot. The
+ * persona field is decorative on werewolf seats — each agent has its
+ * full role-aware systemPrompt; the LLM never reads this string. Kept
+ * as a const so the create-time path (apps/web/app/api/rooms/werewolf/
+ * route.ts) and the lobby-resolve path (apps/web/app/lib/lobby.ts)
+ * share one source.
+ */
+export const WEREWOLF_AGENT_PERSONA = 'A player in the werewolf game'
+
 export interface WerewolfWorkflowInput {
   /** UUID of a room already created via createRoom() with status='running'. */
   readonly roomId: string
@@ -308,6 +318,66 @@ export function werewolfDayVoteToken(
   seatId: string,
 ): string {
   return `agora/room/${roomId}/mode/werewolf-day-vote/night/${nightNumber}/seat/${seatId}`
+}
+
+// Day-discuss is the SEQUENTIAL human-chat phase (vs. day-vote which
+// runs voters in parallel). One token per (room, day-cycle, speaker)
+// so the workflow can pause on the active speaker, the UI can show the
+// chat input via the existing waitingForHuman breadcrumb, and a stale
+// resumeHook from a previous day cycle can't accidentally resume the
+// current one. nightNumber identifies the day cycle (dayDiscuss happens
+// after night N, before night N+1).
+
+export function werewolfDayDiscussToken(
+  roomId: string,
+  nightNumber: number,
+  seatId: string,
+): string {
+  return `agora/room/${roomId}/mode/werewolf-day-discuss/night/${nightNumber}/seat/${seatId}`
+}
+
+// Human chat payload — what the /api/rooms/.../human-input endpoint
+// passes to resumeHook for werewolf day-discuss. LOAD-BEARING:
+// the endpoint constructs this exact shape; field rename here without
+// coordinated endpoint updates silently drops human chat on the floor.
+
+export interface HumanDayDiscussPayload {
+  readonly text: string
+}
+
+// Wolf-discuss is the SEQUENTIAL human-chat phase for the night-cycle
+// werewolf channel. Same shape contract as day-discuss but on a
+// distinct token namespace so a stale night-cycle resume can't
+// accidentally land on the day-cycle hook.
+
+export function werewolfWolfDiscussToken(
+  roomId: string,
+  nightNumber: number,
+  seatId: string,
+): string {
+  return `agora/room/${roomId}/mode/werewolf-wolf-discuss/night/${nightNumber}/seat/${seatId}`
+}
+
+export interface HumanWolfDiscussPayload {
+  readonly text: string
+}
+
+// Wolf-vote is the PARALLEL blind-vote phase — every alive wolf's hook
+// races against a 45s grace simultaneously, mirroring day-vote. Token
+// keyed on (room, night, voter) so a wolf's vote can resume their own
+// hook regardless of other wolves' state.
+
+export function werewolfWolfVoteToken(
+  roomId: string,
+  nightNumber: number,
+  seatId: string,
+): string {
+  return `agora/room/${roomId}/mode/werewolf-wolf-vote/night/${nightNumber}/seat/${seatId}`
+}
+
+export interface HumanWolfVotePayload {
+  readonly target: string
+  readonly reason?: string
 }
 
 // ── System message localization ────────────────────────────
@@ -1232,6 +1302,87 @@ async function markRoomError(input: MarkRoomErrorInput): Promise<void> {
   // Same idempotency + sustained-DB-outage semantics as the other two
   // workflows. See roundtable-workflow.ts for the full rationale.
   await updateRoomStatus(input.roomId, 'error', input.message)
+}
+
+// ── Werewolf-human pause / resume (sequential phases) ──────
+//
+// Mirror of open-chat's markWaitingForHuman / markRunningAgain pattern,
+// scoped for werewolf's sequential human phases (dayDiscuss, lastWords,
+// future wolfDiscuss). Day-vote does NOT use these — votes collect
+// in parallel, room stays 'running' across the whole vote phase.
+//
+// Why werewolf needs its own copy: gameState shape differs from
+// open-chat (no waitingForTurnIdx — we use nightNumber + speaker as
+// the cycle key in the hook token). And the runtime breadcrumb the
+// human-input endpoint reads is `gameState.waitingForHuman` (matches
+// HumanPlayBar's existing isMyTurn check) — keeping that shape
+// shared lets the existing UI panel light up without changes.
+//
+// ORDERING INVARIANT (same rationale as open-chat):
+// setGameState BEFORE updateRoomStatus. The endpoint validates
+// `room.status === 'waiting'` first, then reads gameState.waitingForHuman.
+// Reversing opens a window where status='waiting' is observable but
+// the breadcrumb hasn't committed; endpoint would 403 on missing
+// waitingForHuman.
+//
+// IDEMPOTENT: replay re-runs the read-merge with the same input —
+// same output, setGameState overwrites identical content,
+// updateRoomStatus is idempotent.
+
+interface MarkWaitingForWerewolfHumanInput {
+  readonly roomId: string
+  readonly agentId: string
+  /** Phase the human is being prompted in — used in the waiting hint. */
+  readonly phaseTag: string
+}
+
+export async function markWaitingForWerewolfHuman(
+  input: MarkWaitingForWerewolfHumanInput,
+): Promise<void> {
+  'use step'
+  const { roomId, agentId, phaseTag } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markWaitingForWerewolfHuman: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+
+  await setGameState(roomId, {
+    ...existing,
+    waitingForHuman: agentId,
+    waitingForPhaseTag: phaseTag,
+    waitingSince: Date.now(),
+  })
+  await updateRoomStatus(roomId, 'waiting')
+}
+
+interface MarkRunningAgainForWerewolfInput {
+  readonly roomId: string
+}
+
+export async function markRunningAgainForWerewolf(
+  input: MarkRunningAgainForWerewolfInput,
+): Promise<void> {
+  'use step'
+  const { roomId } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markRunningAgainForWerewolf: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+  const {
+    waitingForHuman: _h,
+    waitingForPhaseTag: _p,
+    waitingSince: _s,
+    ...preserved
+  } = existing
+  void _h
+  void _p
+  void _s
+  await setGameState(roomId, preserved)
+  await updateRoomStatus(roomId, 'running')
 }
 
 // ── Helpers (compile-time consumers) ───────────────────────

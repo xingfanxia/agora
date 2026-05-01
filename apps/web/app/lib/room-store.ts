@@ -12,6 +12,8 @@ import type { LLMProvider, Message, PlatformEvent, TokenUsage } from '@agora/sha
 import type { EventRow, RoomRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
+import { buildRoleSystemPrompt, type WerewolfRole } from '@agora/modes'
+import { buildLanguageDirective } from './language.js'
 // Phase 4.5d-2.8 -- in-memory seam for cross-runtime equivalence tests.
 // Each writer + the three reads exercised by the WDK roundtable workflow
 // short-circuit to the memory adapter when WORKFLOW_TEST=1. Production
@@ -22,10 +24,12 @@ import { and, asc, desc, eq, gt, sql } from 'drizzle-orm'
 import {
   memAppendEvent,
   memCreateRoom,
+  memFlipLobbyToRunning,
   memGetEventCount,
   memGetEventsSince,
   memGetMessagesSince,
   memGetRoom,
+  memMarkSeatReady,
   memRefreshMessageCount,
   memRefreshRoomTokenAggregates,
   memSetCurrentPhase,
@@ -56,7 +60,22 @@ const db = new Proxy({} as ReturnType<typeof getDb>, {
   },
 })
 
-export type RoomStatus = 'running' | 'waiting' | 'completed' | 'error'
+/**
+ * Room lifecycle status.
+ *
+ * - `lobby`: pre-start gate when the room has at least one human seat.
+ *   The workflow has NOT been started yet; createRoom skipped `start()`
+ *   and is waiting for all human seats to flip ready (via the
+ *   `/seats/[agentId]/ready` endpoint) before resolveLobby() fires
+ *   `start(workflow, ...)`. Owner can also force-start. Rooms with no
+ *   human seats skip 'lobby' entirely and start at 'running'.
+ * - `running`: workflow is active (AI turns proceeding).
+ * - `waiting`: workflow paused on a human input (open-chat/werewolf
+ *   day-vote, etc.). NOT used during lobby — the lobby gate predates
+ *   workflow start.
+ * - `completed` / `error`: terminal.
+ */
+export type RoomStatus = 'lobby' | 'running' | 'waiting' | 'completed' | 'error'
 
 export interface WaitingDescriptor {
   /** Event type the runtime is waiting on (e.g. 'human:input'). */
@@ -103,6 +122,15 @@ export interface CreateRoomArgs {
   // room's runtime is fixed at creation. Schema CHECK constraint
   // enforces values; default in DDL is 'http_chain'.
   runtime?: 'http_chain' | 'wdk'
+  /**
+   * P2 lobby gate. Default 'running' preserves the old behavior:
+   * createRoom commits a row that's immediately ready for the
+   * workflow to run. Pass 'lobby' when humans are present and the
+   * caller wants to defer `start(workflow, ...)` until all human
+   * seats flip ready (or the owner force-starts). Lobby resolution
+   * lives in apps/web/app/lib/lobby.ts:resolveLobby.
+   */
+  initialStatus?: 'lobby' | 'running'
 }
 
 export async function createRoom(args: CreateRoomArgs): Promise<void> {
@@ -114,7 +142,7 @@ export async function createRoom(args: CreateRoomArgs): Promise<void> {
     config: args.config as object,
     agents: args.agents as unknown as object,
     currentRound: args.currentRound ?? 1,
-    status: 'running',
+    status: args.initialStatus ?? 'running',
     roleAssignments: (args.roleAssignments as object) ?? null,
     advancedRules: (args.advancedRules as object) ?? null,
     teamId: args.teamId ?? null,
@@ -194,6 +222,165 @@ export async function setGameState(
 ): Promise<void> {
   if (inMemoryMode()) return memSetGameState(roomId, gameState)
   await db.update(rooms).set({ gameState: gameState as object }).where(eq(rooms.id, roomId))
+}
+
+// ── P2 lobby gate helpers ───────────────────────────────────
+
+/**
+ * Atomically mark a seat as ready inside `gameState.seatReady[agentId]`.
+ *
+ * Implemented as a single-statement `jsonb_set` UPDATE so two humans
+ * toggling ready concurrently can't race each other (the equivalent
+ * read-modify-write in TS would lose updates). The `WHERE status =
+ * 'lobby'` predicate guarantees the call no-ops once the gate has
+ * resolved (someone hit force-start, or another seat's ready flip
+ * already triggered the running-flip). Returns the new gameState +
+ * agents snapshot for the caller's all-ready check, or `null` when
+ * the room isn't in 'lobby' anymore.
+ *
+ * Returning `null` is the "you're too late" signal — the caller
+ * should NOT then call resolveLobby; the room has already moved on.
+ */
+export interface MarkSeatReadyResult {
+  gameState: Record<string, unknown>
+  agents: AgentInfo[]
+}
+export async function markSeatReady(
+  roomId: string,
+  agentId: string,
+): Promise<MarkSeatReadyResult | null> {
+  if (inMemoryMode()) return memMarkSeatReady(roomId, agentId)
+  // jsonb merge (||) + jsonb_build_object. We can't use jsonb_set with a
+  // 2-deep path here: Postgres's `create_missing=true` only creates the
+  // LAST element, and only if its immediate parent already exists. On a
+  // freshly-created lobby room gameState is NULL → coalesces to '{}',
+  // and `seatReady` doesn't exist as a parent, so jsonb_set silently
+  // returns the input unchanged (the original P2 implementation hit
+  // exactly this and never persisted any seat-ready flip).
+  //
+  // The `||` operator merges jsonb objects with right-side-wins on key
+  // collision, so this both creates seatReady when missing AND preserves
+  // its existing entries (every other human's prior ready flip) when
+  // present. Other gameState keys are also preserved by the outer ||.
+  // Single statement → still atomic against concurrent ready clicks.
+  const result = await db
+    .update(rooms)
+    .set({
+      gameState: sql`
+        coalesce(${rooms.gameState}, '{}'::jsonb)
+        || jsonb_build_object(
+          'seatReady',
+          coalesce(${rooms.gameState}->'seatReady', '{}'::jsonb)
+          || jsonb_build_object(${agentId}::text, true)
+        )
+      `,
+    })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ gameState: rooms.gameState, agents: rooms.agents })
+  if (result.length === 0) return null
+  const row = result[0]!
+  return {
+    gameState: (row.gameState as Record<string, unknown>) ?? {},
+    agents: (row.agents as unknown as AgentInfo[]) ?? [],
+  }
+}
+
+/**
+ * Rename a human seat in the lobby — updates `room.agents[i].name`
+ * for the matching agentId, plus regenerates downstream systemPrompts
+ * that embed the name. Returns the updated agents array on success
+ * or a structured error reason for the endpoint to map to HTTP.
+ *
+ * Mode-specific systemPrompt regeneration:
+ *
+ * - **werewolf**: every agent's systemPrompt embeds the full player
+ *   roster + the wolf list (built by buildRoleSystemPrompt at
+ *   create-time in werewolf/route.ts). A rename mutates a name
+ *   that appears in EVERY agent's prompt, so we rebuild ALL of
+ *   them. Cost is O(N) buildRoleSystemPrompt calls — trivial CPU.
+ *   roleAssignments + modeConfig.language are pulled from the row.
+ *
+ * - **roundtable / open-chat**: composeSystemPrompt embeds only the
+ *   speaker's own name + topic. Peer agents' prompts don't list
+ *   rosters, so renaming one seat doesn't drift any peer's prompt.
+ *   The renamed seat's own systemPrompt is dead weight at runtime
+ *   (humans don't get LLM replies), so we skip prompt regen
+ *   entirely for non-werewolf modes.
+ *
+ * Atomicity: single UPDATE with `WHERE status='lobby'` predicate.
+ * If the room flipped to 'running' between read and write, the
+ * UPDATE returns no rows and we return 'not-lobby'. Concurrent
+ * renames on the same seat last-write-wins (acceptable — rare race,
+ * UI re-fetches and user can re-rename if needed).
+ */
+export type UpdateSeatNameResult =
+  | { ok: true; agents: AgentInfo[] }
+  | { ok: false; reason: 'not-found' | 'not-lobby' | 'not-human' | 'invalid-name' | 'duplicate-name' }
+
+export async function updateSeatName(
+  roomId: string,
+  agentId: string,
+  newName: string,
+): Promise<UpdateSeatNameResult> {
+  if (inMemoryMode()) return memUpdateSeatName(roomId, agentId, newName)
+
+  const trimmed = newName.trim()
+  if (trimmed.length === 0 || trimmed.length > 30) {
+    return { ok: false, reason: 'invalid-name' }
+  }
+
+  const room = await getRoom(roomId)
+  if (!room) return { ok: false, reason: 'not-found' }
+  if (room.status !== 'lobby') return { ok: false, reason: 'not-lobby' }
+
+  const agents = (room.agents as unknown as AgentInfo[]) ?? []
+  const seat = agents.find((a) => a.id === agentId)
+  if (!seat) return { ok: false, reason: 'not-found' }
+  if (seat.isHuman !== true) return { ok: false, reason: 'not-human' }
+
+  // Trim is no-op if already correct — return current agents unchanged.
+  if (seat.name === trimmed) return { ok: true, agents }
+
+  // Reject duplicate display names — confusing for AI rosters AND
+  // for human readers in the chat log. Equality on `.name` is the
+  // right check (case-sensitive — we don't normalize).
+  if (agents.some((a) => a.id !== agentId && a.name === trimmed)) {
+    return { ok: false, reason: 'duplicate-name' }
+  }
+
+  // Build new agents array. Mode-specific prompt regen.
+  const updatedAgents = await rebuildAgentsAfterRename(agents, agentId, trimmed, room)
+
+  const result = await db
+    .update(rooms)
+    .set({ agents: updatedAgents as object })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ agents: rooms.agents })
+
+  if (result.length === 0) return { ok: false, reason: 'not-lobby' }
+  return { ok: true, agents: (result[0]!.agents as unknown as AgentInfo[]) ?? [] }
+}
+
+/**
+ * Compare-and-swap flip from 'lobby' to 'running'. Returns true if
+ * THIS call won the race (the caller should now fire start(workflow,
+ * ...)). Returns false if another caller already won — workflow has
+ * been started or is being started by them, do nothing.
+ *
+ * Uses a single UPDATE ... WHERE status='lobby' RETURNING id so the
+ * predicate + write are one atomic statement. No transaction needed.
+ *
+ * Naturally idempotent against duplicate calls: only the first one
+ * gets the row back.
+ */
+export async function flipLobbyToRunning(roomId: string): Promise<boolean> {
+  if (inMemoryMode()) return memFlipLobbyToRunning(roomId)
+  const result = await db
+    .update(rooms)
+    .set({ status: 'running' })
+    .where(and(eq(rooms.id, roomId), eq(rooms.status, 'lobby')))
+    .returning({ id: rooms.id })
+  return result.length === 1
 }
 
 export async function updateRoomStatus(
@@ -624,4 +811,90 @@ export async function markOrphanedAsError(maxAgeMinutes = 15): Promise<number> {
       ),
     )
   return Array.isArray(rowsAffected) ? rowsAffected.length : 0
+}
+
+// ── rename helpers ────────────────────────────────────────
+
+/**
+ * Build the new agents array for a seat rename. Werewolf needs every
+ * agent's systemPrompt rebuilt (roster + wolf list embed names);
+ * other modes only update the renamed seat's name field.
+ *
+ * Pure: no DB writes, just returns the new AgentInfo[].
+ */
+async function rebuildAgentsAfterRename(
+  agents: AgentInfo[],
+  agentId: string,
+  newName: string,
+  room: RoomRow,
+): Promise<AgentInfo[]> {
+  const renamed = agents.map((a) => (a.id === agentId ? { ...a, name: newName } : a))
+
+  if (room.modeId !== 'werewolf') {
+    // Non-werewolf modes: peer prompts don't reference rosters, so
+    // nothing else needs to change. The renamed seat's own systemPrompt
+    // is fine stale (humans don't get LLM replies).
+    return renamed
+  }
+
+  const roleAssignments =
+    (room.roleAssignments as Record<string, WerewolfRole> | null) ?? {}
+  const modeConfig = (room.modeConfig as Record<string, unknown> | null) ?? {}
+  const language = (modeConfig['language'] as 'en' | 'zh' | undefined) ?? 'zh'
+  const languageDirective = buildLanguageDirective(language)
+
+  const allPlayerNames = renamed.map((a) => a.name)
+  const wolfNames = renamed
+    .filter((a) => roleAssignments[a.id] === 'werewolf')
+    .map((a) => a.name)
+
+  return renamed.map((a) => {
+    const role = roleAssignments[a.id]
+    if (!role) return a
+    return {
+      ...a,
+      systemPrompt: buildRoleSystemPrompt(
+        a.name,
+        role,
+        allPlayerNames,
+        wolfNames,
+        languageDirective,
+      ),
+    }
+  })
+}
+
+/**
+ * In-memory mirror of updateSeatName for the WORKFLOW_TEST seam.
+ * Same shape; mutates the in-memory rooms map directly.
+ */
+async function memUpdateSeatName(
+  roomId: string,
+  agentId: string,
+  newName: string,
+): Promise<UpdateSeatNameResult> {
+  const trimmed = newName.trim()
+  if (trimmed.length === 0 || trimmed.length > 30) {
+    return { ok: false, reason: 'invalid-name' }
+  }
+
+  const room = await memGetRoom(roomId)
+  if (!room) return { ok: false, reason: 'not-found' }
+  if (room.status !== 'lobby') return { ok: false, reason: 'not-lobby' }
+
+  const agents = (room.agents as unknown as AgentInfo[]) ?? []
+  const seat = agents.find((a) => a.id === agentId)
+  if (!seat) return { ok: false, reason: 'not-found' }
+  if (seat.isHuman !== true) return { ok: false, reason: 'not-human' }
+  if (seat.name === trimmed) return { ok: true, agents }
+
+  if (agents.some((a) => a.id !== agentId && a.name === trimmed)) {
+    return { ok: false, reason: 'duplicate-name' }
+  }
+
+  const updatedAgents = await rebuildAgentsAfterRename(agents, agentId, trimmed, room)
+  // Mutating the in-memory row's agents jsonb so subsequent memGetRoom
+  // sees the rename (mirrors the real path's UPDATE ... RETURNING).
+  ;(room as { agents: unknown }).agents = updatedAgents as unknown
+  return { ok: true, agents: updatedAgents }
 }

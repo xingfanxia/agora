@@ -34,7 +34,8 @@
 // currentPhase advances, the workflow restart can't re-enter this
 // phase because the dispatch switch picks up the new phase.
 
-import { FatalError } from 'workflow'
+import { createHook, FatalError } from 'workflow'
+import { sleep } from 'workflow'
 import {
   aliveIds,
   aliveIdsByRole,
@@ -45,12 +46,18 @@ import {
   generateAgentDecision,
   generateAgentReply,
   emitPhaseAnnouncement,
+  markRunningAgainForWerewolf,
+  markWaitingForWerewolfHuman,
   nameToIdMap,
   persistAgentMessage,
   recordTurnUsage,
   tallyVotes,
   transitionPhase,
   werewolfStrings,
+  werewolfWolfDiscussToken,
+  werewolfWolfVoteToken,
+  type HumanWolfDiscussPayload,
+  type HumanWolfVotePayload,
   type WerewolfPersistedState,
   type WerewolfLanguage,
 } from './werewolf-workflow.js'
@@ -78,6 +85,22 @@ const PHASE_TAGS = {
   seerCheck: 'sc',
   dawn: 'dn',
 } as const
+
+// Wolf-discuss grace: 90s (same as day-discuss). Wolf-discuss is
+// usually shorter than day chat per real-world werewolf flow but
+// the typing budget should match — humans need think + type time
+// regardless of phase.
+const WOLF_DISCUSS_GRACE_MS = 90_000
+
+// Wolf-vote grace: 45s (same as day-vote). Pinned target structured
+// choice — quick decision, not extended thinking.
+const WOLF_VOTE_GRACE_MS = 45_000
+
+// Module-scoped unique-symbol sentinels for Promise.race timeouts.
+// TS1335 forbids `unique symbol` inside function bodies; module scope
+// is required. Same pattern as DAY_VOTE_TIMEOUT / DAY_DISCUSS_TIMEOUT.
+const WOLF_DISCUSS_TIMEOUT: unique symbol = Symbol('wolf-discuss-timeout')
+const WOLF_VOTE_TIMEOUT: unique symbol = Symbol('wolf-vote-timeout')
 
 // ── runWolfDiscuss ─────────────────────────────────────────
 
@@ -121,11 +144,20 @@ export async function runWolfDiscuss(
       )
     }
 
-    // Skip humans during night chat for MVP — human wolf coordination
-    // would need a hook + sleep grace per wolf, which is complexity
-    // we save for the day-vote design (2.15). For now humans observe
-    // wolf-chat but don't speak in it. Future enhancement.
-    if (agent.isHuman) continue
+    // Human wolves get the same sequential pause-and-prompt pattern
+    // as dayDiscuss — markWaiting on this seat → hook race → markRunning
+    // → persist or skip-on-timeout. Channel is 'werewolf' so only
+    // wolves see the human's message in their context.
+    if (agent.isHuman) {
+      await collectHumanWolfDiscuss({
+        roomId,
+        nightNumber: state.nightNumber,
+        speakerId: wolfId,
+        speakerName: agent.name,
+        cycleStr: cycle,
+      })
+      continue
+    }
 
     const reply = await generateAgentReply({
       roomId,
@@ -229,10 +261,22 @@ export async function runWolfVote(
           `runWolfVote: agent ${wolfId} (alive wolf) not in snapshot`,
         )
       }
-      // Humans skip blind wolf-vote for MVP (same reasoning as
-      // wolfDiscuss). They get fallback automatically.
+      // Human wolves get a parallel hook + sleep race, same shape as
+      // collectHumanDayVote. The race outcome is mapped onto the same
+      // {target, reason} decision shape as AI votes so the tally code
+      // doesn't care whether the vote came from an LLM step or a
+      // human resumeHook.
       if (agent.isHuman) {
-        return [wolfId, { target: 'skip', reason: S.fallbackAbstain }] as const
+        const decision = await collectHumanWolfVote({
+          roomId,
+          nightNumber: state.nightNumber,
+          voterId: wolfId,
+          voterName: agent.name,
+          cycleStr: cycle,
+          targetsList: targetNames,
+          language,
+        })
+        return [wolfId, decision] as const
       }
 
       const result = await generateAgentDecision({
@@ -307,6 +351,127 @@ export async function runWolfVote(
       lastNightKill: tally.winnerId,
     },
   })
+}
+
+// ── Human helpers (wolfDiscuss + wolfVote) ─────────────────
+//
+// Mirror dayDiscuss / dayVote's hook + sleep race pattern, scoped to
+// the night-cycle wolf channel. Two distinct token namespaces
+// (werewolf-wolf-discuss vs werewolf-wolf-vote) so a stale resume
+// can't accidentally land on the wrong phase.
+//
+// LOAD-BEARING: markWaitingForWerewolfHuman BEFORE createHook in
+// the chat path. Same rationale as collectHumanDayDiscuss — the
+// breadcrumb commits before the hook so a fast resumeHook from the
+// endpoint won't beat the waiting marker.
+
+interface CollectHumanWolfDiscussInput {
+  readonly roomId: string
+  readonly nightNumber: number
+  readonly speakerId: string
+  readonly speakerName: string
+  readonly cycleStr: string
+}
+
+async function collectHumanWolfDiscuss(
+  input: CollectHumanWolfDiscussInput,
+): Promise<void> {
+  await markWaitingForWerewolfHuman({
+    roomId: input.roomId,
+    agentId: input.speakerId,
+    phaseTag: 'wolfDiscuss',
+  })
+
+  using hook = createHook<HumanWolfDiscussPayload>({
+    token: werewolfWolfDiscussToken(input.roomId, input.nightNumber, input.speakerId),
+  })
+
+  const result = await Promise.race<HumanWolfDiscussPayload | typeof WOLF_DISCUSS_TIMEOUT>([
+    hook,
+    sleep(WOLF_DISCUSS_GRACE_MS).then(() => WOLF_DISCUSS_TIMEOUT),
+  ])
+
+  await markRunningAgainForWerewolf({ roomId: input.roomId })
+
+  if (typeof result === 'symbol') return
+  const text = typeof result.text === 'string' ? result.text.trim() : ''
+  if (text.length === 0) return
+
+  await persistAgentMessage({
+    roomId: input.roomId,
+    agentId: input.speakerId,
+    agentName: input.speakerName,
+    content: text,
+    channelId: 'werewolf', // wolves-only channel
+    phaseTag: PHASE_TAGS.wolfDiscuss,
+    cycleId: input.cycleStr,
+    decision: null,
+  })
+}
+
+interface CollectHumanWolfVoteInput {
+  readonly roomId: string
+  readonly nightNumber: number
+  readonly voterId: string
+  readonly voterName: string
+  readonly cycleStr: string
+  readonly targetsList: readonly string[]
+  readonly language: WerewolfLanguage
+}
+
+/**
+ * Parallel wolf-vote collector for a single human wolf. Returns a
+ * decision in the same {target, reason} shape as AI votes so
+ * runWolfVote's tally code is shape-agnostic. NO markWaiting call
+ * here: wolf-vote runs all wolves' hooks in parallel via Promise.all,
+ * room stays at status='running' across the whole vote phase
+ * (matches collectHumanDayVote — no waitingForHuman breadcrumb).
+ *
+ * The UI uses the existing VotePanel with turnId='wolf-vote' (already
+ * wired in HumanPlayBar.tsx for currentPhase==='wolfVote').
+ */
+async function collectHumanWolfVote(
+  input: CollectHumanWolfVoteInput,
+): Promise<HumanWolfVotePayload> {
+  void input.targetsList
+  const S = werewolfStrings(input.language)
+  using hook = createHook<HumanWolfVotePayload>({
+    token: werewolfWolfVoteToken(input.roomId, input.nightNumber, input.voterId),
+  })
+
+  const result = await Promise.race<HumanWolfVotePayload | typeof WOLF_VOTE_TIMEOUT>([
+    hook,
+    sleep(WOLF_VOTE_GRACE_MS).then(() => WOLF_VOTE_TIMEOUT),
+  ])
+
+  let decision: HumanWolfVotePayload
+  if (typeof result === 'symbol') {
+    decision = { target: 'skip', reason: S.humanTimeoutAbstain }
+  } else {
+    decision = {
+      target:
+        typeof result.target === 'string' && result.target.length > 0
+          ? result.target
+          : 'skip',
+      reason: typeof result.reason === 'string' ? result.reason : '',
+    }
+  }
+
+  // Persist the human's vote message inline (same shape as AI votes
+  // for downstream tally / replay). Channel is wolf-vote so the kill
+  // decision is logged to the wolves-only audit channel.
+  await persistAgentMessage({
+    roomId: input.roomId,
+    agentId: input.voterId,
+    agentName: input.voterName,
+    content: S.voteCast(decision.target, decision.reason ?? ''),
+    channelId: 'wolf-vote',
+    phaseTag: PHASE_TAGS.wolfVote,
+    cycleId: input.cycleStr,
+    decision: decision as unknown as Record<string, unknown>,
+  })
+
+  return decision
 }
 
 // ── runGuardProtect (advanced rule) ────────────────────────
