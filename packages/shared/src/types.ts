@@ -24,9 +24,6 @@ export interface PersonaConfig {
   readonly systemPrompt?: string
 }
 
-/** Room lifecycle states */
-export type RoomStatus = 'waiting' | 'active' | 'paused' | 'ended'
-
 // ── Channel ────────────────────────────────────────────────
 
 /** Channel configuration for information isolation */

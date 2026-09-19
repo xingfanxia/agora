@@ -24,11 +24,11 @@ export default function ObservabilityPage() {
   const [events, setEvents] = useState<EventEnvelope[]>([])
   const [agents, setAgents] = useState<AgentData[]>([])
   const [tokenSummary, setTokenSummary] = useState<TokenSummary | null>(null)
-  const [status, setStatus] = useState<'running' | 'waiting' | 'completed' | 'error'>('running')
+  const [status, setStatus] = useState<'lobby' | 'running' | 'waiting' | 'completed' | 'error'>('running')
   const [isDark, setIsDark] = useState(false)
 
   const nextAfterRef = useRef(-1)
-  const statusRef = useRef<'running' | 'waiting' | 'completed' | 'error'>('running')
+  const statusRef = useRef<'lobby' | 'running' | 'waiting' | 'completed' | 'error'>('running')
 
   useEffect(() => {
     setIsDark(prefersDark())
@@ -52,7 +52,7 @@ export default function ObservabilityPage() {
         const eventsData = (await eventsRes.json()) as {
           events: EventEnvelope[]
           total: number
-          status: 'running' | 'waiting' | 'completed' | 'error'
+          status: 'lobby' | 'running' | 'waiting' | 'completed' | 'error'
         }
         const msgData = (await msgRes.json()) as PollResponse
 

@@ -258,7 +258,9 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           <h1 style={{ fontSize: '1.25rem', fontWeight: 590, letterSpacing: '-0.02em' }}>
             {tRoom('werewolfMode')}
           </h1>
-          <StatusPill status={status} />
+          {/* status === 'lobby' never reaches here — page.tsx routes
+              lobby rooms to LobbyView. */}
+          <StatusPill status={status === 'lobby' ? 'running' : status} />
           <DayNightBadge phase={currentPhase} nightNumber={
             typeof gameState?.['nightNumber'] === 'number' ? (gameState['nightNumber'] as number) : 0
           } />
@@ -422,6 +424,9 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
 
 // ── Sub-components ─────────────────────────────────────────
 
+// 'lobby' is intentionally excluded — page.tsx routes lobby rooms to
+// LobbyView before this view renders. See the matching comment in
+// RoundtableView.tsx.
 function StatusPill({ status }: { status: 'running' | 'waiting' | 'completed' | 'error' }) {
   const t = useTranslations('room.status')
   const dotColor =

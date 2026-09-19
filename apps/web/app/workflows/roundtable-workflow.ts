@@ -53,17 +53,19 @@
 // scratch with seeded state), but the retry-window cost claim now
 // rests on WDK's step-result cache, not on a DB-poll race.
 
-import { FatalError } from 'workflow'
+import { createHook, FatalError } from 'workflow'
 import {
   appendEvent,
   getEventCount,
   getEventsSince,
   getMessagesSince,
+  getRoom,
   refreshMessageCount,
   // Renamed locally to disambiguate from this file's recordTurnUsage
   // step. The room-store helper recomputes aggregates from events;
   // the workflow step is the event-write + aggregate-refresh pair.
   refreshRoomTokenAggregates as bumpRoomTokenAggregates,
+  setGameState,
   updateRoomStatus,
   type AgentInfo,
 } from '../lib/room-store.js'
@@ -100,6 +102,34 @@ export interface RoundtableAgentSnapshot {
   readonly persona: string
   readonly systemPrompt: string
   readonly model: ModelConfig
+  /** True if this seat is human-controlled. Workflow pauses on their turn. */
+  readonly isHuman?: boolean
+}
+
+/**
+ * Hook-token contract for roundtable human seats.
+ *
+ * P2 — added when roundtable gained human support. Mirrors the
+ * open-chat token shape so cross-mode UI plumbing stays uniform.
+ *
+ * LOAD-BEARING: external resumers (`/api/rooms/[id]/human-input`)
+ * reconstruct the same string from URL params and call resumeHook.
+ * A format change without coordinated callers silently drops human
+ * turns on the floor.
+ */
+export function roundtableHumanTurnToken(roomId: string, turnIdx: number): string {
+  return `agora/room/${roomId}/mode/roundtable/turn/${turnIdx}`
+}
+
+/**
+ * Payload shape for a human-seat hook resume.
+ *
+ * LOAD-BEARING: external resumers construct this exact shape and
+ * pass it to `resumeHook`. The workflow body's `await hook` returns
+ * the same shape.
+ */
+export interface HumanTurnPayload {
+  readonly text: string
 }
 
 export interface RoundtableWorkflowResult {
@@ -158,10 +188,19 @@ export async function roundtableWorkflow(
       if (!a.systemPrompt || a.systemPrompt.length === 0) {
         throw new FatalError(`agent ${a.id}: systemPrompt required`)
       }
-      if (!ALLOWED_PROVIDERS.includes(a.model.provider)) {
+      // Defense-in-depth: workflows accept arbitrary JSON, not the
+      // TypeScript-checked RoundtableAgentSnapshot. A non-human seat
+      // missing `a.model` would otherwise throw a low-quality
+      // TypeError below; surface a clean FatalError instead.
+      if (!a.isHuman && !a.model) {
+        throw new FatalError(`agent ${a.id}: model required`)
+      }
+      // Allowed providers checked only for AI seats. Human seats may
+      // still carry a placeholder model config (cosmetic; not used).
+      if (!a.isHuman && !ALLOWED_PROVIDERS.includes(a.model.provider)) {
         throw new FatalError(`agent ${a.id}: bad provider "${a.model.provider}"`)
       }
-      if (!a.model.modelId || a.model.modelId.length === 0) {
+      if (!a.isHuman && (!a.model.modelId || a.model.modelId.length === 0)) {
         throw new FatalError(`agent ${a.id}: model.modelId required`)
       }
     }
@@ -189,44 +228,77 @@ export async function roundtableWorkflow(
       const alreadyDone = await isTurnAlreadyPersisted({ roomId, turnIdx })
       if (alreadyDone) continue
 
-      // Step 1 (cached by WDK): generate the LLM reply. Retry of
-      // step 2 does NOT re-invoke step 1 -- WDK serves step 1's
-      // cached result. Returns content + usage so step 3 has the
-      // numbers without re-paying the LLM call.
-      const reply = await generateAgentReply({
-        roomId,
-        turnIdx,
-        agentId: agent.id,
-        systemPrompt: agent.systemPrompt,
-        provider: agent.model.provider,
-        modelId: agent.model.modelId,
-        maxTokens: agent.model.maxTokens ?? 1024,
-      })
+      if (agent.isHuman) {
+        // Human seat: pause the workflow waiting for resumeHook from
+        // the /api/rooms/.../human-input endpoint. Same pattern as
+        // open-chat-workflow's human-turn branch — see that file for
+        // the full ordering / replay-safety / using-disposable
+        // discussion. Replicated here (not factored out yet) because
+        // (a) only 2 modes have this pattern today, (b) the exact
+        // token shape is per-mode, (c) extracting before there's a
+        // 3rd consumer would just add indirection without DRY win.
+        {
+          using hook = createHook<HumanTurnPayload>({
+            token: roundtableHumanTurnToken(roomId, turnIdx),
+          })
+          await markWaitingForRoundtableHuman({ roomId, agentId: agent.id, turnIdx })
+          const event = await hook
 
-      // Step 2: persist. Cheap; ON CONFLICT-safe; can retry freely.
-      // Returns the messageId so step 3 can reference it in the
-      // token:recorded event without computing a separate UUID.
-      const messageId = await persistAgentMessage({
-        roomId,
-        turnIdx,
-        agentId: agent.id,
-        agentName: agent.name,
-        content: reply.content,
-      })
+          if (typeof event.text !== 'string' || event.text.length === 0) {
+            throw new FatalError(
+              `turn ${turnIdx} (agent ${agent.id}): human payload missing text`,
+            )
+          }
 
-      // Step 3 (4.5d-2.5): persist token usage. Idempotent under
-      // standard WDK retry (step throws / transient failure). NOT
-      // idempotent under delivery-failure-after-success retries --
-      // see recordTurnUsage's body comment for the full hazard
-      // analysis and the 4.5d-2.6 schema work that closes it.
-      await recordTurnUsage({
-        roomId,
-        agentId: agent.id,
-        messageId,
-        provider: agent.model.provider,
-        modelId: agent.model.modelId,
-        usage: reply.usage,
-      })
+          await persistRoundtableHumanMessage({
+            roomId,
+            turnIdx,
+            agentId: agent.id,
+            agentName: agent.name,
+            content: event.text,
+          })
+        }
+        await markRoundtableRunningAgain({ roomId })
+      } else {
+        // Step 1 (cached by WDK): generate the LLM reply. Retry of
+        // step 2 does NOT re-invoke step 1 -- WDK serves step 1's
+        // cached result. Returns content + usage so step 3 has the
+        // numbers without re-paying the LLM call.
+        const reply = await generateAgentReply({
+          roomId,
+          turnIdx,
+          agentId: agent.id,
+          systemPrompt: agent.systemPrompt,
+          provider: agent.model.provider,
+          modelId: agent.model.modelId,
+          maxTokens: agent.model.maxTokens ?? 1024,
+        })
+
+        // Step 2: persist. Cheap; ON CONFLICT-safe; can retry freely.
+        // Returns the messageId so step 3 can reference it in the
+        // token:recorded event without computing a separate UUID.
+        const messageId = await persistAgentMessage({
+          roomId,
+          turnIdx,
+          agentId: agent.id,
+          agentName: agent.name,
+          content: reply.content,
+        })
+
+        // Step 3 (4.5d-2.5): persist token usage. Idempotent under
+        // standard WDK retry (step throws / transient failure). NOT
+        // idempotent under delivery-failure-after-success retries --
+        // see recordTurnUsage's body comment for the full hazard
+        // analysis and the 4.5d-2.6 schema work that closes it.
+        await recordTurnUsage({
+          roomId,
+          agentId: agent.id,
+          messageId,
+          provider: agent.model.provider,
+          modelId: agent.model.modelId,
+          usage: reply.usage,
+        })
+      }
     }
 
     await emitRoomEnded({ roomId })
@@ -625,5 +697,108 @@ export function toRoundtableAgentSnapshot(
           ? (info.style['maxTokens'] as number)
           : 1024,
     },
+    isHuman: info.isHuman === true,
   }
+}
+
+// ── Human-turn step helpers (P2) ───────────────────────────
+//
+// Same shape as open-chat's markWaitingForHuman / persistHumanMessage
+// / markRunningAgain. Duplicated rather than factored out — see the
+// per-turn human branch comment in the workflow body for the
+// rationale. If a third mode adopts this pattern, extract to a
+// shared module then.
+
+interface MarkWaitingForRoundtableHumanInput {
+  readonly roomId: string
+  readonly agentId: string
+  readonly turnIdx: number
+}
+
+async function markWaitingForRoundtableHuman(
+  input: MarkWaitingForRoundtableHumanInput,
+): Promise<void> {
+  'use step'
+  const { roomId, agentId, turnIdx } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markWaitingForRoundtableHuman: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+
+  // ORDERING: setGameState BEFORE updateRoomStatus. Same rationale as
+  // open-chat-workflow.ts:markWaitingForHuman — see that file for the
+  // full crash-safety / poll-window discussion.
+  await setGameState(roomId, {
+    ...existing,
+    waitingForHuman: agentId,
+    waitingForTurnIdx: turnIdx,
+    waitingSince: Date.now(),
+  })
+  await updateRoomStatus(roomId, 'waiting')
+}
+
+interface PersistRoundtableHumanMessageInput {
+  readonly roomId: string
+  readonly turnIdx: number
+  readonly agentId: string
+  readonly agentName: string
+  readonly content: string
+}
+
+async function persistRoundtableHumanMessage(
+  input: PersistRoundtableHumanMessageInput,
+): Promise<void> {
+  'use step'
+
+  const { roomId, turnIdx, agentId, agentName, content } = input
+  const seq = await getEventCount(roomId)
+
+  // Same id namespace as AI seats (rt- prefix). The AI/human distinction
+  // is captured by `agents[i].isHuman` in the room snapshot, not by the
+  // message id.
+  const messageId = deriveTurnMessageId(roomId, turnIdx, agentId)
+  const message: Message = {
+    id: messageId,
+    roomId,
+    senderId: agentId,
+    senderName: agentName,
+    content,
+    channelId: 'main',
+    timestamp: Date.now(),
+    metadata: { turnIdx },
+  }
+
+  const event: PlatformEvent = { type: 'message:created', message }
+  await appendEvent(roomId, seq, event)
+  await refreshMessageCount(roomId)
+}
+
+interface MarkRoundtableRunningAgainInput {
+  readonly roomId: string
+}
+
+async function markRoundtableRunningAgain(
+  input: MarkRoundtableRunningAgainInput,
+): Promise<void> {
+  'use step'
+  const { roomId } = input
+
+  const room = await getRoom(roomId)
+  if (!room) {
+    throw new FatalError(`markRoundtableRunningAgain: room ${roomId} not found`)
+  }
+  const existing = (room.gameState ?? {}) as Record<string, unknown>
+  const {
+    waitingForHuman: _h,
+    waitingForTurnIdx: _t,
+    waitingSince: _s,
+    ...preserved
+  } = existing
+  void _h
+  void _t
+  void _s
+  await setGameState(roomId, preserved)
+  await updateRoomStatus(roomId, 'running')
 }

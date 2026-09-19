@@ -120,7 +120,7 @@ export interface TokenSummary {
 
 export interface PollResponse {
   messages: MessageData[]
-  status: 'running' | 'waiting' | 'completed' | 'error'
+  status: 'lobby' | 'running' | 'waiting' | 'completed' | 'error'
   currentRound: number
   totalRounds: number
   currentPhase: string | null
@@ -133,8 +133,10 @@ export interface PollResponse {
   roleAssignments: Record<string, string> | null
   /** Werewolf-only */
   advancedRules: Record<string, boolean> | null
-  /** Werewolf-only: snapshot of custom game state (eliminated, winResult, etc.) */
+  /** Snapshot of custom game state (eliminated, winResult, P2 seatReady, etc.) */
   gameState: Record<string, unknown> | null
+  /** P2 — true if the polling user matches room.createdBy (auth match). */
+  isOwner: boolean
   error?: string
 }
 

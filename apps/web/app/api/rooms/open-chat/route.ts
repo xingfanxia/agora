@@ -113,6 +113,13 @@ export async function POST(request: NextRequest) {
   // endpoint).
   const runtime: 'http_chain' | 'wdk' = body.runtime === 'wdk' ? 'wdk' : 'http_chain'
 
+  // Lobby gate (P2): if any seat is human, the room enters 'lobby'
+  // and the workflow doesn't `start()` until all human seats flip
+  // ready. http_chain rooms intentionally bypass the lobby gate —
+  // legacy runtime predates lobby and we don't want to perturb it
+  // (it's tracked for delete in 4.5d-2.18 anyway).
+  const hasHumans = runtime === 'wdk' && agents.some((a) => a.isHuman === true)
+
   await createRoom({
     id: roomId,
     modeId: 'open-chat',
@@ -123,6 +130,7 @@ export async function POST(request: NextRequest) {
     teamId: team.id,
     createdBy,
     runtime,
+    initialStatus: hasHumans ? 'lobby' : 'running',
   })
 
   await setGameState(roomId, {
@@ -131,6 +139,12 @@ export async function POST(request: NextRequest) {
     totalTurns: agents.length * rounds,
     leaderAgentId,
   })
+
+  // Lobby branch: don't start the workflow. /seats/[agentId]/ready
+  // or /start will trigger resolveLobby when the gate clears.
+  if (hasHumans) {
+    return NextResponse.json({ roomId, runtime: 'wdk', status: 'lobby' })
+  }
 
   if (runtime === 'wdk') {
     // WDK path: skip the legacy tick fetch entirely; the workflow
