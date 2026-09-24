@@ -62,6 +62,14 @@ npx tsx scripts/token-report.ts                              # LiteLLM pricing s
 
 `.env` keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`.
 
+GPT models with an Azure deployment (`gpt-5.4` → `gpt-5.4-standard`, map in
+`packages/llm/src/provider.ts`) call Azure OpenAI first when
+`AZURE_OPENAI_ENDPOINT` (the resource's `/openai/v1` URL) and
+`AZURE_OPENAI_API_KEY` are set, and fall back to `OPENAI_API_KEY` on Azure
+429/5xx/connection errors. Content-filter and other 4xx errors do not fall back.
+Without the Azure pair, or for models without a deployment (`gpt-4o`), calls go
+straight to OpenAI.
+
 ## Web UI
 
 | Route | What it does |
