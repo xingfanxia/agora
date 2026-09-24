@@ -1,7 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import type { LanguageModel } from 'ai'
+import { APICallError, type LanguageModel } from 'ai'
 import type { LLMProvider, ModelConfig } from '@agora/shared'
 
 const ENV_KEY_MAP: Record<LLMProvider, string> = {
@@ -31,6 +31,71 @@ const MODEL_DISPLAY: Record<string, string> = {
   'deepseek-reasoner': 'DeepSeek Reasoner',
 }
 
+// OpenAI models are served by Azure OpenAI first when AZURE_OPENAI_ENDPOINT +
+// AZURE_OPENAI_API_KEY are set and the model has an Azure deployment here; the
+// official OpenAI API is the fallback. Models without a deployment (gpt-4o)
+// and runs without Azure env call OpenAI directly, as before.
+const AZURE_OPENAI_DEPLOYMENTS: Record<string, string> = {
+  'gpt-5.4': 'gpt-5.4-standard',
+}
+
+type SdkModel = ReturnType<ReturnType<typeof createOpenAI>>
+
+function createOpenAIModel(config: ModelConfig): LanguageModel {
+  // An explicit key means that OpenAI account, never the shared Azure resource.
+  if (config.apiKey) return createOpenAI({ apiKey: config.apiKey })(config.modelId)
+  const endpoint = process.env['AZURE_OPENAI_ENDPOINT']?.trim()
+  const azureKey = process.env['AZURE_OPENAI_API_KEY']?.trim()
+  const deployment = AZURE_OPENAI_DEPLOYMENTS[config.modelId]
+  const openaiKey = process.env['OPENAI_API_KEY']
+  const azure =
+    endpoint && azureKey && deployment
+      ? createOpenAI({
+          apiKey: azureKey,
+          baseURL: endpoint.replace(/\/$/, ''),
+          headers: { 'api-key': azureKey },
+        })(deployment)
+      : undefined
+  const openai = openaiKey ? createOpenAI({ apiKey: openaiKey })(config.modelId) : undefined
+  if (azure && openai) return withAvailabilityFallback(azure, openai)
+  return azure ?? openai ?? createOpenAI({ apiKey: resolveApiKey(config) })(config.modelId)
+}
+
+/** Azure could not serve the call (429, 5xx, no connection), so OpenAI may. */
+export function isAvailabilityError(err: unknown): boolean {
+  if (!APICallError.isInstance(err)) return false
+  const status = err.statusCode
+  return status === undefined || status === 429 || status >= 500
+}
+
+/**
+ * Content-filter and other 4xx errors, and caller aborts, propagate unchanged.
+ * Streams switch hosts only before the first chunk: doStream resolves after
+ * the HTTP status, so a mid-stream error still reaches the caller.
+ */
+export function withAvailabilityFallback(primary: SdkModel, fallback: SdkModel): SdkModel {
+  const attempt = async <T>(label: string, call: (m: SdkModel) => PromiseLike<T>): Promise<T> => {
+    try {
+      return await call(primary)
+    } catch (err) {
+      if (!isAvailabilityError(err)) throw err
+      console.warn(
+        `[llm] ${label}: ${primary.provider} ${primary.modelId} unavailable (${(err as Error).message}), ` +
+          `falling back to ${fallback.provider} ${fallback.modelId}`,
+      )
+      return call(fallback)
+    }
+  }
+  return {
+    specificationVersion: primary.specificationVersion,
+    provider: primary.provider,
+    modelId: primary.modelId,
+    supportedUrls: primary.supportedUrls,
+    doGenerate: (options) => attempt('generate', (m) => m.doGenerate(options)),
+    doStream: (options) => attempt('stream', (m) => m.doStream(options)),
+  }
+}
+
 function resolveApiKey(config: ModelConfig): string {
   const key = config.apiKey ?? process.env[ENV_KEY_MAP[config.provider]]
   if (!key) {
@@ -50,10 +115,8 @@ export function createModel(config: ModelConfig): LanguageModel {
       const provider = createAnthropic({ apiKey })
       return provider(config.modelId)
     }
-    case 'openai': {
-      const provider = createOpenAI({ apiKey })
-      return provider(config.modelId)
-    }
+    case 'openai':
+      return createOpenAIModel(config)
     case 'google': {
       const provider = createGoogleGenerativeAI({ apiKey })
       return provider(config.modelId)
