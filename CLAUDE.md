@@ -41,5 +41,13 @@ Three-layer design:
 ## Commands
 
 ```bash
-# TBD — will be filled as project scaffolding is set up
+pnpm dev            # Next.js at :3000
+pnpm build          # turbo run build
+pnpm lint           # turbo run lint
+pnpm check-types    # turbo run check-types
+pnpm test           # turbo run test: package unit tests and apps/web test:unit
+pnpm --filter @agora/web test:integration   # workflow-runtime durability tests (bundle build, slower)
+pnpm --filter @agora/web e2e                # Playwright
 ```
+
+There is no GitHub Actions CI; run the relevant commands before merging.
