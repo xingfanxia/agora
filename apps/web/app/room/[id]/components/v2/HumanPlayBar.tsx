@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PollResponse, AgentData } from '../theme'
+import { seatAuthHeaders } from '../../hooks/seat-auth'
 import {
   VotePanel,
   WitchPanel,
@@ -84,7 +85,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     try {
       const res = await fetch(`/api/rooms/${roomId}/human-input`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...seatAuthHeaders(roomId) },
         body: JSON.stringify({
           agentId: humanAgentId,
           turnId,

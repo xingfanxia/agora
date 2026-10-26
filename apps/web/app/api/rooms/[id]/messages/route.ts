@@ -13,9 +13,11 @@
 //     a player still gets all channels here; their player view is
 //     up to the client (we may add a "player mode" toggle later).
 //   - Caller passes `?seat=<agentId>` to identify their seat. The
-//     endpoint validates the seat exists in the room's agents
-//     snapshot, looks up the seat's role, and filters channels
-//     accordingly.
+//     claim is honored only with proof: a Bearer seat token signed
+//     for (room, seat), or the room owner's session. An unproven
+//     claim is treated as a strict observer. The seat must also
+//     exist in the room's agents snapshot; its role then filters
+//     channels.
 //   - No seat + no owner-auth → caller is treated as a strict
 //     observer and sees only public channels (`main`, `day-vote`,
 //     `system`). Used for un-claimed shared links.
@@ -27,6 +29,12 @@
 import { NextResponse } from 'next/server'
 import { getMessagesSince, getRoomSnapshot, type AgentInfo } from '../../../../lib/room-store'
 import { getAuthUser } from '../../../../lib/supabase-server'
+import { verifySeatToken } from '../../../../lib/seat-tokens'
+import {
+  bearerToken,
+  projectWerewolfAgents,
+  projectWerewolfGameState,
+} from '../../../../lib/werewolf-visibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,6 +95,7 @@ export async function GET(
   // Werewolf is the only mode that gates messages today; other modes
   // get the unfiltered (spectator) view.
   let viewerRole: string | null = null
+  let verifiedSeat: string | null = null
   if (snapshot.modeId === 'werewolf') {
     const user = await getAuthUser().catch(() => null)
     const isOwner = user?.id != null && user.id === snapshot.createdBy
@@ -94,14 +103,20 @@ export async function GET(
     if (seatParam) {
       // Caller claims a specific seat. Validate that seat exists in the
       // room's agents snapshot before honoring it (so a typo can't
-      // accidentally upgrade visibility).
+      // accidentally upgrade visibility), and that the caller proved
+      // the claim (seat token for this room+seat, or owner session).
       const agents = (snapshot.agents as readonly AgentInfo[]) ?? []
       const claimedSeat = agents.find((a) => a.id === seatParam)
-      if (claimedSeat) {
+      const token = bearerToken(request)
+      const seatProven =
+        isOwner ||
+        (token != null && (await verifySeatToken(token, id))?.agentId === seatParam)
+      if (claimedSeat && seatProven) {
+        verifiedSeat = seatParam
         const role = snapshot.roleAssignments?.[seatParam] ?? null
         viewerRole = role
       } else {
-        // Seat doesn't exist in this room — treat as strict observer.
+        // Unknown or unproven seat — treat as strict observer.
         viewerRole = null
       }
     } else if (isOwner) {
@@ -131,10 +146,10 @@ export async function GET(
   if (snapshot.modeId === 'werewolf' && visibleRoles) {
     if (snapshot.status === 'completed' || viewerRole === 'spectator') {
       // Full reveal — leave visibleRoles as-is.
-    } else if (seatParam && viewerRole) {
+    } else if (verifiedSeat && viewerRole) {
       const filtered: Record<string, string> = {}
-      const ownRole = visibleRoles[seatParam]
-      if (ownRole) filtered[seatParam] = ownRole
+      const ownRole = visibleRoles[verifiedSeat]
+      if (ownRole) filtered[verifiedSeat] = ownRole
       if (ownRole === 'werewolf') {
         for (const [aid, role] of Object.entries(visibleRoles)) {
           if (role === 'werewolf') filtered[aid] = role
@@ -155,6 +170,13 @@ export async function GET(
       : null
   const currentPhase = snapshot.currentPhase ?? gameStatePhase
 
+  // In-progress werewolf games: players/observers get a projected view
+  // (no roleMap, other roles' night state, or role-bearing seat prompts).
+  const projectForViewer =
+    snapshot.modeId === 'werewolf' &&
+    snapshot.status !== 'completed' &&
+    viewerRole !== 'spectator'
+
   return NextResponse.json({
     messages,
     status: snapshot.status,
@@ -164,12 +186,14 @@ export async function GET(
     currentPhase,
     modeId: snapshot.modeId,
     thinkingAgentId: snapshot.thinkingAgentId,
-    agents: snapshot.agents,
+    agents: projectForViewer ? projectWerewolfAgents(snapshot.agents) : snapshot.agents,
     topic: snapshot.topic ?? '',
     tokenSummary: snapshot.tokenSummary,
     roleAssignments: visibleRoles,
     advancedRules: snapshot.advancedRules,
-    gameState: snapshot.gameState,
+    gameState: projectForViewer
+      ? projectWerewolfGameState(snapshot.gameState, viewerRole, verifiedSeat)
+      : snapshot.gameState,
     error: snapshot.error,
     // For the client to show a "your role" banner (and to know what
     // it can/can't see). Derived server-side so a forged client-side

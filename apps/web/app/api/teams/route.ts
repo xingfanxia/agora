@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   const scope = url.searchParams.get('scope')
   const include = url.searchParams.get('include') // 'members' for one-shot
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') ?? '200', 10), 1), 500)
-  const uid = await getReaderId(request)
+  const uid = await getReaderId()
 
   if (scope === 'mine') {
     if (!uid) return NextResponse.json({ teams: [] })
