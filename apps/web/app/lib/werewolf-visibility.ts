@@ -22,6 +22,8 @@ const PUBLIC_KEYS = [
   'sheriffElected',
   'pendingLastWordsIds',
   'advancedRules',
+  // Lobby ready-state (multi-human lobby); shown to every seat.
+  'seatReady',
 ] as const
 
 const ROLE_KEYS: Record<string, readonly string[]> = {
@@ -62,6 +64,25 @@ export function projectWerewolfGameState(
     copy('waitingForTurnIdx')
   }
   return out
+}
+
+// Seat fields safe to show everyone. Werewolf seats can carry a
+// role-bearing systemPrompt/persona ("YOUR ROLE: SEER …", fellow
+// wolves), so in-progress games send only these.
+const PUBLIC_AGENT_KEYS = ['id', 'name', 'model', 'provider', 'isHuman', 'avatarSeed'] as const
+
+/** Project the room's agent seats for a player or observer. */
+export function projectWerewolfAgents(agents: unknown): unknown {
+  if (!Array.isArray(agents)) return agents
+  return agents.map((agent) => {
+    if (!agent || typeof agent !== 'object') return agent
+    const src = agent as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const key of PUBLIC_AGENT_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key]
+    }
+    return out
+  })
 }
 
 /** Bearer token from an Authorization header, or null. */

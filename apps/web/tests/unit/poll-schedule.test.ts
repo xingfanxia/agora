@@ -21,6 +21,10 @@ describe('isTerminalPollStatus', () => {
 })
 
 describe('nextPollDelay', () => {
+  it('pre-game lobby polls at the 1s live cadence (ready-up must show promptly)', () => {
+    expect(nextPollDelay('lobby', 0)).toBe(1000)
+    expect(nextPollDelay('lobby', 3)).toBe(4000)
+  })
   it('healthy cadence is unchanged: 1s live, 5s otherwise', () => {
     expect(nextPollDelay('running', 0)).toBe(1000)
     expect(nextPollDelay('waiting', 0)).toBe(1000)

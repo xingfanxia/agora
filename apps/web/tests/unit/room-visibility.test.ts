@@ -50,7 +50,16 @@ function werewolfRoom(status = 'running'): Record<string, unknown> {
     modeId: 'werewolf',
     status,
     createdBy: OWNER,
-    agents: Object.keys(roleAssignments).map((id) => ({ id, name: id, model: 'm', provider: 'p' })),
+    // PR #1 stores role-bearing prompts on seats; they must not reach players.
+    agents: Object.keys(roleAssignments).map((id) => ({
+      id,
+      name: id,
+      model: 'm',
+      provider: 'p',
+      isHuman: id === 'wolf1',
+      systemPrompt: `YOUR ROLE: ${roleAssignments[id as keyof typeof roleAssignments]}`,
+      persona: 'p',
+    })),
     roleAssignments,
     gameState: structuredClone(fullGameState),
     currentRound: 1,
@@ -72,6 +81,7 @@ async function poll(query = '', headers: Record<string, string> = {}) {
   expect(res.status).toBe(200)
   return (await res.json()) as {
     messages: Array<{ channelId: string }>
+    agents: Array<Record<string, unknown>>
     roleAssignments: Record<string, string> | null
     gameState: Record<string, unknown> | null
     viewerRole: string
@@ -172,6 +182,28 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
     expect(body.gameState).not.toHaveProperty('seerResult')
   })
 
+  it('observers and players never get seat systemPrompt/persona', async () => {
+    const token = await signSeatToken({ roomId: ROOM, agentId: 'wolf1' })
+    for (const body of [await poll(), await poll('?seat=wolf1', { authorization: `Bearer ${token}` })]) {
+      expect(body.agents).toHaveLength(5)
+      for (const agent of body.agents) {
+        expect(Object.keys(agent).sort()).toEqual(
+          ['id', 'isHuman', 'model', 'name', 'provider'].sort(),
+        )
+      }
+      expect(JSON.stringify(body)).not.toContain('YOUR ROLE')
+    }
+  })
+
+  it('lobby: a guest with a seat token sees the shared ready state', async () => {
+    state.snapshot = werewolfRoom('lobby')
+    ;(state.snapshot['gameState'] as Record<string, unknown>)['seatReady'] = { wolf1: true, vil1: false }
+    const token = await signSeatToken({ roomId: ROOM, agentId: 'wolf1' })
+    const body = await poll('?seat=wolf1', { authorization: `Bearer ${token}` })
+    expect(body.gameState?.['seatReady']).toEqual({ wolf1: true, vil1: false })
+    expect((await poll()).gameState?.['seatReady']).toEqual({ wolf1: true, vil1: false })
+  })
+
   it('owner without a seat is the spectator: everything (unchanged)', async () => {
     state.user = { id: OWNER }
     const body = await poll()
@@ -179,6 +211,7 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
     expect(channels(body)).toEqual(['main', 'seer-result', 'system', 'werewolf'])
     expect(body.roleAssignments).toEqual(roleAssignments)
     expect(body.gameState).toEqual(fullGameState)
+    expect(body.agents[0]?.['systemPrompt']).toBe('YOUR ROLE: werewolf')
   })
 
   it('owner on their own seat (no token) gets that seat\'s player view (unchanged)', async () => {
@@ -195,6 +228,7 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
     const body = await poll()
     expect(body.roleAssignments).toEqual(roleAssignments)
     expect(body.gameState).toEqual(fullGameState)
+    expect(body.agents[0]?.['systemPrompt']).toBe('YOUR ROLE: werewolf')
   })
 
   it('non-werewolf rooms are unfiltered (unchanged)', async () => {

@@ -11,6 +11,7 @@
 
 import { useState } from 'react'
 import type { AgentData, PollResponse } from '../theme'
+import { seatAuthHeaders } from '../../hooks/seat-auth'
 
 export interface WerewolfPanelCommonProps {
   roomId: string
@@ -30,7 +31,7 @@ async function submitHumanInput(
   try {
     const res = await fetch(`/api/rooms/${roomId}/human-input`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...seatAuthHeaders(roomId) },
       body: JSON.stringify({ agentId: humanAgentId, turnId, payload }),
     })
     if (!res.ok) {

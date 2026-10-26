@@ -15,12 +15,15 @@ export function isTerminalPollStatus(status: number): boolean {
 
 /**
  * Delay before the next poll. With no failures: 1s while the room is
- * live (a human may submit any moment), 5s otherwise. After failures:
+ * live or in the pre-game lobby (a human may submit/ready up any
+ * moment), 5s otherwise. After failures:
  * exponential backoff from 1s, capped at MAX_POLL_BACKOFF_MS.
  */
 export function nextPollDelay(roomStatus: string, consecutiveFailures: number): number {
   if (consecutiveFailures > 0) {
     return Math.min(1000 * 2 ** (consecutiveFailures - 1), MAX_POLL_BACKOFF_MS)
   }
-  return roomStatus === 'running' || roomStatus === 'waiting' ? 1000 : 5000
+  return roomStatus === 'lobby' || roomStatus === 'running' || roomStatus === 'waiting'
+    ? 1000
+    : 5000
 }

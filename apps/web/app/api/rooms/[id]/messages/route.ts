@@ -30,7 +30,11 @@ import { NextResponse } from 'next/server'
 import { getMessagesSince, getRoomSnapshot, type AgentInfo } from '../../../../lib/room-store'
 import { getAuthUser } from '../../../../lib/supabase-server'
 import { verifySeatToken } from '../../../../lib/seat-tokens'
-import { bearerToken, projectWerewolfGameState } from '../../../../lib/werewolf-visibility'
+import {
+  bearerToken,
+  projectWerewolfAgents,
+  projectWerewolfGameState,
+} from '../../../../lib/werewolf-visibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -166,6 +170,13 @@ export async function GET(
       : null
   const currentPhase = snapshot.currentPhase ?? gameStatePhase
 
+  // In-progress werewolf games: players/observers get a projected view
+  // (no roleMap, other roles' night state, or role-bearing seat prompts).
+  const projectForViewer =
+    snapshot.modeId === 'werewolf' &&
+    snapshot.status !== 'completed' &&
+    viewerRole !== 'spectator'
+
   return NextResponse.json({
     messages,
     status: snapshot.status,
@@ -175,19 +186,14 @@ export async function GET(
     currentPhase,
     modeId: snapshot.modeId,
     thinkingAgentId: snapshot.thinkingAgentId,
-    agents: snapshot.agents,
+    agents: projectForViewer ? projectWerewolfAgents(snapshot.agents) : snapshot.agents,
     topic: snapshot.topic ?? '',
     tokenSummary: snapshot.tokenSummary,
     roleAssignments: visibleRoles,
     advancedRules: snapshot.advancedRules,
-    // In-progress werewolf games: never send roleMap / other roles'
-    // night state to players or observers.
-    gameState:
-      snapshot.modeId === 'werewolf' &&
-      snapshot.status !== 'completed' &&
-      viewerRole !== 'spectator'
-        ? projectWerewolfGameState(snapshot.gameState, viewerRole, verifiedSeat)
-        : snapshot.gameState,
+    gameState: projectForViewer
+      ? projectWerewolfGameState(snapshot.gameState, viewerRole, verifiedSeat)
+      : snapshot.gameState,
     error: snapshot.error,
     // For the client to show a "your role" banner (and to know what
     // it can/can't see). Derived server-side so a forged client-side
