@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { MessageData, PollResponse } from '../components/theme'
+import { isTerminalPollStatus, nextPollDelay } from './poll-schedule'
 
 /**
  * Polls the room messages endpoint. Returns the full room snapshot
@@ -31,6 +32,7 @@ export function useRoomPoll(roomId: string) {
 
   useEffect(() => {
     let cancelled = false
+    let failures = 0
 
     try {
       const raw = localStorage.getItem(`agora-seat-${roomId}`)
@@ -52,44 +54,50 @@ export function useRoomPoll(roomId: string) {
         })
 
         if (!res.ok) {
-          const data = (await res.json()) as { error?: string }
+          const data = (await res.json().catch(() => ({}))) as { error?: string }
           if (!cancelled) {
             setErrorMsg(data.error ?? 'Failed to load room')
             setLoading(false)
           }
-          return
-        }
+          // Missing/gone room: stop. Anything else is transient — keep
+          // polling with backoff instead of freezing the room view.
+          if (isTerminalPollStatus(res.status)) return
+          failures++
+        } else {
+          const data = (await res.json()) as PollResponse
+          failures = 0
 
-        const data = (await res.json()) as PollResponse
+          if (!cancelled) {
+            if (data.messages.length > 0) {
+              setMessages((prev) => {
+                const existingIds = new Set(prev.map((m) => m.id))
+                const fresh = data.messages.filter((m) => !existingIds.has(m.id))
+                if (fresh.length === 0) return prev
+                const next = [...prev, ...fresh]
+                lastTimestampRef.current = Math.max(...next.map((m) => m.timestamp))
+                return next
+              })
+            }
 
-        if (!cancelled) {
-          if (data.messages.length > 0) {
-            setMessages((prev) => {
-              const existingIds = new Set(prev.map((m) => m.id))
-              const fresh = data.messages.filter((m) => !existingIds.has(m.id))
-              if (fresh.length === 0) return prev
-              const next = [...prev, ...fresh]
-              lastTimestampRef.current = Math.max(...next.map((m) => m.timestamp))
-              return next
-            })
+            const { messages: _messages, ...rest } = data
+            setSnapshot(rest)
+            statusRef.current = data.status
+            // A successful poll clears a transient error from an earlier one.
+            setErrorMsg(data.error ?? null)
+            setLoading(false)
           }
-
-          const { messages: _messages, ...rest } = data
-          setSnapshot(rest)
-          statusRef.current = data.status
-          if (data.error) setErrorMsg(data.error)
-          setLoading(false)
         }
       } catch {
+        failures++
         if (!cancelled) {
           setErrorMsg('Connection lost. Retrying...')
         }
       }
 
       if (!cancelled) {
-        // Poll fast when running or waiting (human may submit any moment)
-        const delay = statusRef.current === 'running' || statusRef.current === 'waiting' ? 1000 : 5000
-        setTimeout(poll, delay)
+        // Poll fast when running or waiting (human may submit any moment);
+        // back off (bounded) after consecutive failures.
+        setTimeout(poll, nextPollDelay(statusRef.current, failures))
       }
     }
 

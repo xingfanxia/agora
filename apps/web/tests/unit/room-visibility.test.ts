@@ -68,6 +68,8 @@ async function poll(query = '', headers: Record<string, string> = {}) {
   const res = await getMessages(new Request(`http://x/api/rooms/${ROOM}/messages${query}`, { headers }), {
     params: Promise.resolve({ id: ROOM }),
   })
+  // Seat checks downgrade to the observer view; they never fail the poll.
+  expect(res.status).toBe(200)
   return (await res.json()) as {
     messages: Array<{ channelId: string }>
     roleAssignments: Record<string, string> | null
@@ -126,6 +128,22 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
     const body = await poll('?seat=wolf1', { authorization: `Bearer ${token}` })
     expect(body.viewerRole).toBe('observer')
     expect(channels(body)).toEqual(['main', 'system'])
+  })
+
+  it('garbage or expired-looking tokens still get a 200 observer view (polling never stops)', async () => {
+    const body = await poll('?seat=wolf1', { authorization: 'Bearer not-a-jwt' })
+    expect(body.viewerRole).toBe('observer')
+  })
+
+  it('missing AGORA_SEAT_SECRET does not turn a seat claim into an error', async () => {
+    const saved = process.env.AGORA_SEAT_SECRET
+    delete process.env.AGORA_SEAT_SECRET
+    try {
+      const body = await poll('?seat=wolf1', { authorization: 'Bearer x.y.z' })
+      expect(body.viewerRole).toBe('observer')
+    } finally {
+      process.env.AGORA_SEAT_SECRET = saved
+    }
   })
 
   it('a token for another room does not unlock the seat', async () => {
