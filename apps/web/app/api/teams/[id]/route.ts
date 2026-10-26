@@ -24,7 +24,7 @@ const VALID_MODES = ['open-chat', 'roundtable', 'werewolf'] as const
 
 // ── GET ────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest, ctx: RouteCtx) {
+export async function GET(_request: NextRequest, ctx: RouteCtx) {
   const { id } = await ctx.params
   const data = await getTeamWithMembers(id)
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, ctx: RouteCtx) {
   // personas) is readable only by the identity that lists it under
   // "mine"; anyone else gets the same 404 as a missing id.
   if (!data.team.isTemplate) {
-    const readerId = await getReaderId(request)
+    const readerId = await getReaderId()
     if (!readerId || data.team.createdBy !== readerId) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }

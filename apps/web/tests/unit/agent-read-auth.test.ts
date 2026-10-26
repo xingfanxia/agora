@@ -12,11 +12,15 @@ const state = vi.hoisted(() => ({
 vi.mock('../../app/lib/supabase-server', () => ({ getAuthUser: async () => state.user }))
 vi.mock('../../app/lib/agent-store', () => ({
   getAgent: async () => state.agent,
+  listAgents: async (q: { createdBy?: string; isTemplate?: boolean }) =>
+    q.createdBy === 'owner-uid' ? [{ id: 'a1', createdBy: 'owner-uid' }] : [],
+  createAgent: vi.fn(),
   updateAgent: vi.fn(),
   deleteAgent: vi.fn(),
 }))
 
 import { GET } from '../../app/api/agents/[id]/route'
+import { GET as listAgentsRoute } from '../../app/api/agents/route'
 
 async function read(cookie?: string) {
   const req = new NextRequest('http://x/api/agents/a1', { headers: cookie ? { cookie } : {} })
@@ -55,5 +59,23 @@ describe('GET /api/agents/:id', () => {
   it('missing agent is 404 (unchanged)', async () => {
     state.agent = null
     expect((await read()).status).toBe(404)
+  })
+
+  it('a forged legacy agora-uid cookie for the owner id is not an identity', async () => {
+    expect((await read('agora-uid=owner-uid')).status).toBe(404)
+  })
+})
+
+describe('GET /api/agents?scope=mine', () => {
+  const list = async (cookie?: string) => {
+    const req = new NextRequest('http://x/api/agents?scope=mine', { headers: cookie ? { cookie } : {} })
+    return ((await (await listAgentsRoute(req)).json()) as { agents: unknown[] }).agents
+  }
+  it('forged agora-uid cookie lists nothing', async () => {
+    expect(await list('agora-uid=owner-uid')).toEqual([])
+  })
+  it('owner session lists own agents (unchanged)', async () => {
+    state.user = { id: 'owner-uid' }
+    expect(await list()).toHaveLength(1)
   })
 })

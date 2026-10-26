@@ -52,6 +52,9 @@ describe.each([
     state.user = { id: 'owner-uid' }
     expect((await GET(req(), ctx)).status).toBe(200)
   })
+  it('a forged legacy agora-uid cookie for the owner id is not an identity', async () => {
+    expect((await GET(req('agora-uid=owner-uid'), ctx)).status).toBe(404)
+  })
   it('missing team is 404 (unchanged)', async () => {
     state.team = null
     expect((await GET(req(), ctx)).status).toBe(404)

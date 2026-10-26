@@ -32,7 +32,7 @@ import {
 } from '../../../lib/room-store'
 import { buildLanguageDirective, resolveAgentLanguage } from '../../../lib/language'
 import { getTeam, getMembers } from '../../../lib/team-store'
-import { requireAuthUserId } from '../../../lib/auth'
+import { canReadOwnedRow, getReaderId, requireAuthUserId } from '../../../lib/auth'
 import {
   werewolfWorkflow,
   type WerewolfAgentSnapshot,
@@ -94,7 +94,11 @@ export async function POST(request: NextRequest) {
     let teamId: string | null = null
     if (body.teamId) {
       const team = await getTeam(body.teamId)
-      if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+      // Same rule as GET /api/teams/:id: a private team's members
+      // (persona, systemPrompt) are only usable by its owner.
+      if (!team || !canReadOwnedRow(team, await getReaderId())) {
+        return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+      }
       const members = await getMembers(body.teamId)
       if (members.length < 6 || members.length > 12) {
         return NextResponse.json(

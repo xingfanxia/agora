@@ -33,7 +33,7 @@ import {
 import { buildLanguageDirective, resolveAgentLanguage } from '../../lib/language'
 import { getTeam } from '../../lib/team-store'
 import { buildTeamSnapshot } from '../../lib/team-room'
-import { requireAuthUserId } from '../../lib/auth'
+import { canReadOwnedRow, getReaderId, requireAuthUserId } from '../../lib/auth'
 import {
   roundtableWorkflow,
   toRoundtableAgentSnapshot,
@@ -115,7 +115,11 @@ export async function POST(request: NextRequest) {
     // Phase 6 — team-based creation. Build from team members.
     if (body.teamId) {
       const team = await getTeam(body.teamId)
-      if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+      // Same rule as GET /api/teams/:id: a private team's members
+      // (persona, systemPrompt) are only usable by its owner.
+      if (!team || !canReadOwnedRow(team, await getReaderId())) {
+        return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+      }
       const { agents: snapshot } = await buildTeamSnapshot({
         team,
         topic: body.topic,

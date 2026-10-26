@@ -7,9 +7,7 @@
 // code into a file that client components also reach breaks the
 // Next bundler.
 
-import type { NextRequest } from 'next/server'
 import { getAuthUser } from './supabase-server'
-import { getUserIdFromRequest } from './user-id'
 
 /**
  * Preferred id for CREATE operations: auth user id when logged in,
@@ -27,14 +25,28 @@ export async function requireAuthUserId(): Promise<
 }
 
 /**
- * Best-effort identity for READ queries: auth id if logged in, else
- * legacy localStorage UID cookie, else null.
+ * Identity for READ queries of private rows ("my agents/teams", private
+ * detail pages): the verified Supabase session user id, else null.
  *
- * Used where we want to show "my agents" for both authed and anon
- * users during the transition period.
+ * The legacy `agora-uid` cookie is NOT accepted here: it is unsigned and
+ * shares the UUID space with real account ids, so trusting it would let
+ * anyone who knows a user's id read that user's private rows. Callers
+ * with only the legacy cookie are anonymous (templates only). Legacy
+ * anonymous rows are covered by a separate migration proposal.
  */
-export async function getReaderId(request: NextRequest | Request): Promise<string | null> {
+export async function getReaderId(): Promise<string | null> {
   const user = await getAuthUser()
-  if (user?.id) return user.id
-  return getUserIdFromRequest(request)
+  return user?.id ?? null
+}
+
+/**
+ * Template rows are public; anything else only for its verified owner.
+ * Used wherever private agent/team content (persona, systemPrompt) could
+ * be read or copied (detail GETs, room creation from a teamId).
+ */
+export function canReadOwnedRow(
+  row: { isTemplate: boolean; createdBy: string | null },
+  readerId: string | null,
+): boolean {
+  return row.isTemplate || (readerId != null && row.createdBy === readerId)
 }

@@ -12,7 +12,7 @@ import { start } from 'workflow/api'
 import { createRoom, setGameState, updateRoomStatus } from '../../../lib/room-store'
 import { getTeam } from '../../../lib/team-store'
 import { buildTeamSnapshot } from '../../../lib/team-room'
-import { requireAuthUserId } from '../../../lib/auth'
+import { canReadOwnedRow, getReaderId, requireAuthUserId } from '../../../lib/auth'
 import { resolveAgentLanguage } from '../../../lib/language'
 import {
   openChatWorkflow,
@@ -61,7 +61,9 @@ export async function POST(request: NextRequest) {
   }
 
   const team = await getTeam(body.teamId)
-  if (!team) {
+  // Same rule as GET /api/teams/:id: a private team's members (persona,
+  // systemPrompt) are only usable by its owner.
+  if (!team || !canReadOwnedRow(team, await getReaderId())) {
     return NextResponse.json({ error: 'Team not found' }, { status: 404 })
   }
 
