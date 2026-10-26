@@ -12,7 +12,7 @@ import {
   type AgentStyle,
   type UpdateAgentArgs,
 } from '../../../lib/agent-store'
-import { requireAuthUserId } from '../../../lib/auth'
+import { getReaderId, requireAuthUserId } from '../../../lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,10 +22,19 @@ interface RouteCtx {
 
 // ── GET ────────────────────────────────────────────────────
 
-export async function GET(_request: NextRequest, ctx: RouteCtx) {
+export async function GET(request: NextRequest, ctx: RouteCtx) {
   const { id } = await ctx.params
   const agent = await getAgent(id)
   if (!agent) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Templates are public. A private agent (persona, systemPrompt) is
+  // readable only by the identity that would list it under "mine";
+  // anyone else gets the same 404 as a missing id.
+  if (!agent.isTemplate) {
+    const readerId = await getReaderId(request)
+    if (!readerId || agent.createdBy !== readerId) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  }
   return NextResponse.json({ agent })
 }
 

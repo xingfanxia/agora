@@ -25,6 +25,9 @@ export function useRoomPoll(roomId: string) {
   // Re-reading on every poll would let stale localStorage from another
   // tab leak through; the dispatcher controls the seat lifecycle.
   const seatRef = useRef<string | null>(null)
+  // Guest seat token (from the /r/ invite) proves the seat claim to the
+  // server; the owner's own seat is proven by their session instead.
+  const seatTokenRef = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -32,8 +35,9 @@ export function useRoomPoll(roomId: string) {
     try {
       const raw = localStorage.getItem(`agora-seat-${roomId}`)
       if (raw) {
-        const parsed = JSON.parse(raw) as { agentId?: string }
+        const parsed = JSON.parse(raw) as { agentId?: string; token?: string }
         if (parsed.agentId) seatRef.current = parsed.agentId
+        if (parsed.token) seatTokenRef.current = parsed.token
       }
     } catch { /* localStorage unavailable / corrupt — observer scope */ }
 
@@ -41,7 +45,11 @@ export function useRoomPoll(roomId: string) {
       try {
         const after = lastTimestampRef.current
         const seatQS = seatRef.current ? `&seat=${encodeURIComponent(seatRef.current)}` : ''
-        const res = await fetch(`/api/rooms/${roomId}/messages?after=${after}${seatQS}`)
+        const res = await fetch(`/api/rooms/${roomId}/messages?after=${after}${seatQS}`, {
+          headers: seatTokenRef.current
+            ? { Authorization: `Bearer ${seatTokenRef.current}` }
+            : undefined,
+        })
 
         if (!res.ok) {
           const data = (await res.json()) as { error?: string }

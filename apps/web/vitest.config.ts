@@ -13,7 +13,7 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['tests/durability/**/*.test.ts'],
+    include: ['tests/durability/**/*.test.ts', 'tests/unit/**/*.test.ts'],
     // *.integration.test.ts files require @workflow/vitest's
     // SWC transform + bundle building. They run under
     // vitest.integration.config.ts; exclude them here so this

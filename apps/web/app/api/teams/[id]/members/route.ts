@@ -13,7 +13,7 @@ import {
   setMembers,
   updateTeam,
 } from '../../../../lib/team-store'
-import { requireAuthUserId } from '../../../../lib/auth'
+import { getReaderId, requireAuthUserId } from '../../../../lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,10 +23,17 @@ interface RouteCtx {
 
 // ── GET ────────────────────────────────────────────────────
 
-export async function GET(_request: NextRequest, ctx: RouteCtx) {
+export async function GET(request: NextRequest, ctx: RouteCtx) {
   const { id } = await ctx.params
   const team = await getTeam(id)
   if (!team) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Same read rule as GET /api/teams/:id — private rosters are owner-only.
+  if (!team.isTemplate) {
+    const readerId = await getReaderId(request)
+    if (!readerId || team.createdBy !== readerId) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+  }
   const members = await getMembers(id)
   return NextResponse.json({ members })
 }
