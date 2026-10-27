@@ -10,7 +10,7 @@ vi.mock('@agora/db', () => ({ getDb: db.getDb, events: {}, rooms: {} }))
 vi.mock('../../app/lib/room-store', () => ({ getStuckRooms: db.getStuckRooms }))
 
 import AdminRoomPage from '../../app/admin/rooms/[id]/page'
-import { POST as tickAll } from '../../app/api/rooms/tick-all/route'
+import { GET as tickAllGet, POST as tickAll } from '../../app/api/rooms/tick-all/route'
 import { secretMatches } from '../../app/lib/secret-match'
 
 const saved = { admin: process.env.AGORA_ADMIN_SECRET, cron: process.env.CRON_SECRET }
@@ -85,6 +85,18 @@ describe('POST /api/rooms/tick-all', () => {
     expect((await call('Bearer cron')).status).toBe(401)
     expect((await call('cron-secret')).status).toBe(401)
     expect((await call('Bearer cron-secret')).status).toBe(200)
+    expect(db.getStuckRooms).toHaveBeenCalledTimes(1)
+  })
+
+  it('GET (how Vercel Cron calls it) uses the same bearer check', async () => {
+    const get = (auth?: string) =>
+      tickAllGet(new Request('http://x/api/rooms/tick-all', { headers: auth ? { authorization: auth } : {} }))
+    delete process.env.CRON_SECRET
+    expect((await get('Bearer ')).status).toBe(503)
+    process.env.CRON_SECRET = 'cron-secret'
+    expect((await get()).status).toBe(401)
+    expect((await get('Bearer wrong')).status).toBe(401)
+    expect((await get('Bearer cron-secret')).status).toBe(200)
     expect(db.getStuckRooms).toHaveBeenCalledTimes(1)
   })
 })
