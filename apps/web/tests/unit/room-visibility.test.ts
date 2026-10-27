@@ -284,6 +284,9 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
       state.user = null
       state.snapshot!['status'] = 'completed'
       expect((await poll()).tokenSummary).toMatchObject({ callCount: 2 })
+      // A failed game has ended too (endedAt is set on error).
+      state.snapshot!['status'] = 'error'
+      expect((await seatPoll('seer1')).tokenSummary).toMatchObject({ callCount: 2 })
     })
 
     it('day phases, the spectator owner and finished games keep the real seat', async () => {

@@ -12,6 +12,9 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // tsconfig keeps jsx: preserve for Next; tests that import .tsx
+  // pages (e.g. the admin gate) need it compiled.
+  oxc: { jsx: { runtime: 'automatic' } },
   test: {
     include: ['tests/durability/**/*.test.ts', 'tests/unit/**/*.test.ts'],
     // *.integration.test.ts files require @workflow/vitest's

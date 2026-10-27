@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
+import { secretMatches } from '../../../lib/secret-match'
 import { getStuckRooms } from '../../../lib/room-store'
 
 export const dynamic = 'force-dynamic'
@@ -25,8 +26,9 @@ export async function POST(request: Request) {
       { status: 503 },
     )
   }
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${secret}`) {
+  const authHeader = request.headers.get('authorization') ?? ''
+  const provided = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : null
+  if (!secretMatches(provided, secret)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
