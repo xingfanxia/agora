@@ -2,9 +2,14 @@
 // POST /api/rooms/tick-all
 // ============================================================
 //
-// Safety-net sweeper invoked by Vercel Cron (apps/web/vercel.json) at
-// a 1-minute cadence. For each room whose updated_at is stale (inline
+// Safety-net sweeper. For each room whose updated_at is stale (inline
 // tick chain broke, function crashed, etc.), fires /api/rooms/tick.
+//
+// Intentionally dormant: Vercel Cron (apps/web/vercel.json) calls with GET
+// and this route exports only POST, so the 1-minute cron gets 405. Do not
+// add GET until P-AGORA-2 ships a per-room tick lease and an age cap —
+// enabling it now forks duplicate tick chains on http_chain rooms whose
+// in-flight LLM call has not refreshed updated_at yet.
 //
 // Auth: gated on CRON_SECRET env var — Vercel Cron passes it as
 // `Authorization: Bearer <secret>`. If the secret is unset, the endpoint
