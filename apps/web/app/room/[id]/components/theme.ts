@@ -140,6 +140,11 @@ export interface PollResponse {
   /** Werewolf-only: snapshot of custom game state (eliminated, winResult, etc.) */
   gameState: Record<string, unknown> | null
   error?: string
+  /**
+   * Werewolf: the viewer's server-derived role ('spectator' for the
+   * owner, 'observer' without a proven seat). Other modes: 'spectator'.
+   */
+  viewerRole?: string
 }
 
 // ── Utilities ───────────────────────────────────────────────

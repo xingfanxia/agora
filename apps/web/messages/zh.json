@@ -180,7 +180,26 @@
       "韩影",
       "孟川",
       "夏川"
-    ]
+    ],
+    "view": {
+      "rulesList": "规则：{list}",
+      "ruleNames": {
+        "guard": "守卫",
+        "idiot": "白痴",
+        "sheriff": "警长",
+        "lastWords": "遗言"
+      },
+      "night": "🌙 第 {n} 夜",
+      "day": "☀️ 第 {n} 天",
+      "yourRole": "你的身份：<c>{role}</c>",
+      "eliminated": "· 已淘汰",
+      "seat": "座位：<b>{name}</b> · ",
+      "faction": "阵营：<c>{faction}</c>",
+      "factions": {
+        "werewolves": "狼人阵营",
+        "village": "好人阵营"
+      }
+    }
   },
   "room": {
     "debateMode": "辩论",
@@ -215,7 +234,8 @@
       "cached": "缓存",
       "cost": "花费",
       "calls": "次调用",
-      "tokens": "tokens"
+      "tokens": "tokens",
+      "hiddenUntilEnd": "费用明细将在对局结束后显示"
     },
     "presence": {
       "online": "在线",
@@ -285,6 +305,50 @@
           "label": "👤 村民",
           "hint": "没有特殊技能 · 靠观察发言推理找出狼人"
         }
+      }
+    },
+    "panels": {
+      "cancel": "取消",
+      "vote": {
+        "wolfTitle": "🗳️ 选择今晚的目标",
+        "dayTitle": "🗳️ 投票放逐",
+        "skip": "⊘ 弃票",
+        "reasonPlaceholder": "理由（可选）",
+        "confirm": "确认投票 →"
+      },
+      "witch": {
+        "title": "🧪 女巫行动",
+        "killed": "今晚被狼人杀害的是：<b>{name}</b>",
+        "noKill": "今晚没有人被杀。",
+        "pickPoison": "选择毒杀目标：",
+        "poison": "毒杀",
+        "save": "💊 救人",
+        "poisonOpen": "☠️ 毒杀…",
+        "pass": "🚫 跳过"
+      },
+      "seer": {
+        "title": "🔮 预言家行动 — 查验一名玩家",
+        "check": "查验 →"
+      },
+      "guard": {
+        "title": "🛡️ 守卫行动 — 今晚守护一名玩家",
+        "lastProtected": "⚠️ 你昨晚守护了 {name}，今晚不能再守同一人。",
+        "protect": "守护 →"
+      },
+      "hunter": {
+        "title": "🏹 你出局了！要开枪带走一人吗？",
+        "hold": "🚫 不开枪",
+        "shoot": "🏹 开枪"
+      },
+      "sheriffElection": {
+        "title": "🎖️ 警长竞选 — 投票给一名候选人",
+        "skip": "⊘ 不参选",
+        "vote": "投票 →"
+      },
+      "sheriffTransfer": {
+        "title": "🎖️ 移交警徽",
+        "destroy": "💥 撕毁警徽",
+        "transfer": "移交 →"
       }
     }
   },
@@ -540,7 +604,8 @@
     "sent": "登录链接已发送到 <strong>{email}</strong>。请检查邮箱并点击链接完成登录。",
     "emailLabel": "邮箱",
     "sending": "发送中…",
-    "submit": "发送登录链接"
+    "submit": "发送登录链接",
+    "sendFailed": "登录链接发送失败，请稍后再试。"
   },
   "invite": {
     "missingTokenTitle": "缺少邀请令牌",

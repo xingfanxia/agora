@@ -45,7 +45,8 @@ function LoginForm() {
       setStatus('sent')
     } catch (err) {
       setStatus('error')
-      setErrorMsg(err instanceof Error ? err.message : String(err))
+      console.error('[login] signInWithOtp failed:', err)
+      setErrorMsg(t('sendFailed'))
     }
   }
 

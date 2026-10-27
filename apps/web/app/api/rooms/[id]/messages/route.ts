@@ -173,7 +173,9 @@ export async function GET(
 
   // In-progress werewolf games: players/observers get a projected view
   // (no roleMap, other roles' night state, role-bearing seat prompts,
-  // or which seat is acting at night).
+  // or which seat is acting at night). tokenSummary is withheld too:
+  // night actors record LLM usage per seat, so live per-agent/per-model
+  // call counts would name the wolves, seer, witch and guard.
   const projectForViewer =
     snapshot.modeId === 'werewolf' &&
     snapshot.status !== 'completed' &&
@@ -192,7 +194,7 @@ export async function GET(
       : snapshot.thinkingAgentId,
     agents: projectForViewer ? projectWerewolfAgents(snapshot.agents) : snapshot.agents,
     topic: snapshot.topic ?? '',
-    tokenSummary: snapshot.tokenSummary,
+    tokenSummary: projectForViewer ? null : snapshot.tokenSummary,
     roleAssignments: visibleRoles,
     advancedRules: snapshot.advancedRules,
     gameState: projectForViewer

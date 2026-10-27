@@ -10,6 +10,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import type { AgentData, PollResponse } from '../theme'
 import { seatAuthHeaders } from '../../hooks/seat-auth'
 
@@ -170,6 +171,7 @@ export function VotePanel({
   onSubmitted,
   turnId, // 'wolf-vote' | 'day-vote'
 }: WerewolfPanelCommonProps & { turnId: 'wolf-vote' | 'day-vote' }) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [sending, setSending] = useState(false)
@@ -194,7 +196,7 @@ export function VotePanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {isWolfVote ? '🗳️ Choose tonight\'s target' : '🗳️ Vote to eliminate'}
+        {isWolfVote ? t('vote.wolfTitle') : t('vote.dayTitle')}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
       {allowSkip && (
@@ -211,14 +213,14 @@ export function VotePanel({
             cursor: 'pointer',
           }}
         >
-          ⊘ Skip / Abstain
+          {t('vote.skip')}
         </button>
       )}
       <input
         type="text"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (optional)"
+        placeholder={t('vote.reasonPlaceholder')}
         style={{
           width: '100%',
           padding: '6px 10px',
@@ -232,7 +234,7 @@ export function VotePanel({
       />
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <ActionButton
-          label={sending ? '...' : 'Confirm Vote →'}
+          label={sending ? '...' : t('vote.confirm')}
           onClick={() => void submit()}
           disabled={(!target) || sending}
         />
@@ -249,6 +251,7 @@ export function WitchPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const gs = (snapshot.gameState ?? {}) as {
     lastNightKill?: string | null
     witchSaveUsed?: boolean
@@ -279,7 +282,7 @@ export function WitchPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🧪 '}Witch&apos;s Turn
+        {t('witch.title')}
       </div>
       {killedAgent ? (
         <div
@@ -292,18 +295,18 @@ export function WitchPanel({
             fontSize: 13,
           }}
         >
-          Tonight the wolves killed: <b>{killedAgent.name}</b>
+          {t.rich('witch.killed', { name: killedAgent.name, b: (chunks) => <b>{chunks}</b> })}
         </div>
       ) : (
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-          No one was killed tonight.
+          {t('witch.noKill')}
         </div>
       )}
 
       {action === 'poison' ? (
         <>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
-            Pick poison target:
+            {t('witch.pickPoison')}
           </div>
           <AgentGrid
             agents={alive.filter((a) => a.id !== killedId)}
@@ -311,9 +314,9 @@ export function WitchPanel({
             onSelect={setPoisonTarget}
           />
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <ActionButton label="Cancel" onClick={() => setAction(null)} variant="secondary" />
+            <ActionButton label={t('cancel')} onClick={() => setAction(null)} variant="secondary" />
             <ActionButton
-              label={sending ? '...' : 'Poison'}
+              label={sending ? '...' : t('witch.poison')}
               onClick={() => void submit('poison')}
               disabled={!poisonTarget || sending}
               variant="danger"
@@ -324,20 +327,20 @@ export function WitchPanel({
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {killedAgent && !saveUsed && (
             <ActionButton
-              label={sending ? '...' : '💊 Save 救人'}
+              label={sending ? '...' : t('witch.save')}
               onClick={() => void submit('save')}
               disabled={sending}
             />
           )}
           {!poisonUsed && (
             <ActionButton
-              label="☠️ Poison... 毒杀"
+              label={t('witch.poisonOpen')}
               onClick={() => setAction('poison')}
               variant="secondary"
             />
           )}
           <ActionButton
-            label={sending ? '...' : '🚫 Pass 跳过'}
+            label={sending ? '...' : t('witch.pass')}
             onClick={() => void submit('pass')}
             disabled={sending}
             variant="secondary"
@@ -356,6 +359,7 @@ export function SeerPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const alive = getAliveAgents(snapshot, humanAgentId)
@@ -371,12 +375,12 @@ export function SeerPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🔮 '}Seer&apos;s Turn — Check one player
+        {t('seer.title')}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <ActionButton
-          label={sending ? '...' : 'Check →'}
+          label={sending ? '...' : t('seer.check')}
           onClick={() => void submit()}
           disabled={!target || sending}
         />
@@ -393,6 +397,7 @@ export function GuardPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
@@ -417,17 +422,17 @@ export function GuardPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🛡️ '}Guard&apos;s Turn — Protect one player tonight
+        {t('guard.title')}
       </div>
       {lastProtected && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-          ⚠️ You protected {lastProtected.name} last night — can&apos;t protect them again.
+          {t('guard.lastProtected', { name: lastProtected.name })}
         </div>
       )}
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} disabledIds={disabled} />
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <ActionButton
-          label={sending ? '...' : 'Protect →'}
+          label={sending ? '...' : t('guard.protect')}
           onClick={() => void submit()}
           disabled={!target || sending}
         />
@@ -444,6 +449,7 @@ export function HunterPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const alive = getAliveAgents(snapshot, humanAgentId)
@@ -462,18 +468,18 @@ export function HunterPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🏹 '}You&apos;ve been eliminated! Take someone with you?
+        {t('hunter.title')}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <ActionButton
-          label="🚫 Don't shoot"
+          label={t('hunter.hold')}
           onClick={() => void submit(false)}
           disabled={sending}
           variant="secondary"
         />
         <ActionButton
-          label={sending ? '...' : '🏹 Shoot'}
+          label={sending ? '...' : t('hunter.shoot')}
           onClick={() => void submit(true)}
           disabled={!target || sending}
           variant="danger"
@@ -491,6 +497,7 @@ export function SheriffElectionPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const alive = getAliveAgents(snapshot)
@@ -505,13 +512,13 @@ export function SheriffElectionPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🎖️ '}Sheriff Election — Vote for a candidate
+        {t('sheriffElection.title')}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <ActionButton label="⊘ Don't run" onClick={() => void submit('skip')} variant="secondary" />
+        <ActionButton label={t('sheriffElection.skip')} onClick={() => void submit('skip')} variant="secondary" />
         <ActionButton
-          label={sending ? '...' : 'Vote →'}
+          label={sending ? '...' : t('sheriffElection.vote')}
           onClick={() => target && submit(target)}
           disabled={!target || sending}
         />
@@ -528,6 +535,7 @@ export function SheriffTransferPanel({
   snapshot,
   onSubmitted,
 }: WerewolfPanelCommonProps) {
+  const t = useTranslations('room.panels')
   const [target, setTarget] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const alive = getAliveAgents(snapshot, humanAgentId)
@@ -542,17 +550,17 @@ export function SheriffTransferPanel({
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 590, marginBottom: 4 }}>
-        {'🎖️ '}Transfer your Sheriff badge
+        {t('sheriffTransfer.title')}
       </div>
       <AgentGrid agents={alive} selected={target} onSelect={setTarget} />
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <ActionButton
-          label="💥 Destroy badge"
+          label={t('sheriffTransfer.destroy')}
           onClick={() => void submit('destroy')}
           variant="danger"
         />
         <ActionButton
-          label={sending ? '...' : 'Transfer →'}
+          label={sending ? '...' : t('sheriffTransfer.transfer')}
           onClick={() => target && submit(target)}
           disabled={!target || sending}
         />

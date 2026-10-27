@@ -85,6 +85,7 @@ async function poll(query = '', headers: Record<string, string> = {}) {
     roleAssignments: Record<string, string> | null
     gameState: Record<string, unknown> | null
     thinkingAgentId: string | null
+    tokenSummary: Record<string, unknown> | null
     viewerRole: string
   }
 }
@@ -262,6 +263,27 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
       atPhase('seerCheck', 'seer1')
       expect((await seatPoll('vil1')).thinkingAgentId).toBe('night')
       expect((await seatPoll('seer1')).thinkingAgentId).toBe('seer1')
+    })
+
+    it('players and observers get no live token usage (per-seat call counts name night actors)', async () => {
+      atPhase('wolfDiscuss', null)
+      state.snapshot!['tokenSummary'] = {
+        totalCost: 0.02,
+        totalTokens: 200,
+        callCount: 2,
+        byAgent: [
+          { agentId: 'wolf1', callCount: 1 },
+          { agentId: 'wolf2', callCount: 1 },
+        ],
+        byModel: [{ model: 'm', callCount: 2 }],
+      }
+      const responses = [await poll(), await seatPoll('seer1'), await seatPoll('wolf1')]
+      for (const body of responses) expect(body.tokenSummary).toBeNull()
+      state.user = { id: OWNER }
+      expect((await poll()).tokenSummary).toMatchObject({ callCount: 2 })
+      state.user = null
+      state.snapshot!['status'] = 'completed'
+      expect((await poll()).tokenSummary).toMatchObject({ callCount: 2 })
     })
 
     it('day phases, the spectator owner and finished games keep the real seat', async () => {
