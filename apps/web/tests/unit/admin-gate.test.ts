@@ -8,8 +8,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 const db = vi.hoisted(() => ({ getDb: vi.fn(), getStuckRooms: vi.fn(async () => []) }))
 vi.mock('@agora/db', () => ({ getDb: db.getDb, events: {}, rooms: {} }))
 vi.mock('../../app/lib/room-store', () => ({ getStuckRooms: db.getStuckRooms }))
+vi.mock('../../app/lib/supabase-middleware', async () => {
+  const { NextResponse } = await import('next/server')
+  return { updateSession: async () => ({ response: NextResponse.next(), user: null }) }
+})
 
-import AdminRoomPage from '../../app/admin/rooms/[id]/page'
+import { NextRequest } from 'next/server'
+import AdminRoomPage, { metadata as adminMetadata } from '../../app/admin/rooms/[id]/page'
+import { proxy } from '../../proxy'
 import { POST as tickAll } from '../../app/api/rooms/tick-all/route'
 import { secretMatches } from '../../app/lib/secret-match'
 
@@ -86,5 +92,20 @@ describe('POST /api/rooms/tick-all', () => {
     expect((await call('cron-secret')).status).toBe(401)
     expect((await call('Bearer cron-secret')).status).toBe(200)
     expect(db.getStuckRooms).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('admin response hardening', () => {
+  it('proxy sends no-referrer + no-store for /admin, nothing extra elsewhere', async () => {
+    const admin = await proxy(new NextRequest('http://x/admin/rooms/room-1?secret=s'))
+    expect(admin.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(admin.headers.get('cache-control')).toBe('no-store')
+    const room = await proxy(new NextRequest('http://x/room/room-1'))
+    expect(room.headers.get('referrer-policy')).toBeNull()
+    expect(room.headers.get('cache-control')).toBeNull()
+  })
+
+  it('admin page is noindex', () => {
+    expect(adminMetadata.robots).toEqual({ index: false, follow: false })
   })
 })

@@ -13,6 +13,7 @@
 // disabled — it shows live role assignments and full game state. Set the
 // var in .env.local for local dev.
 
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import type { EventRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
@@ -20,6 +21,8 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { secretMatches } from '../../../lib/secret-match'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 type Params = { id: string }
 

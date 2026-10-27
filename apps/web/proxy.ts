@@ -35,6 +35,14 @@ export async function proxy(request: NextRequest) {
   const { response, user } = await updateSession(request)
   const { pathname } = request.nextUrl
 
+  // Admin pages carry ?secret= in the URL and show hidden game state:
+  // never leak the URL via Referer, never cache the response.
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    response.headers.set('Referrer-Policy', 'no-referrer')
+    response.headers.set('Cache-Control', 'no-store')
+    return response
+  }
+
   // Already-authed users on /login → bounce to home.
   if (pathname === '/login' && user) {
     return NextResponse.redirect(new URL('/', request.url))
