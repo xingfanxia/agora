@@ -16,7 +16,10 @@ import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
 import { WorkflowWarmupBanner } from '../../components/v2/WorkflowWarmupBanner'
-import { NIGHT_THINKING_PLACEHOLDER } from '../../../../lib/werewolf-visibility'
+import {
+  NIGHT_THINKING_PLACEHOLDER,
+  withholdsTokenUsage,
+} from '../../../../lib/werewolf-visibility'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -299,7 +302,7 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           </div>
         </div>
 
-        {tokenSummary == null && status !== 'completed' && snapshot.viewerRole !== 'spectator' ? (
+        {tokenSummary == null && withholdsTokenUsage('werewolf', status, snapshot.viewerRole) ? (
           // Players/observers get no live usage until the game ends:
           // per-seat call counts would reveal who acts at night.
           <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>

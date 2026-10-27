@@ -8,6 +8,7 @@ import { Timeline } from '../components/Timeline'
 import { TokenCostPanel } from '../components/TokenCostPanel'
 import type { AgentData, PollResponse, TokenSummary } from '../components/theme'
 import { createAgentColorMap, prefersDark } from '../components/theme'
+import { withholdsTokenUsage } from '../../../lib/werewolf-visibility'
 
 interface EventEnvelope {
   index: number
@@ -18,12 +19,14 @@ interface EventEnvelope {
 export default function ObservabilityPage() {
   const t = useTranslations('observability')
   const tCommon = useTranslations('common')
+  const tRoom = useTranslations('room')
   const params = useParams()
   const roomId = params.id as string
 
   const [events, setEvents] = useState<EventEnvelope[]>([])
   const [agents, setAgents] = useState<AgentData[]>([])
   const [tokenSummary, setTokenSummary] = useState<TokenSummary | null>(null)
+  const [costsWithheld, setCostsWithheld] = useState(false)
   const [status, setStatus] = useState<'running' | 'waiting' | 'completed' | 'error'>('running')
   const [isDark, setIsDark] = useState(false)
 
@@ -66,6 +69,10 @@ export default function ObservabilityPage() {
           }
           setAgents(msgData.agents)
           setTokenSummary(msgData.tokenSummary)
+          setCostsWithheld(
+            msgData.tokenSummary == null &&
+              withholdsTokenUsage(msgData.modeId, msgData.status, msgData.viewerRole),
+          )
           setStatus(msgData.status)
           statusRef.current = msgData.status
         }
@@ -145,7 +152,13 @@ export default function ObservabilityPage() {
         </div>
 
         <div style={{ marginTop: '0.75rem' }}>
-          <TokenCostPanel summary={tokenSummary} agents={agents} defaultExpanded />
+          {costsWithheld ? (
+            <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+              {tRoom('tokenPanel.hiddenUntilEnd')}
+            </div>
+          ) : (
+            <TokenCostPanel summary={tokenSummary} agents={agents} defaultExpanded />
+          )}
         </div>
       </header>
 

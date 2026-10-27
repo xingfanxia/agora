@@ -9,15 +9,20 @@
 // - Agents + roleAssignments
 //
 // Auth (MVP): gated on ?secret=XYZ query param matching AGORA_ADMIN_SECRET
-// env var when set. If the env var is empty/unset, the page is unguarded
-// (useful for local dev).
+// (constant-time). Fail-closed: with the env var empty/unset the page is
+// disabled — it shows live role assignments and full game state. Set the
+// var in .env.local for local dev.
 
+import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import type { EventRow } from '@agora/db'
 import { events, getDb, rooms } from '@agora/db'
 import { and, desc, eq, sql } from 'drizzle-orm'
+import { secretMatches } from '../../../lib/secret-match'
 
 export const dynamic = 'force-dynamic'
+
+export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 type Params = { id: string }
 
@@ -56,12 +61,12 @@ export default async function AdminRoomPage({
   searchParams,
 }: {
   params: Promise<Params>
-  searchParams: Promise<{ secret?: string }>
+  searchParams: Promise<{ secret?: string | string[] }>
 }) {
   const { id } = await params
   const { secret } = await searchParams
-  const expected = process.env['AGORA_ADMIN_SECRET']
-  if (expected && secret !== expected) {
+  const provided = typeof secret === 'string' ? secret : null
+  if (!secretMatches(provided, process.env['AGORA_ADMIN_SECRET'])) {
     return (
       <main
         style={{
@@ -73,7 +78,7 @@ export default async function AdminRoomPage({
         }}
       >
         <h1>Unauthorized</h1>
-        <p>Missing or wrong ?secret= query param.</p>
+        <p>Missing or wrong ?secret= query param, or admin access is not configured.</p>
       </main>
     )
   }

@@ -82,6 +82,26 @@ const NIGHT_ACTING_ROLE: Record<string, string> = {
 export const NIGHT_THINKING_PLACEHOLDER = 'night'
 
 /**
+ * Live token usage (tokenSummary) is withheld from werewolf players and
+ * observers until the game ends (completed or error): night actors
+ * record LLM usage per seat, so per-agent/per-model call counts would
+ * name the wolves, seer, witch and guard. Shared by the messages route
+ * and the views that explain the hidden cost panel.
+ */
+export function withholdsTokenUsage(
+  modeId: string | null | undefined,
+  status: string | null | undefined,
+  viewerRole: string | null | undefined,
+): boolean {
+  return (
+    modeId === 'werewolf' &&
+    status !== 'completed' &&
+    status !== 'error' &&
+    viewerRole !== 'spectator'
+  )
+}
+
+/**
  * Project the room's thinkingAgentId for a player or observer.
  * `role` is the viewer's verified role (null = observer).
  */

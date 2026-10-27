@@ -35,6 +35,7 @@ import {
   projectWerewolfAgents,
   projectWerewolfGameState,
   projectWerewolfThinkingAgentId,
+  withholdsTokenUsage,
 } from '../../../../lib/werewolf-visibility'
 
 export const dynamic = 'force-dynamic'
@@ -194,7 +195,9 @@ export async function GET(
       : snapshot.thinkingAgentId,
     agents: projectForViewer ? projectWerewolfAgents(snapshot.agents) : snapshot.agents,
     topic: snapshot.topic ?? '',
-    tokenSummary: projectForViewer ? null : snapshot.tokenSummary,
+    tokenSummary: withholdsTokenUsage(snapshot.modeId, snapshot.status, viewerRole)
+      ? null
+      : snapshot.tokenSummary,
     roleAssignments: visibleRoles,
     advancedRules: snapshot.advancedRules,
     gameState: projectForViewer
