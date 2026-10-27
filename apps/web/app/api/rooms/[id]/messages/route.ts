@@ -34,6 +34,7 @@ import {
   bearerToken,
   projectWerewolfAgents,
   projectWerewolfGameState,
+  projectWerewolfThinkingAgentId,
 } from '../../../../lib/werewolf-visibility'
 
 export const dynamic = 'force-dynamic'
@@ -171,7 +172,8 @@ export async function GET(
   const currentPhase = snapshot.currentPhase ?? gameStatePhase
 
   // In-progress werewolf games: players/observers get a projected view
-  // (no roleMap, other roles' night state, or role-bearing seat prompts).
+  // (no roleMap, other roles' night state, role-bearing seat prompts,
+  // or which seat is acting at night).
   const projectForViewer =
     snapshot.modeId === 'werewolf' &&
     snapshot.status !== 'completed' &&
@@ -185,7 +187,9 @@ export async function GET(
       (snapshot.config as { rounds?: number } | null)?.rounds ?? snapshot.currentRound,
     currentPhase,
     modeId: snapshot.modeId,
-    thinkingAgentId: snapshot.thinkingAgentId,
+    thinkingAgentId: projectForViewer
+      ? projectWerewolfThinkingAgentId(snapshot.thinkingAgentId, currentPhase, viewerRole)
+      : snapshot.thinkingAgentId,
     agents: projectForViewer ? projectWerewolfAgents(snapshot.agents) : snapshot.agents,
     topic: snapshot.topic ?? '',
     tokenSummary: snapshot.tokenSummary,

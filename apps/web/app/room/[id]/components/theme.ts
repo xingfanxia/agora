@@ -125,6 +125,10 @@ export interface PollResponse {
   totalRounds: number
   currentPhase: string | null
   modeId: string
+  /**
+   * Seat currently generating. Werewolf players/observers outside the
+   * acting night role get NIGHT_THINKING_PLACEHOLDER ('night') instead.
+   */
   thinkingAgentId: string | null
   agents: AgentData[]
   topic: string

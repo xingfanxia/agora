@@ -16,6 +16,7 @@ import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
 import { WorkflowWarmupBanner } from '../../components/v2/WorkflowWarmupBanner'
+import { NIGHT_THINKING_PLACEHOLDER } from '../../../../lib/werewolf-visibility'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -262,6 +263,15 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           <DayNightBadge phase={currentPhase} nightNumber={
             typeof gameState?.['nightNumber'] === 'number' ? (gameState['nightNumber'] as number) : 0
           } />
+          {thinkingAgentId === NIGHT_THINKING_PLACEHOLDER && (
+            <span
+              role="status"
+              data-testid="night-acting"
+              style={{ fontSize: '0.75rem', color: 'var(--muted)' }}
+            >
+              {tRoom('nightActing')}
+            </span>
+          )}
           {advancedRules && (() => {
             const enabled = Object.entries(advancedRules)
               .filter(([, v]) => v)

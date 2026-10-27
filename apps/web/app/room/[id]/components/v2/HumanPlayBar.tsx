@@ -13,7 +13,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import type { PollResponse, AgentData } from '../theme'
+import { NIGHT_THINKING_PLACEHOLDER } from '../../../../lib/werewolf-visibility'
 import { seatAuthHeaders } from '../../hooks/seat-auth'
 import {
   VotePanel,
@@ -35,6 +37,8 @@ export interface HumanPlayBarProps {
 }
 
 export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: HumanPlayBarProps) {
+  const t = useTranslations('room.humanBar')
+  const tRoom = useTranslations('room')
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -45,7 +49,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
   const isMyTurn = snapshot.status === 'waiting' && waitingForHuman === humanAgentId
 
   const myAgent = snapshot.agents.find((a: AgentData) => a.id === humanAgentId)
-  const myName = myAgent?.name ?? 'You'
+  const myName = myAgent?.name ?? t('you')
   // Werewolf only: the seat's role + a short instruction string for
   // the active phase. Surfaces "🐺 你是狼人 — 选择今晚的目标" so the
   // human knows what they're doing without leaving this bar.
@@ -53,7 +57,9 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     snapshot.modeId === 'werewolf'
       ? snapshot.roleAssignments?.[humanAgentId]
       : undefined
-  const roleSubline = myRole ? roleSublineFor(myRole) : null
+  const roleSubline = myRole && ROLE_KEYS.has(myRole)
+    ? { label: t(`roles.${myRole}.label`), hint: t(`roles.${myRole}.hint`) }
+    : null
 
   // Total agents in the room
   const agentCount = snapshot.agents.length
@@ -126,7 +132,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
         <div style={{ ...barStyle, padding: '12px 16px' }}>
           <div style={{ fontSize: 13, lineHeight: 1.5, letterSpacing: '-0.13px' }}>
             <span style={{ fontWeight: 590 }}>
-              {'👋 '}你的座位: {myName}
+              {t('seatIntro', { name: myName })}
               {roleSubline && (
                 <>
                   {' · '}
@@ -136,7 +142,11 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
             </span>
             <br />
             <span style={{ color: 'var(--muted)' }}>
-              {roleSubline?.hint ?? `观看进程 — 你的回合在第 ${snapshot.agents.findIndex((a: AgentData) => a.id === humanAgentId) + 1} 位 / 共 ${agentCount} 位.`}
+              {roleSubline?.hint ??
+                t('watchHint', {
+                  position: snapshot.agents.findIndex((a: AgentData) => a.id === humanAgentId) + 1,
+                  total: agentCount,
+                })}
             </span>
           </div>
           <button
@@ -151,7 +161,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
               marginTop: 4,
             }}
           >
-            Dismiss
+            {t('dismiss')}
           </button>
         </div>
       </div>
@@ -180,8 +190,9 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
     }
 
     // Default: free-text speech panel (open-chat, roundtable, day/wolf discuss)
-    const placeholder = getPlaceholder(phase)
-    const heading = getHeading(phase)
+    const phaseKey = FREE_TEXT_PHASES.has(phase) ? phase : 'default'
+    const placeholder = t(`placeholder.${phaseKey}`)
+    const heading = t(`heading.${phaseKey}`)
     return (
       <div style={barContainerStyle}>
         <div
@@ -212,7 +223,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
                 letterSpacing: '0.02em',
               }}
             >
-              座位: {myName}
+              {t('seatLabel', { name: myName })}
               {roleSubline && (
                 <>
                   {' · '}
@@ -252,7 +263,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
                 alignSelf: 'center',
               }}
             >
-              Enter to send, Shift+Enter for newline
+              {t('enterHint')}
             </span>
             <button
               onClick={() => void submit()}
@@ -270,7 +281,7 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
                 transition: 'background .15s ease',
               }}
             >
-              {sending ? '...' : 'Send ↵'}
+              {sending ? '...' : t('send')}
             </button>
           </div>
         </div>
@@ -282,21 +293,25 @@ export function HumanPlayBar({ roomId, humanAgentId, snapshot, messageCount }: H
   return (
     <div style={barContainerStyle}>
       <div style={{ ...barStyle, padding: '10px 16px', minHeight: 40 }}>
-        {thinkingAgent ? (
+        {snapshot.thinkingAgentId === NIGHT_THINKING_PLACEHOLDER ? (
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tRoom('nightActing')}</div>
+        ) : thinkingAgent ? (
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {'⏳ '}{thinkingAgent.name} is speaking...
+            {t('speaking', { name: thinkingAgent.name })}
             <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.7 }}>
-              ({positionInRound} of {agentCount})
+              {t('position', { position: positionInRound, total: agentCount })}
             </span>
           </div>
         ) : snapshot.status === 'waiting' && waitingForHuman && waitingForHuman !== humanAgentId ? (
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {'⏳ '}Waiting for {snapshot.agents.find((a: AgentData) => a.id === waitingForHuman)?.name ?? 'someone'}...
+            {t('waitingFor', {
+              name:
+                snapshot.agents.find((a: AgentData) => a.id === waitingForHuman)?.name ??
+                t('someone'),
+            })}
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {'⏳ '}Processing...
-          </div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{t('processing')}</div>
         )}
       </div>
     </div>
@@ -357,52 +372,19 @@ function renderWerewolfPanel(
   }
 }
 
-function getPlaceholder(phase: string): string {
-  switch (phase) {
-    case 'wolfDiscuss':
-      return 'Discuss who to eliminate...'
-    case 'dayDiscuss':
-      return 'Defend yourself or accuse...'
-    case 'lastWords':
-      return 'Any final words?'
-    default:
-      return 'Share your thoughts...'
-  }
-}
+// Free-text phases with their own placeholder/heading copy
+// (room.humanBar.placeholder.* / heading.*); others use 'default'.
+const FREE_TEXT_PHASES: ReadonlySet<string> = new Set(['wolfDiscuss', 'dayDiscuss', 'lastWords'])
 
-function getHeading(phase: string): string {
-  switch (phase) {
-    case 'wolfDiscuss':
-      return '🐺 Wolf discussion'
-    case 'dayDiscuss':
-      return '☀️ Day discussion'
-    case 'lastWords':
-      return '💀 Your last words'
-    default:
-      return '💬 Your turn to speak'
-  }
-}
-
-// Werewolf role → short label + one-line orientation hint shown
-// next to the seat name. The hint is a *passive* reminder; the
-// active phase prompt comes from the panel renderer.
-function roleSublineFor(role: string): { label: string; hint: string } | null {
-  switch (role) {
-    case 'werewolf':
-      return { label: '🐺 狼人', hint: '夜晚和狼队友一起选择目标 · 白天伪装成好人' }
-    case 'seer':
-      return { label: '🔮 预言家', hint: '每晚验一人是否狼人 · 白天关键阶段表态' }
-    case 'witch':
-      return { label: '🧪 女巫', hint: '解药救人 / 毒药杀人 · 一晚最多用一瓶' }
-    case 'hunter':
-      return { label: '🏹 猎人', hint: '被狼刀或被票出可开枪带走一人 · 中毒不能开枪' }
-    case 'guard':
-      return { label: '🛡️ 守卫', hint: '每晚守护一人免被狼刀 · 不能连守同一人' }
-    case 'idiot':
-      return { label: '🃏 白痴', hint: '被票出会翻牌幸存 · 但失去后续投票权' }
-    case 'villager':
-      return { label: '👤 村民', hint: '没有特殊技能 · 靠观察发言推理找出狼人' }
-    default:
-      return null
-  }
-}
+// Werewolf roles with a label + one-line orientation hint shown next
+// to the seat name (room.humanBar.roles.*). The hint is a *passive*
+// reminder; the active phase prompt comes from the panel renderer.
+const ROLE_KEYS: ReadonlySet<string> = new Set([
+  'werewolf',
+  'seer',
+  'witch',
+  'hunter',
+  'guard',
+  'idiot',
+  'villager',
+])

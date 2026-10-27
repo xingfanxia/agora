@@ -229,6 +229,63 @@
       "thinking": "AI 玩家思考中…",
       "agentThinking": "{name} 正在思考…",
       "hint": "首条消息可能需要 30-60 秒"
+    },
+    "nightActing": "🌙 夜间行动中",
+    "humanBar": {
+      "you": "你",
+      "seatIntro": "👋 你的座位：{name}",
+      "watchHint": "观看进程 — 你的回合在第 {position} 位 / 共 {total} 位。",
+      "dismiss": "知道了",
+      "seatLabel": "座位：{name}",
+      "enterHint": "Enter 发送，Shift+Enter 换行",
+      "send": "发送 ↵",
+      "speaking": "⏳ {name} 正在发言…",
+      "position": "（第 {position} 位 / 共 {total} 位）",
+      "waitingFor": "⏳ 等待 {name}…",
+      "someone": "其他玩家",
+      "processing": "⏳ 处理中…",
+      "placeholder": {
+        "wolfDiscuss": "商量今晚刀谁…",
+        "dayDiscuss": "为自己辩护，或指出可疑的人…",
+        "lastWords": "还有什么遗言？",
+        "default": "说说你的想法…"
+      },
+      "heading": {
+        "wolfDiscuss": "🐺 狼人讨论",
+        "dayDiscuss": "☀️ 白天讨论",
+        "lastWords": "💀 你的遗言",
+        "default": "💬 轮到你发言"
+      },
+      "roles": {
+        "werewolf": {
+          "label": "🐺 狼人",
+          "hint": "夜晚和狼队友一起选择目标 · 白天伪装成好人"
+        },
+        "seer": {
+          "label": "🔮 预言家",
+          "hint": "每晚验一人是否狼人 · 白天关键阶段表态"
+        },
+        "witch": {
+          "label": "🧪 女巫",
+          "hint": "解药救人 / 毒药杀人 · 一晚最多用一瓶"
+        },
+        "hunter": {
+          "label": "🏹 猎人",
+          "hint": "被狼刀或被票出可开枪带走一人 · 中毒不能开枪"
+        },
+        "guard": {
+          "label": "🛡️ 守卫",
+          "hint": "每晚守护一人免被狼刀 · 不能连守同一人"
+        },
+        "idiot": {
+          "label": "🃏 白痴",
+          "hint": "被票出会翻牌幸存 · 但失去后续投票权"
+        },
+        "villager": {
+          "label": "👤 村民",
+          "hint": "没有特殊技能 · 靠观察发言推理找出狼人"
+        }
+      }
     }
   },
   "replays": {
@@ -476,5 +533,30 @@
     },
     "tagline": "组合 · 团队 · 跑起来",
     "signIn": "登录"
+  },
+  "login": {
+    "intro": "输入邮箱获取登录链接。仅受邀邮箱可登录；如果你的邮箱未被加入白名单，链接仍会发送，但登录时会被拒绝。",
+    "notAllowed": "该邮箱尚未被邀请。请联系 Agora 管理员申请访问。",
+    "sent": "登录链接已发送到 <strong>{email}</strong>。请检查邮箱并点击链接完成登录。",
+    "emailLabel": "邮箱",
+    "sending": "发送中…",
+    "submit": "发送登录链接"
+  },
+  "invite": {
+    "missingTokenTitle": "缺少邀请令牌",
+    "missingTokenBody": "这个链接不完整，请向邀请你的人索取新的链接。",
+    "expiredTitle": "邀请已失效",
+    "expiredBody": "这个邀请链接已过期或无效。请向房主索取新的链接。",
+    "storageError": "无法写入本地存储，请开启浏览器存储权限后重试。",
+    "joining": "正在加入房间…",
+    "panel": {
+      "button": "邀请 · {count}",
+      "ariaLabel": "邀请面板",
+      "title": "邀请人类玩家",
+      "hint": "复制链接发送给对方。每个链接仅对一个座位有效，有效期 7 天。",
+      "noSeats": "没有人类座位。",
+      "copy": "复制",
+      "copied": "已复制"
+    }
   }
 }

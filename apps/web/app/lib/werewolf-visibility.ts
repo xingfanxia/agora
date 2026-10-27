@@ -66,6 +66,35 @@ export function projectWerewolfGameState(
   return out
 }
 
+// Night phases where the acting seat reveals a role, keyed to the
+// role that acts. Outside that role, the thinking seat is replaced
+// by NIGHT_THINKING_PLACEHOLDER for the whole phase (also when no
+// one is acting, so an empty witch/seer turn doesn't reveal a death).
+const NIGHT_ACTING_ROLE: Record<string, string> = {
+  guardProtect: 'guard',
+  wolfDiscuss: 'werewolf',
+  wolfVote: 'werewolf',
+  witchAction: 'witch',
+  seerCheck: 'seer',
+}
+
+/** thinkingAgentId sent to viewers outside the acting night role. */
+export const NIGHT_THINKING_PLACEHOLDER = 'night'
+
+/**
+ * Project the room's thinkingAgentId for a player or observer.
+ * `role` is the viewer's verified role (null = observer).
+ */
+export function projectWerewolfThinkingAgentId(
+  thinkingAgentId: string | null,
+  phase: string | null,
+  role: string | null,
+): string | null {
+  const actingRole = phase ? NIGHT_ACTING_ROLE[phase] : undefined
+  if (!actingRole || role === actingRole) return thinkingAgentId
+  return NIGHT_THINKING_PLACEHOLDER
+}
+
 // Seat fields safe to show everyone. Werewolf seats can carry a
 // role-bearing systemPrompt/persona ("YOUR ROLE: SEER …", fellow
 // wolves), so in-progress games send only these.

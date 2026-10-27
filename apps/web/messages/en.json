@@ -229,6 +229,63 @@
       "thinking": "AI players are thinking…",
       "agentThinking": "{name} is thinking…",
       "hint": "The first message may take 30-60 seconds"
+    },
+    "nightActing": "🌙 Night actions in progress",
+    "humanBar": {
+      "you": "You",
+      "seatIntro": "👋 Your seat: {name}",
+      "watchHint": "Watch the game — your turn is seat {position} of {total}.",
+      "dismiss": "Dismiss",
+      "seatLabel": "Seat: {name}",
+      "enterHint": "Enter to send, Shift+Enter for newline",
+      "send": "Send ↵",
+      "speaking": "⏳ {name} is speaking...",
+      "position": "({position} of {total})",
+      "waitingFor": "⏳ Waiting for {name}...",
+      "someone": "someone",
+      "processing": "⏳ Processing...",
+      "placeholder": {
+        "wolfDiscuss": "Discuss who to eliminate...",
+        "dayDiscuss": "Defend yourself or accuse...",
+        "lastWords": "Any final words?",
+        "default": "Share your thoughts..."
+      },
+      "heading": {
+        "wolfDiscuss": "🐺 Wolf discussion",
+        "dayDiscuss": "☀️ Day discussion",
+        "lastWords": "💀 Your last words",
+        "default": "💬 Your turn to speak"
+      },
+      "roles": {
+        "werewolf": {
+          "label": "🐺 Werewolf",
+          "hint": "Pick a target with your fellow wolves at night · pass as a villager by day"
+        },
+        "seer": {
+          "label": "🔮 Seer",
+          "hint": "Check one player each night · speak up at the key moments of the day"
+        },
+        "witch": {
+          "label": "🧪 Witch",
+          "hint": "Antidote saves, poison kills · at most one potion per night"
+        },
+        "hunter": {
+          "label": "🏹 Hunter",
+          "hint": "If the wolves or the vote take you out, shoot one player · not when poisoned"
+        },
+        "guard": {
+          "label": "🛡️ Guard",
+          "hint": "Protect one player from the wolves each night · never the same player twice in a row"
+        },
+        "idiot": {
+          "label": "🃏 Idiot",
+          "hint": "Voted out? Reveal your card and survive · but lose your vote"
+        },
+        "villager": {
+          "label": "👤 Villager",
+          "hint": "No special ability · find the wolves by watching and reasoning"
+        }
+      }
     }
   },
   "replays": {
@@ -476,5 +533,30 @@
     },
     "tagline": "Assemble · Compose · Run",
     "signIn": "Sign in"
+  },
+  "login": {
+    "intro": "Enter your email to get a sign-in link. Only invited emails can sign in; if yours isn't on the allowlist, the link is still sent but sign-in will be refused.",
+    "notAllowed": "This email hasn't been invited yet. Ask an Agora admin for access.",
+    "sent": "A sign-in link was sent to <strong>{email}</strong>. Check your inbox and click the link to finish signing in.",
+    "emailLabel": "Email",
+    "sending": "Sending…",
+    "submit": "Send sign-in link"
+  },
+  "invite": {
+    "missingTokenTitle": "Invite token missing",
+    "missingTokenBody": "This link is incomplete. Ask the person who invited you for a new link.",
+    "expiredTitle": "Invite no longer valid",
+    "expiredBody": "This invite link has expired or is invalid. Ask the room owner for a new link.",
+    "storageError": "Couldn't write to local storage. Allow browser storage and try again.",
+    "joining": "Joining the room…",
+    "panel": {
+      "button": "Invite · {count}",
+      "ariaLabel": "Invite panel",
+      "title": "Invite human players",
+      "hint": "Copy a link and send it to the player. Each link works for one seat and is valid for 7 days.",
+      "noSeats": "No human seats.",
+      "copy": "Copy",
+      "copied": "Copied"
+    }
   }
 }
