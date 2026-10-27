@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 interface Props {
   roomId: string
@@ -20,6 +21,7 @@ interface Props {
 
 export function ClaimSeat({ roomId, agentId, token }: Props) {
   const router = useRouter()
+  const t = useTranslations('invite')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,16 +31,16 @@ export function ClaimSeat({ roomId, agentId, token }: Props) {
         JSON.stringify({ roomId, agentId, token }),
       )
     } catch {
-      setError('无法写入本地存储，请开启浏览器存储权限后重试。')
+      setError(t('storageError'))
       return
     }
     router.replace(`/room/${roomId}`)
-  }, [roomId, agentId, token, router])
+  }, [roomId, agentId, token, router, t])
 
   return (
     <div style={{ maxWidth: 420, margin: '120px auto', padding: '0 24px', textAlign: 'center' }}>
       <div style={{ fontSize: 14, color: 'var(--muted)' }}>
-        {error ?? '正在加入房间…'}
+        {error ?? t('joining')}
       </div>
     </div>
   )

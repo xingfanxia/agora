@@ -16,6 +16,7 @@ import { PhaseBadge } from '../../components/v2/PhaseBadge'
 import { ViewToggle, type ViewMode } from '../../components/v2/ViewToggle'
 import { WerewolfSummary } from '../../components/v2/WerewolfSummary'
 import { WorkflowWarmupBanner } from '../../components/v2/WorkflowWarmupBanner'
+import { NIGHT_THINKING_PLACEHOLDER } from '../../../../lib/werewolf-visibility'
 
 interface WerewolfViewProps {
   messages: readonly MessageData[]
@@ -45,25 +46,19 @@ function isNightPhase(phase: string | null): boolean {
 // "your role" banner shown to seated humans. Faction matters for
 // role-relative hints ("you win when all wolves die" vs. "...all
 // villagers die").
-const ROLE_DISPLAY: Record<
-  string,
-  { emoji: string; faction: 'village' | 'werewolves'; label: string }
-> = {
-  werewolf: { emoji: '🐺', faction: 'werewolves', label: '狼人' },
-  villager: { emoji: '👤', faction: 'village', label: '村民' },
-  seer: { emoji: '🔮', faction: 'village', label: '预言家' },
-  witch: { emoji: '🧪', faction: 'village', label: '女巫' },
-  hunter: { emoji: '🏹', faction: 'village', label: '猎人' },
-  guard: { emoji: '🛡️', faction: 'village', label: '守卫' },
-  idiot: { emoji: '🃏', faction: 'village', label: '白痴' },
+// Labels come from werewolf.roles.* / werewolf.view.factions.*.
+const ROLE_DISPLAY: Record<string, { emoji: string; faction: 'village' | 'werewolves' }> = {
+  werewolf: { emoji: '🐺', faction: 'werewolves' },
+  villager: { emoji: '👤', faction: 'village' },
+  seer: { emoji: '🔮', faction: 'village' },
+  witch: { emoji: '🧪', faction: 'village' },
+  hunter: { emoji: '🏹', faction: 'village' },
+  guard: { emoji: '🛡️', faction: 'village' },
+  idiot: { emoji: '🃏', faction: 'village' },
 }
 
-const RULE_LABEL_ZH: Record<string, string> = {
-  guard: '守卫',
-  idiot: '白痴',
-  sheriff: '警长',
-  lastWords: '遗言',
-}
+// Advanced rules with a header label (werewolf.view.ruleNames.*).
+const RULE_KEYS: ReadonlySet<string> = new Set(['guard', 'idiot', 'sheriff', 'lastWords'])
 
 export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewProps) {
   const params = useParams()
@@ -262,10 +257,19 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           <DayNightBadge phase={currentPhase} nightNumber={
             typeof gameState?.['nightNumber'] === 'number' ? (gameState['nightNumber'] as number) : 0
           } />
+          {thinkingAgentId === NIGHT_THINKING_PLACEHOLDER && (
+            <span
+              role="status"
+              data-testid="night-acting"
+              style={{ fontSize: '0.75rem', color: 'var(--muted)' }}
+            >
+              {tRoom('nightActing')}
+            </span>
+          )}
           {advancedRules && (() => {
             const enabled = Object.entries(advancedRules)
               .filter(([, v]) => v)
-              .map(([k]) => RULE_LABEL_ZH[k] ?? k)
+              .map(([k]) => (RULE_KEYS.has(k) ? t(`view.ruleNames.${k}`) : k))
             if (enabled.length === 0) {
               return (
                 <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
@@ -275,7 +279,7 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
             }
             return (
               <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
-                规则: {enabled.join(' · ')}
+                {t('view.rulesList', { list: enabled.join(' · ') })}
               </span>
             )
           })()}
@@ -295,7 +299,15 @@ export function WerewolfView({ messages, snapshot, humanAgentId }: WerewolfViewP
           </div>
         </div>
 
-        <TokenCostPanel summary={tokenSummary} agents={agents} />
+        {tokenSummary == null && status !== 'completed' && snapshot.viewerRole !== 'spectator' ? (
+          // Players/observers get no live usage until the game ends:
+          // per-seat call counts would reveal who acts at night.
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+            {tRoom('tokenPanel.hiddenUntilEnd')}
+          </div>
+        ) : (
+          <TokenCostPanel summary={tokenSummary} agents={agents} />
+        )}
       </header>
 
       {humanAgentId && roleAssignments?.[humanAgentId] && (
@@ -492,12 +504,12 @@ function YourRoleBanner({
   name: string
   eliminated: boolean
 }) {
+  const t = useTranslations('werewolf')
   const display = ROLE_DISPLAY[role]
   if (!display) return null
   const factionColor =
     display.faction === 'werewolves' ? '#dc2626' : '#22c55e'
-  const factionLabel =
-    display.faction === 'werewolves' ? '狼人阵营' : '好人阵营'
+  const factionLabel = t(`view.factions.${display.faction}`)
   return (
     <div
       style={{
@@ -517,16 +529,22 @@ function YourRoleBanner({
       <div style={{ fontSize: '1.5rem', lineHeight: 1 }}>{display.emoji}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 590, marginBottom: 2 }}>
-          你的身份: <span style={{ color: factionColor }}>{display.label}</span>
+          {t.rich('view.yourRole', {
+            role: t(`roles.${role}`),
+            c: (chunks) => <span style={{ color: factionColor }}>{chunks}</span>,
+          })}
           {eliminated && (
             <span style={{ marginLeft: 8, fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 510 }}>
-              · 已淘汰
+              {t('view.eliminated')}
             </span>
           )}
         </div>
         <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-          {name && <>座位: <strong>{name}</strong> · </>}
-          阵营: <span style={{ color: factionColor, fontWeight: 510 }}>{factionLabel}</span>
+          {name && t.rich('view.seat', { name, b: (chunks) => <strong>{chunks}</strong> })}
+          {t.rich('view.faction', {
+            faction: factionLabel,
+            c: (chunks) => <span style={{ color: factionColor, fontWeight: 510 }}>{chunks}</span>,
+          })}
         </div>
       </div>
     </div>
@@ -546,6 +564,7 @@ function DayNightBadge({
   phase: string | null
   nightNumber: number
 }) {
+  const t = useTranslations('werewolf.view')
   if (!phase) return null
   const isNight = isNightPhase(phase)
   // Day n maps to night n's morning — i.e. after night N transitions
@@ -553,7 +572,7 @@ function DayNightBadge({
   // so during day N discussion, gameState.nightNumber === N already.
   // (See werewolf-day-phases.ts:runDayVote.)
   const cycleNum = Math.max(1, nightNumber || 1)
-  const label = isNight ? `🌙 第 ${cycleNum} 夜` : `☀️ 第 ${cycleNum} 天`
+  const label = isNight ? t('night', { n: cycleNum }) : t('day', { n: cycleNum })
   const color = isNight ? '#8b7ed8' : '#f5a623'
   return (
     <span

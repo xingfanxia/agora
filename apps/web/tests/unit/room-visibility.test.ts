@@ -84,6 +84,8 @@ async function poll(query = '', headers: Record<string, string> = {}) {
     agents: Array<Record<string, unknown>>
     roleAssignments: Record<string, string> | null
     gameState: Record<string, unknown> | null
+    thinkingAgentId: string | null
+    tokenSummary: Record<string, unknown> | null
     viewerRole: string
   }
 }
@@ -229,6 +231,71 @@ describe('GET /api/rooms/:id/messages — werewolf visibility', () => {
     expect(body.roleAssignments).toEqual(roleAssignments)
     expect(body.gameState).toEqual(fullGameState)
     expect(body.agents[0]?.['systemPrompt']).toBe('YOUR ROLE: werewolf')
+  })
+
+  describe('night thinkingAgentId', () => {
+    const seatPoll = async (seat: string) => {
+      const token = await signSeatToken({ roomId: ROOM, agentId: seat })
+      return poll(`?seat=${seat}`, { authorization: `Bearer ${token}` })
+    }
+    const atPhase = (phase: string, thinking: string | null) => {
+      ;(state.snapshot!['gameState'] as Record<string, unknown>)['currentPhase'] = phase
+      state.snapshot!['thinkingAgentId'] = thinking
+    }
+
+    it('wolf phase: observers and non-wolves get the night placeholder, wolves see the seat', async () => {
+      atPhase('wolfDiscuss', 'wolf2')
+      expect((await poll()).thinkingAgentId).toBe('night')
+      expect((await poll('?seat=wolf2')).thinkingAgentId).toBe('night') // unproven claim
+      expect((await seatPoll('seer1')).thinkingAgentId).toBe('night')
+      expect((await seatPoll('wolf1')).thinkingAgentId).toBe('wolf2')
+    })
+
+    it('witch phase: only the witch sees the acting seat, even when no one is acting', async () => {
+      atPhase('witchAction', 'witch1')
+      expect((await seatPoll('wolf1')).thinkingAgentId).toBe('night')
+      expect((await seatPoll('witch1')).thinkingAgentId).toBe('witch1')
+      atPhase('witchAction', null)
+      expect((await seatPoll('vil1')).thinkingAgentId).toBe('night')
+    })
+
+    it('seer phase: hidden from everyone but the seer', async () => {
+      atPhase('seerCheck', 'seer1')
+      expect((await seatPoll('vil1')).thinkingAgentId).toBe('night')
+      expect((await seatPoll('seer1')).thinkingAgentId).toBe('seer1')
+    })
+
+    it('players and observers get no live token usage (per-seat call counts name night actors)', async () => {
+      atPhase('wolfDiscuss', null)
+      state.snapshot!['tokenSummary'] = {
+        totalCost: 0.02,
+        totalTokens: 200,
+        callCount: 2,
+        byAgent: [
+          { agentId: 'wolf1', callCount: 1 },
+          { agentId: 'wolf2', callCount: 1 },
+        ],
+        byModel: [{ model: 'm', callCount: 2 }],
+      }
+      const responses = [await poll(), await seatPoll('seer1'), await seatPoll('wolf1')]
+      for (const body of responses) expect(body.tokenSummary).toBeNull()
+      state.user = { id: OWNER }
+      expect((await poll()).tokenSummary).toMatchObject({ callCount: 2 })
+      state.user = null
+      state.snapshot!['status'] = 'completed'
+      expect((await poll()).tokenSummary).toMatchObject({ callCount: 2 })
+    })
+
+    it('day phases, the spectator owner and finished games keep the real seat', async () => {
+      atPhase('dayDiscuss', 'vil1')
+      expect((await poll()).thinkingAgentId).toBe('vil1')
+      atPhase('wolfVote', 'wolf2')
+      state.user = { id: OWNER }
+      expect((await poll()).thinkingAgentId).toBe('wolf2')
+      state.user = null
+      state.snapshot!['status'] = 'completed'
+      expect((await poll()).thinkingAgentId).toBe('wolf2')
+    })
   })
 
   it('non-werewolf rooms are unfiltered (unchanged)', async () => {

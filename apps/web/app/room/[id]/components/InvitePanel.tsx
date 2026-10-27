@@ -13,6 +13,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface Invite {
   agentId: string
@@ -32,6 +33,8 @@ interface Props {
 }
 
 export function InvitePanel({ roomId, agents }: Props) {
+  const t = useTranslations('invite.panel')
+  const tCommon = useTranslations('common')
   const humanSeats = agents.filter((a) => a.isHuman)
   const [isOwner, setIsOwner] = useState<boolean | null>(null) // null = unknown
   const [open, setOpen] = useState(false)
@@ -89,7 +92,7 @@ export function InvitePanel({ roomId, agents }: Props) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label="Invite panel"
+        aria-label={t('ariaLabel')}
         style={{
           position: 'fixed',
           top: 12,
@@ -106,7 +109,7 @@ export function InvitePanel({ roomId, agents }: Props) {
           boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
         }}
       >
-        邀请 · {invites.length}
+        {t('button', { count: invites.length })}
       </button>
 
       {open && (
@@ -127,15 +130,15 @@ export function InvitePanel({ roomId, agents }: Props) {
             boxShadow: '0 8px 32px rgba(0,0,0,0.28)',
           }}
         >
-          <div style={{ fontSize: 14, fontWeight: 590, marginBottom: 4 }}>邀请人类玩家</div>
+          <div style={{ fontSize: 14, fontWeight: 590, marginBottom: 4 }}>{t('title')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.5 }}>
-            复制链接发送给对方。每个链接仅对一个座位有效，有效期 7 天。
+            {t('hint')}
           </div>
 
-          {loading && <div style={{ fontSize: 12, color: 'var(--muted)' }}>加载中…</div>}
+          {loading && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tCommon('loading')}</div>}
 
           {!loading && invites.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>没有人类座位。</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t('noSeats')}</div>
           )}
 
           {!loading && invites.map((inv) => (
@@ -165,7 +168,7 @@ export function InvitePanel({ roomId, agents }: Props) {
                     cursor: 'pointer',
                   }}
                 >
-                  {copiedId === inv.agentId ? '已复制' : '复制'}
+                  {copiedId === inv.agentId ? t('copied') : t('copy')}
                 </button>
               </div>
               <input

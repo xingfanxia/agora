@@ -10,6 +10,7 @@
 // rendered and talks to APIs with the token in Authorization, so
 // localStorage is simpler than juggling cookie reads there.
 
+import { getTranslations } from 'next-intl/server'
 import { verifySeatToken } from '../../lib/seat-tokens'
 import { ClaimSeat } from './ClaimSeat'
 
@@ -21,18 +22,16 @@ interface PageProps {
 export default async function GuestLanding({ params, searchParams }: PageProps) {
   const { roomId } = await params
   const { token } = await searchParams
+  const t = await getTranslations('invite')
 
   if (!token) {
-    return <InviteError title="缺少邀请令牌" body="这个链接不完整，请向邀请你的人索取新的链接。" />
+    return <InviteError title={t('missingTokenTitle')} body={t('missingTokenBody')} />
   }
 
   const payload = await verifySeatToken(token, roomId)
   if (!payload) {
     return (
-      <InviteError
-        title="邀请已失效"
-        body="这个邀请链接已过期或无效。请向房主索取新的链接。"
-      />
+      <InviteError title={t('expiredTitle')} body={t('expiredBody')} />
     )
   }
 

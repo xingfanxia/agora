@@ -125,6 +125,10 @@ export interface PollResponse {
   totalRounds: number
   currentPhase: string | null
   modeId: string
+  /**
+   * Seat currently generating. Werewolf players/observers outside the
+   * acting night role get NIGHT_THINKING_PLACEHOLDER ('night') instead.
+   */
   thinkingAgentId: string | null
   agents: AgentData[]
   topic: string
@@ -136,6 +140,11 @@ export interface PollResponse {
   /** Werewolf-only: snapshot of custom game state (eliminated, winResult, etc.) */
   gameState: Record<string, unknown> | null
   error?: string
+  /**
+   * Werewolf: the viewer's server-derived role ('spectator' for the
+   * owner, 'observer' without a proven seat). Other modes: 'spectator'.
+   */
+  viewerRole?: string
 }
 
 // ── Utilities ───────────────────────────────────────────────
