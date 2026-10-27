@@ -1,5 +1,5 @@
 // ============================================================
-// GET|POST /api/rooms/tick-all
+// POST /api/rooms/tick-all
 // ============================================================
 //
 // Safety-net sweeper invoked by Vercel Cron (apps/web/vercel.json) at
@@ -8,8 +8,7 @@
 //
 // Auth: gated on CRON_SECRET env var — Vercel Cron passes it as
 // `Authorization: Bearer <secret>`. If the secret is unset, the endpoint
-// refuses to run (fail-closed). Vercel Cron invokes the path with GET;
-// POST stays for manual calls.
+// refuses to run (fail-closed).
 
 import { NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
@@ -19,7 +18,7 @@ import { getStuckRooms } from '../../../lib/room-store'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-async function sweep(request: Request) {
+export async function POST(request: Request) {
   const secret = process.env['CRON_SECRET']
   if (!secret) {
     return NextResponse.json(
@@ -63,6 +62,3 @@ async function sweep(request: Request) {
     })),
   })
 }
-
-export const GET = sweep
-export const POST = sweep
