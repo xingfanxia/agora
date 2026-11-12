@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/rooms/tick-all",
-      "schedule": "* * * * *"
-    }
-  ]
-}

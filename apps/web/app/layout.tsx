@@ -4,6 +4,7 @@ import localFont from 'next/font/local'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { AppShell } from './components/AppShell'
+import { isOffline } from './lib/offline'
 import './globals.css'
 
 // Inter Variable per DESIGN.md §3 — weights 400 (read), 510 (UI), 590 (strong emphasis).
@@ -37,7 +38,8 @@ export default async function RootLayout({
     <html lang={locale}>
       <body className={`${inter.variable} ${geistMono.variable}`}>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <AppShell>{children}</AppShell>
+          {/* Offline: the sidebar links and polls routes that no longer work. */}
+          {isOffline() ? children : <AppShell>{children}</AppShell>}
         </NextIntlClientProvider>
       </body>
     </html>

@@ -29,6 +29,7 @@
     "CRON_SECRET",
     "AGORA_ADMIN_SECRET",
     "AGORA_SEAT_SECRET",
+    "AGORA_OFFLINE",
     "WORKFLOW_TEST"
   ],
   "tasks": {

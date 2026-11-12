@@ -5,8 +5,9 @@
 // Safety-net sweeper. For each room whose updated_at is stale (inline
 // tick chain broke, function crashed, etc.), fires /api/rooms/tick.
 //
-// Intentionally dormant: Vercel Cron (apps/web/vercel.json) calls with GET
-// and this route exports only POST, so the 1-minute cron gets 405. Do not
+// Intentionally dormant: the 1-minute Vercel Cron (apps/web/vercel.json,
+// removed while the app is offline; README "Offline mode" has the entry to
+// restore) calls with GET and this route exports only POST, so it gets 405. Do not
 // add GET until P-AGORA-2 ships a per-room tick lease and an age cap —
 // enabling it now forks duplicate tick chains on http_chain rooms whose
 // in-flight LLM call has not refreshed updated_at yet.
