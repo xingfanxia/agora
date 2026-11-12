@@ -8,7 +8,7 @@ const session = vi.hoisted(() => ({ updateSession: vi.fn() }))
 vi.mock('../../app/lib/supabase-middleware', () => session)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { proxy } from '../../proxy'
+import { config, proxy } from '../../proxy'
 import { isOffline } from '../../app/lib/offline'
 
 const saved = process.env.AGORA_OFFLINE
@@ -51,6 +51,16 @@ describe('proxy while offline', () => {
       expect(res.headers.get('x-middleware-rewrite')).toBe('http://x/offline')
     }
     expect(session.updateSession).not.toHaveBeenCalled()
+  })
+
+  it('matcher skips only root-level public images, not image-looking room URLs', () => {
+    const matches = (path: string) => new RegExp(`^${config.matcher[0]}$`).test(path)
+    for (const path of ['/', '/room/x.png', '/api/agents/a.svg', '/replay/r1']) {
+      expect(matches(path), path).toBe(true)
+    }
+    for (const path of ['/vercel.svg', '/favicon.ico', '/_next/static/chunks/a.js']) {
+      expect(matches(path), path).toBe(false)
+    }
   })
 
   it('runs the online proxy when AGORA_OFFLINE=0', async () => {

@@ -76,10 +76,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Match everything except Next.js internals, common static assets,
-  // and favicon. The proxy must still run on /auth/callback + /login
-  // so session cookies attach correctly.
+  // Match everything except Next.js internals, favicon and the
+  // root-level image files in public/. Only top-level names are skipped,
+  // so a URL like /room/x.png still reaches the proxy (and the offline
+  // switch). The proxy must still run on /auth/callback + /login so
+  // session cookies attach correctly.
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|[^/]+\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

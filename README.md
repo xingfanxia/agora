@@ -81,13 +81,21 @@ To bring the app back:
 3. Add your own email to `allowed_emails` (sign-in is allowlist-only) and set
    `AGORA_SEAT_SECRET`, `AGORA_ADMIN_SECRET`, `CRON_SECRET` and the LLM keys
    listed below.
-4. Set `AGORA_OFFLINE=0` and redeploy.
+4. Restore the sweeper cron (removed while offline; the sweeper itself stays
+   dormant until P-AGORA-2, see `apps/web/app/api/rooms/tick-all/route.ts`) by
+   adding `apps/web/vercel.json`:
+   `{"crons":[{"path":"/api/rooms/tick-all","schedule":"* * * * *"}]}`
+5. Set `AGORA_OFFLINE=0` and redeploy.
 
 ## Quick Start
 
+Local development of the app needs `AGORA_OFFLINE=0` (in `apps/web/.env.local`
+or the shell) plus the Supabase env from [Offline mode](#offline-mode);
+without it every page shows the offline notice.
+
 ```bash
 pnpm install
-pnpm dev                                                     # Next.js at :3000
+AGORA_OFFLINE=0 pnpm dev                                                     # Next.js at :3000
 npx tsx scripts/run-werewolf.ts --players=9                  # CLI werewolf game
 npx tsx scripts/run-werewolf.ts --guard --sheriff --players=12  # advanced rules
 npx tsx scripts/token-report.ts                              # LiteLLM pricing snapshot
