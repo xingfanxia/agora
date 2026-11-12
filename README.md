@@ -13,7 +13,11 @@ templates are five orthogonal primitives. Create an agent once, drop it
 into multiple teams, start a room in any mode, and watch the team work
 — with live cost tracking and a full event timeline.
 
-**Live on prod**: [agora-panpanmao.vercel.app](https://agora-panpanmao.vercel.app)
+**Status: the live demo is stopped (2026-11).** The production Supabase project
+was deleted with no backup, so [agora-panpanmao.vercel.app](https://agora-panpanmao.vercel.app)
+now serves a static offline notice (see [Offline mode](#offline-mode)). Running
+Agora again needs your own Supabase project. The debate and werewolf game
+reports in [docs/report/](docs/report/) are the best record of what it did.
 
 **Ship-with templates** (2026-04-15):
 - **投资团队** — CFO (leader) + Quant + Risk + Contrarian + Macro + Analyst; dispatcher-led open chat.
@@ -37,18 +41,47 @@ Three-layer design: general-purpose platform core with pluggable modes.
 ```
 Mode Layer        [Roundtable] [Werewolf] [Script Kill] [TRPG] [Custom]
 Platform Core     Agent | Room | Channel | FlowController | TokenAccountant | EventBus
-Infrastructure    Vercel AI SDK | Next.js 15 | (Postgres deferred)
+Infrastructure    Vercel AI SDK | Next.js 16 | Vercel Workflow DevKit | Supabase Postgres
 ```
 
 ## Tech Stack
 
 - **Monorepo**: Turborepo + pnpm
-- **Frontend**: Next.js 15 (App Router), inline styles + CSS variables
+- **Frontend**: Next.js 16 (App Router), inline styles + CSS variables (no Tailwind)
 - **LLM**: Vercel AI SDK (Claude, GPT, Gemini, DeepSeek)
 - **Pricing**: LiteLLM registry (auto-fetched, with offline fallback)
 - **Storage**: Supabase Postgres (events table as source of truth, rooms as denormalized snapshot) via Drizzle
 - **Auth**: Supabase Auth (magic-link) + email allowlist gate
-- **Runtime**: Bespoke durable runtime — `advanceRoom()` + chained `/api/rooms/tick` self-invokes, with a 1-min cron sweep as backstop. Replay-deterministic via seeded agent IDs. Vercel Pro recommended. Migrating to **Vercel Workflow DevKit** at Phase 4.5d for multi-human fan-in (see `docs/design/workflow-architecture.md`).
+- **Runtime**: Vercel Workflow DevKit (`apps/web/app/workflows/`). Werewolf always runs on WDK and roundtable defaults to it; open-chat still defaults to the older `http_chain` runtime (`advanceRoom()` + chained `/api/rooms/tick` self-invokes). See `docs/design/workflow-architecture.md` and the spike findings in `docs/design/phase-4.5d-wdk-spike.md`.
+
+## Offline mode
+
+Production runs with the offline switch on. While it is on, `apps/web/proxy.ts`
+answers before any Supabase or provider code runs:
+
+- every page route (including `/room/[id]`, `/login`, `/admin/*`) renders the
+  offline notice at `/offline` with HTTP 200;
+- every `/api/*` route returns HTTP 410 `{"error":"offline", ...}`.
+
+| | |
+|---|---|
+| Switch | `AGORA_OFFLINE` (read in `apps/web/app/lib/offline.ts`) |
+| Default | on: unset or any value other than `0` / `false` |
+| Turn off | `AGORA_OFFLINE=0` |
+
+No other env var is needed to build or serve the offline notice.
+
+To bring the app back:
+
+1. Create a Supabase project and set `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `POSTGRES_URL`
+   and `POSTGRES_URL_NON_POOLING`.
+2. Apply the schema and template seed: `pnpm --filter @agora/db db:migrate`
+   (migrations in `packages/db/drizzle/`, templates in `0004_seed_templates.sql`).
+3. Add your own email to `allowed_emails` (sign-in is allowlist-only) and set
+   `AGORA_SEAT_SECRET`, `AGORA_ADMIN_SECRET`, `CRON_SECRET` and the LLM keys
+   listed below.
+4. Set `AGORA_OFFLINE=0` and redeploy.
 
 ## Quick Start
 
@@ -90,7 +123,11 @@ straight to OpenAI.
 
 ## Status
 
-**Phase 4.5d (Multi-Human + Auth) IN PROGRESS** (as of 2026-04-28) —
+**Frozen (2026-11).** Development stopped after Phase 4.5d; the demo is
+offline (see above). The history below is kept as a record.
+
+**Phase 4.5d (Multi-Human + Auth)** (last updated 2026-04-28; later work moved
+werewolf and roundtable onto WDK) —
 Supabase Auth + email allowlist gate (`c858213`), JWT seat invites +
 multi-human picker (`5b73b6d`), and a mid-phase replay bugfix (`c01119c`)
 have shipped. **Remaining**: Realtime presence + 30s disconnection grace
