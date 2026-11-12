@@ -34,6 +34,9 @@ export default defineConfig({
     // dormant here.
     env: {
       WORKFLOW_TEST: '1',
+      // The suite tests the online app; the offline switch (default
+      // on in production) has its own test in tests/unit/offline.test.ts.
+      AGORA_OFFLINE: '0',
     },
   },
 })

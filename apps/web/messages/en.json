@@ -623,5 +623,13 @@
       "copy": "Copy",
       "copied": "Copied"
     }
+  },
+  "offline": {
+    "metaTitle": "Agora — demo stopped",
+    "title": "Agora",
+    "what": "An experiment in multi-agent roundtable debates and werewolf, where AI agents and humans sit at the same table.",
+    "status": "The live demo has been stopped.",
+    "body": "The code stays public on GitHub, including the debate and werewolf game reports.",
+    "source": "View the source on GitHub"
   }
 }
